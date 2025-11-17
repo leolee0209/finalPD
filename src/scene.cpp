@@ -34,25 +34,6 @@ void Scene::DrawScene()
     {
         DrawRectangle(o);
     }
-    // const Vector3 towerSize = {16.0f, 32.0f, 16.0f};
-    // const Color towerColor = {150, 200, 200, 255};
-
-    // Vector3 towerPos = {16.0f, 16.0f, 16.0f};
-    // DrawCubeV(towerPos, towerSize, towerColor);
-    // DrawCubeWiresV(towerPos, towerSize, DARKBLUE);
-
-    // towerPos.x *= -1;
-    // DrawCubeV(towerPos, towerSize, towerColor);
-    // DrawCubeWiresV(towerPos, towerSize, DARKBLUE);
-
-    // towerPos.z *= -1;
-    // DrawCubeV(towerPos, towerSize, towerColor);
-    // DrawCubeWiresV(towerPos, towerSize, DARKBLUE);
-
-    // towerPos.x *= -1;
-    // DrawCubeV(towerPos, towerSize, towerColor);
-    // DrawCubeWiresV(towerPos, towerSize, DARKBLUE);
-
     // Red sun
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
 }
