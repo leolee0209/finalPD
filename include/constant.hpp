@@ -14,3 +14,6 @@
 #define CROUCH_HEIGHT 0.0f
 #define STAND_HEIGHT 1.0f
 #define BOTTOM_HEIGHT 0.5f
+
+#define MAX_HEALTH_ME 100
+#define MAX_HEALTH_ENEMY 100
