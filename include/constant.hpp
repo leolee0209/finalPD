@@ -17,3 +17,5 @@
 
 #define MAX_HEALTH_ME 100
 #define MAX_HEALTH_ENEMY 100
+
+#define TOWER_COLOR {150, 200, 200, 255}
