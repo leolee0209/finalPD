@@ -1,11 +1,15 @@
 #include "scene.hpp"
 #include <raylib.h>
 #include "constant.hpp"
-
-void Scene::DrawRectangle(Object &o)
+void Scene::DrawRectangle(const Object &o) const
 {
     DrawCubeV(o.getPos(), o.getSize(), TOWER_COLOR);
     DrawCubeWiresV(o.getPos(), o.getSize(), DARKBLUE);
+}
+
+void Scene::addEntity(std::unique_ptr<Entity> e)
+{
+    this->entities.push_back(std::move(e));
 }
 
 void Scene::DrawScene()
@@ -30,12 +34,24 @@ void Scene::DrawScene()
         }
     }
 
-    for (auto &o : this->objects)
+    for (const auto &o : this->objects)
     {
         DrawRectangle(o);
     }
+    for (const auto &o : this->entities)
+    {
+        DrawRectangle(o->obj());
+    }
     // Red sun
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
+}
+
+void Scene::Update()
+{
+    for (auto &e : this->entities)
+    {
+        e->UpdateBody();
+    }
 }
 
 Scene::Scene()

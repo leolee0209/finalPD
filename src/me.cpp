@@ -1,9 +1,11 @@
 #include "me.hpp"
 #include "constant.hpp"
 #include "raymath.h"
+#include <iostream>
 
-void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold)
+void Me::UpdateBody(char side, char forward, bool jumpPressed, bool crouchHold)
 {
+    float rot = this->camera.lookRotation.x;
     Vector2 input = {(float)side, (float)-forward};
 
     if ((side != 0) && (forward != 0))
@@ -24,7 +26,7 @@ void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool c
         // PlaySound(fxJump);
     }
 
-    //calculate the direction facing
+    // calculate the direction facing
     Vector3 front = {sinf(rot), 0.f, cosf(rot)};
     Vector3 right = {cosf(-rot), 0.f, sinf(-rot)};
 
@@ -33,7 +35,7 @@ void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool c
         0.0f,
         input.x * right.z + input.y * front.z,
     };
-    this->dir = Vector3Lerp(this->dir, desiredDir, CONTROL * delta);
+    this->direction = Vector3Lerp(this->direction, desiredDir, CONTROL * delta);
 
     float decel = (this->grounded ? FRICTION : AIR_DRAG);
     Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
@@ -43,15 +45,15 @@ void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool c
         hvel = {0};
 
     // This is what creates strafing
-    float speed = Vector3DotProduct(hvel, this->dir);
+    float speed = Vector3DotProduct(hvel, this->direction);
 
     // Whenever the amount of acceleration to add is clamped by the maximum acceleration constant,
     // a Player can make the speed faster by bringing the direction closer to horizontal velocity angle
     // More info here: https://youtu.be/v3zT3Z5apaM?t=165
     float maxSpeed = (crouchHold ? CROUCH_SPEED : MAX_SPEED);
     float accel = Clamp(maxSpeed - speed, 0.f, MAX_ACCEL * delta);
-    hvel.x += this->dir.x * accel;
-    hvel.z += this->dir.z * accel;
+    hvel.x += this->direction.x * accel;
+    hvel.z += this->direction.z * accel;
 
     this->velocity.x = hvel.x;
     this->velocity.z = hvel.z;
@@ -67,4 +69,37 @@ void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool c
         this->velocity.y = 0.0f;
         this->grounded = true; // Enable jumping
     }
+}
+
+void Me::UpdateCamera(char side, char forward, bool crouchHold)
+{
+    this->camera.UpdateCamera(side, forward, crouchHold, this->position, this->grounded);
+}
+
+void Projectile::UpdateBody()
+{
+    const float delta = GetFrameTime();
+
+    if (!this->grounded)
+        this->velocity.y -= GRAVITY * delta;
+    float decel = (this->grounded ? 0.97f : 0.99f);
+    Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
+
+    float hvelLength = Vector3Length(hvel); // Magnitude
+    if (hvelLength < (MAX_SPEED * 0.02f))
+        hvel = {0};
+    this->velocity.x = hvel.x;
+    this->velocity.z = hvel.z;
+
+    this->position.x += this->velocity.x * delta;
+    this->position.y += this->velocity.y * delta;
+    this->position.z += this->velocity.z * delta;
+
+    if (this->position.y <= 0.0f)
+    {
+        this->position.y = 0.0f;
+        this->velocity.y = 0;
+        this->grounded = true;
+    }
+    this->o = Object(this->o.getSize(), this->position);
 }
