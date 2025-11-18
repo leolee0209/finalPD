@@ -2,7 +2,7 @@
 #include "constant.hpp"
 #include "raymath.h"
 
-void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold)
+void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold, bool isCollided)
 {
     Vector2 input = {(float)side, (float)-forward};
 
@@ -10,7 +10,11 @@ void Me::UpdateBody(float rot, char side, char forward, bool jumpPressed, bool c
         input = Vector2Normalize(input);
 
     float delta = GetFrameTime();
-
+    if(isCollided)
+    {
+        Vector3 reverseSpeed = {-this->velocity.x, this->velocity.y, -this->velocity.z};
+        this->velocity = reverseSpeed;
+    }
     if (!this->grounded)
         this->velocity.y -= GRAVITY * delta;
 

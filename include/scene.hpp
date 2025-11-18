@@ -1,6 +1,9 @@
 #pragma once
 #include <vector>
 #include <raylib.h>
+
+// Forward declaration of Me
+class Me;
 // TODO maybe holds information for a single thing(pos, mesh...)
 class Object // maybe first expect it to be a box(3d rectangle)
 {
@@ -19,6 +22,7 @@ public:
         this->pos = poss;
     };
 };
+
 class Scene
 {
 private:
@@ -29,5 +33,6 @@ private:
 public:
     void DrawScene();
     Scene();
-    bool collided(); // TODO check collision for all objects
+    bool collided(Object other); // TODO check collision for all objects
+    bool collided(Me other);
 };

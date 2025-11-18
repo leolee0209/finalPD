@@ -36,7 +36,7 @@ public:
         grounded = true;
         health = MAX_HEALTH_ME;
     }
-    void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold);
+    void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold, bool isCollided);
 };
 class Enemy : public Entity
 {

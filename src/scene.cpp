@@ -1,6 +1,9 @@
 #include "scene.hpp"
+#include "me.hpp"
 #include <raylib.h>
 #include "constant.hpp"
+#include <cmath>
+#include <iostream>
 
 void Scene::DrawRectangle(Object &o)
 {
@@ -71,4 +74,35 @@ Scene::Scene()
     this->objects.push_back(Object(towerSize, towerPos));
     towerPos.x *= -1;
     this->objects.push_back(Object(towerSize, towerPos));
+}
+
+bool Scene::collided(Object other)
+{
+    int otherX = other.getPos().x, otherY = other.getPos().y;
+    for(auto tower: this->objects)
+    {
+        int myX = tower.getPos().x, myY = tower.getPos().y;
+        int deltaX = abs(myX-otherX), deltaY = abs(myY-otherY);
+        if(sqrt(deltaX*deltaX + deltaY*deltaY) <= 10)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Scene::collided(Me other)
+{
+    int otherX = other.px(), otherY = other.py();
+    for(auto tower: this->objects)
+    {
+        int myX = tower.getPos().x, myY = tower.getPos().y;
+        int deltaX = abs(myX-otherX), deltaY = abs(myY-otherY);
+        std::cout << sqrt(deltaX*deltaX + deltaY*deltaY) << std::endl;
+        if(sqrt(deltaX*deltaX + deltaY*deltaY) <= 20)
+        {
+            return true;
+        }
+    }
+    return false;
 }

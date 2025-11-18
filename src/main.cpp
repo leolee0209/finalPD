@@ -56,7 +56,7 @@ int main(void)
         char sideway = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
         char forward = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S));
         bool crouching = IsKeyDown(KEY_LEFT_CONTROL);
-        player.UpdateBody(lookRotation.x, sideway, forward, IsKeyPressed(KEY_SPACE), crouching);
+        player.UpdateBody(lookRotation.x, sideway, forward, IsKeyPressed(KEY_SPACE), crouching, scene.collided(player));
 
         float delta = GetFrameTime();
         headLerp = Lerp(headLerp, (crouching ? CROUCH_HEIGHT : STAND_HEIGHT), 20.0f * delta);
@@ -97,9 +97,8 @@ int main(void)
         // Draw info box
         DrawRectangle(5, 5, 330, 75, Fade(SKYBLUE, 0.5f));
         DrawRectangleLines(5, 5, 330, 75, BLUE);
-
         DrawText("Camera controls:", 15, 15, 10, BLACK);
-        DrawText("- Move keys: W, A, S, D, Space, Left-Ctrl", 15, 30, 10, BLACK);
+        DrawText("hello123", 15, 30, 10, BLACK);
         DrawText("- Look around: arrow keys or mouse", 15, 45, 10, BLACK);
         //DrawText(TextFormat("- Velocity Len: (%06.3f)", Vector2Length({player.velocity.x, player.velocity.z})), 15, 60, 10, BLACK);
 
