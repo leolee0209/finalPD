@@ -7,12 +7,13 @@ void Scene::DrawRectangle(const Object &o) const
     DrawCubeWiresV(o.getPos(), o.getSize(), DARKBLUE);
 }
 
-void Scene::addEntity(std::unique_ptr<Entity> e)
+void Scene::addEntity(Entity e)
 {
-    this->entities.push_back(std::move(e));
+    this->entities.push_back(e);
 }
 
-void Scene::DrawScene()
+
+void Scene::DrawScene()const
 {
     const int floorExtent = 25;
     const float tileSize = 5.0f;
@@ -40,7 +41,11 @@ void Scene::DrawScene()
     }
     for (const auto &o : this->entities)
     {
-        DrawRectangle(o->obj());
+        DrawRectangle(o.obj());
+    }
+    for (const auto &o : this->am.getObjects())
+    {
+        DrawRectangle(*o);
     }
     // Red sun
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
@@ -50,8 +55,9 @@ void Scene::Update()
 {
     for (auto &e : this->entities)
     {
-        e->UpdateBody();
+        e.UpdateBody();
     }
+    this->am.update();
 }
 
 Scene::Scene()

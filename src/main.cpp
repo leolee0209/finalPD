@@ -2,7 +2,7 @@
 #include "constant.hpp"
 #include "me.hpp"
 #include "scene.hpp"
-#include "attack.hpp"
+#include "attackManager.hpp"
 
 int main(void)
 {
@@ -32,7 +32,7 @@ int main(void)
         bool crouching = IsKeyDown(KEY_LEFT_CONTROL);
         if (IsKeyPressed(KEY_B))
         {
-            Attack::play(player, scene);
+            scene.am.getThousandAttack(&player)->spawnProjectile();
         }
 
         //----------------------------------------------------------------------------------
