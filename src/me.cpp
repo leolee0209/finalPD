@@ -82,7 +82,7 @@ void Projectile::UpdateBody()
 
     if (!this->grounded)
         this->velocity.y -= GRAVITY * delta;
-    float decel = (this->grounded ? 0.97f : 0.99f);
+    float decel = (this->grounded ? this->friction : this->airDrag);
     Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
 
     float hvelLength = Vector3Length(hvel); // Magnitude

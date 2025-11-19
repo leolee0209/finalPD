@@ -1,6 +1,53 @@
 #include "attack.hpp"
 #include <raylib.h>
+#include "constant.hpp"
 #include <raymath.h>
+void ThousandAttack::activateFinal()
+{
+    float x = 0, y = 0, z = 0;
+    float size = this->projectiles.size();
+    for (auto &p : this->projectiles)
+    {
+        x += p.pos().x;
+        y += p.pos().y;
+        z += p.pos().z;
+    }
+    this->dest = {x / size, y / size, z / size};
+    for (auto &p : this->projectiles)
+    {
+        Vector3 newDir = Vector3Normalize({this->dest.x - p.pos().x, 0, this->dest.z - p.pos().z});
+        Vector3 newVel = {newDir.x * ThousandAttack::finalVel, 0, newDir.z * ThousandAttack::finalVel};
+        p = Projectile(p.pos(), newVel, newDir, p.isGrounded(), p.obj(), 1, 1);
+    }
+}
+bool ThousandAttack::endFinal()
+{
+    std::vector<int> remove;
+    for (int i = 0; i < this->projectiles.size(); i++)
+    {
+        const Projectile &p = this->projectiles[i];
+        if (Vector3DistanceSqr(p.pos(), this->dest) <= 0.1f)
+        {
+            remove.push_back(i);
+        }
+        else
+        {
+            Vector3 toDest = Vector3Subtract(this->dest, p.pos());
+            float dotProduct = Vector3DotProduct(toDest, p.vel());
+            if (dotProduct <= 0) // Negative dot product means the projectile is moving away
+            {
+                remove.push_back(i);
+            }
+        }
+    }
+    for (const auto &i : remove)
+    {
+        this->projectiles.erase(this->projectiles.begin() + i);
+        this->count--;
+    }
+
+    return this->projectiles.size() == 0;
+}
 void ThousandAttack::spawnProjectile()
 {
     float yaw;
@@ -35,8 +82,9 @@ void ThousandAttack::spawnProjectile()
         vel,     // Set velocity to match the forward direction
         forward, // Direction
         false,   // Not grounded
-        o        // Default object
-    );
+        o,       // Default object
+        FRICTION,
+        AIR_DRAG);
 
     this->projectiles.push_back(projectile);
     this->count++;
@@ -47,5 +95,20 @@ void ThousandAttack::update()
     for (auto &p : this->projectiles)
     {
         p.UpdateBody();
+    }
+    if (!this->activated && this->projectiles.size() >= ThousandAttack::activate)
+    {
+        if (this->projectiles.back().isGrounded())
+        {
+            this->activated = true;
+            activateFinal();
+        }
+    }
+    if (this->activated && endFinal())
+    {
+        this->projectiles.clear();
+        this->activated = false;
+        this->count = 0;
+        this->dest = {0};
     }
 }

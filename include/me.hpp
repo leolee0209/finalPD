@@ -78,20 +78,26 @@ class Projectile : public Entity
 {
 private:
 public:
+    float friction;
+    float airDrag;
     Projectile()
     {
         position = {0};
         velocity = {0};
         direction = {0};
         grounded = false;
+        friction = PROJECTILE_FRICTION;
+        airDrag = PROJECTILE_AIR_DRAG;
     }
-    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1)
+    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird)
     {
         this->position = pos;
         this->velocity = vel;
         this->direction = d;
         this->grounded = g;
         this->o = o1;
+        this->friction = fric;
+        this->airDrag = aird;
     }
     void UpdateBody() override;
 };
