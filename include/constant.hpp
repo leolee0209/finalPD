@@ -7,8 +7,10 @@
 #define MAX_ACCEL 150.0f
 // Grounded drag
 #define FRICTION 0.86f
+#define PROJECTILE_FRICTION 0.97f
 // Increasing air drag, increases strafing speed
 #define AIR_DRAG 0.98f
+#define PROJECTILE_AIR_DRAG 0.99f
 // Responsiveness for turning movement direction to looked direction
 #define CONTROL 15.0f
 #define CROUCH_HEIGHT 0.0f

@@ -1,55 +1,103 @@
 #pragma once
 #include <raylib.h>
 #include <constant.hpp>
-#include "scene.hpp"
+#include "object.hpp"
+#include "mycamera.hpp"
 class Entity
 {
 protected:
+    Object o;
     Vector3 position;
     Vector3 velocity;
-    Vector3 dir;
+    Vector3 direction;
     bool grounded;
-    int health;
 
 public:
     Entity()
     {
         position = {0};
         velocity = {0};
-        dir = {0};
+        direction = {0};
         grounded = true;
     }
-    float px() { return this->position.x; }
-    float py() { return this->position.y; }
-    float pz() { return this->position.z; }
+    Entity(Vector3 pos, Vector3 vel, Vector3 d, bool g)
+    {
+        position = pos;
+        velocity = vel;
+        direction = d;
+        grounded = g;
+    }
+    const Vector3 &pos() const { return this->position; }
+    const Vector3 &vel() const { return this->velocity; }
+    const Vector3 &dir() const { return this->direction; }
+    const Object &obj() const { return this->o; }
     bool isGrounded() { return this->grounded; }
+    virtual void UpdateBody() {};
 };
 
 class Me : public Entity
 {
+private:
+    int health;
+    MyCamera camera;
+
 public:
     Me()
     {
         position = {0};
         velocity = {0};
-        dir = {0};
+        direction = {0};
         grounded = true;
         health = MAX_HEALTH_ME;
+
+        camera = MyCamera(this->position);
     }
-    void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold);
+    void UpdateBody(char side, char forward, bool jumpPressed, bool crouchHold);
+    void UpdateCamera(char side, char forward, bool crouchHold);
+    const Camera &getCamera() { return this->camera.getCamera(); }
+    Vector2 &getLookRotation() { return this->camera.lookRotation; }
 };
 class Enemy : public Entity
 {
 private:
-    Object o;
+    int health;
+
 public:
     Enemy()
     {
         position = {0};
         velocity = {0};
-        dir = {0};
+        direction = {0};
         grounded = true;
         health = MAX_HEALTH_ENEMY;
     }
     void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold);
+};
+
+class Projectile : public Entity
+{
+private:
+public:
+    float friction;
+    float airDrag;
+    Projectile()
+    {
+        position = {0};
+        velocity = {0};
+        direction = {0};
+        grounded = false;
+        friction = PROJECTILE_FRICTION;
+        airDrag = PROJECTILE_AIR_DRAG;
+    }
+    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird)
+    {
+        this->position = pos;
+        this->velocity = vel;
+        this->direction = d;
+        this->grounded = g;
+        this->o = o1;
+        this->friction = fric;
+        this->airDrag = aird;
+    }
+    void UpdateBody() override;
 };
