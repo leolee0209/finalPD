@@ -1,22 +1,38 @@
 #pragma once
 #include <vector>
-#include <attackManager.hpp>
-#include <me.hpp>
+#include "attackManager.hpp"
+#include "me.hpp"
 #include "object.hpp"
+
+// The Scene class represents the game world, including entities, objects, and attacks.
 class Scene
 {
 private:
-    std::vector<Entity> entities;
-    std::vector<Object> objects;
-    Object floor;
+    std::vector<Entity> entities; // List of entities in the scene (e.g., enemies, NPCs)
+    std::vector<Object> objects;  // List of static objects in the scene (e.g., towers, obstacles)
+    Object floor;                 // Represents the floor of the scene
+
+    // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
 
 public:
-    AttackManager am;
+    AttackManager am; // Manages all attacks in the scene
+
+    // Destructor (default implementation)
     ~Scene() {}
+
+    // Adds an entity to the scene
     void addEntity(Entity e);
+
+    // Draws the entire scene, including objects, entities, and attacks
     void DrawScene() const;
+
+    // Updates all entities and attacks in the scene
     void Update();
+
+    // Constructor initializes the scene with default objects
     Scene();
-    bool collided(); // TODO check collision for all objects
+
+    // Checks for collisions between objects (not implemented yet)
+    bool collided(); // TODO: Implement collision detection for all objects
 };
