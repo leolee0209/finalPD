@@ -100,6 +100,7 @@ void ThousandAttack::spawnProjectile()
     // Set the projectile's initial position slightly above the spawning entity
     Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
     Object o({1, 1, 1}, pos);
+    o.setRotationFromForward(forward);
 
     // Create the projectile and add it to the list
     Projectile projectile(

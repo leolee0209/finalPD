@@ -4,7 +4,7 @@
 #include "object.hpp"
 #include <raylib.h>
 
-// Base class for all attack controllers
+// Base class for all attack controllers, attack instances stored in attackManager
 class AttackController
 {
 protected:
@@ -16,7 +16,7 @@ public:
     virtual void update() = 0; // Pure virtual function to update the attack
 };
 
-// ThousandAttack class handles the logic for the "Thousand Attack" ability
+//logic for the "Thousand Attack" ability
 class ThousandAttack : public AttackController
 {
 private:

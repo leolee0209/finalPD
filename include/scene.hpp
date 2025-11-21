@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <raylib.h>
 #include "attackManager.hpp"
 #include "me.hpp"
 #include "object.hpp"
@@ -17,9 +18,10 @@ private:
 
 public:
     AttackManager am; // Manages all attacks in the scene
+    Model cubeModel;   // Shared cube model used to render rotated cubes
 
-    // Destructor (default implementation)
-    ~Scene() {}
+    // Destructor (will unload model in implementation)
+    ~Scene();
 
     // Adds an entity to the scene
     void addEntity(Entity e);

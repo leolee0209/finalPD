@@ -2,11 +2,25 @@
 #include <raylib.h>
 #include "constant.hpp"
 
+// Destructor: unload shared model resources
+Scene::~Scene()
+{
+    // Only unload GPU resources if the window/context is still active.
+    if (IsWindowReady())
+    {
+        UnloadModel(this->cubeModel);
+    }
+}
+
 // Draws a 3D rectangle (cube) for the given object
 void Scene::DrawRectangle(const Object &o) const
 {
-    DrawCubeV(o.getPos(), o.getSize(), TOWER_COLOR);       // Draws the solid cube
-    DrawCubeWiresV(o.getPos(), o.getSize(), DARKBLUE);     // Draws the wireframe of the cube
+    // Draw the object using a shared cube model scaled to the object's size.
+    // DrawModelEx handles translation, rotation (axis + angle) and scale.
+    DrawModelEx(this->cubeModel, o.getPos(), o.getRotationAxis(), o.getRotationAngle(), o.getSize(), TOWER_COLOR);
+
+    // Draw wireframe using extended function to match rotation and scale
+    DrawModelWiresEx(this->cubeModel, o.getPos(), o.getRotationAxis(), o.getRotationAngle(), o.getSize(), DARKBLUE);
 }
 
 // Adds an entity to the scene
@@ -89,4 +103,8 @@ Scene::Scene()
     this->objects.push_back(Object(towerSize, towerPos));
     towerPos.x *= -1;
     this->objects.push_back(Object(towerSize, towerPos));
+
+    // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
+    Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
+    this->cubeModel = LoadModelFromMesh(cubeMesh);
 }
