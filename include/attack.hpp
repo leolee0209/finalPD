@@ -72,7 +72,9 @@ private:
     TripletState state;
     Vector3 averageConnectorPos;
     bool isFalling;
+    float fallingTimer;
     std::vector<Projectile> projectiles;
+    std::vector<float> connectorForward;
     float connectingTimer;
 
     // Connector objects (long thin boxes) that visually connect projectiles.
@@ -87,6 +89,7 @@ public:
         state = READY;
         connectingTimer = 0;
         isFalling = false;
+        fallingTimer = 0.f;
     }
 
     void spawnProjectile();

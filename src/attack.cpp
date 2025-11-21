@@ -3,6 +3,22 @@
 #include "constant.hpp"
 #include <raymath.h>
 #include <iostream>
+
+Quaternion GetQuaternionFromForward(Vector3 forward)
+{
+    Vector3 modelForward = {0.0f, 0.0f, 1.0f};
+    Vector3 fNorm = Vector3Normalize(forward);
+    float angleRad = Vector3Angle(modelForward, fNorm);
+    Vector3 rotAxis = Vector3CrossProduct(modelForward, fNorm);
+    if (Vector3LengthSqr(rotAxis) < 1e-6f) // Use Sqr for efficiency
+    {
+        // Fallback axis when vectors are parallel or anti-parallel
+        rotAxis = {0.0f, 1.0f, 0.0f};
+    }
+    rotAxis = Vector3Normalize(rotAxis);
+    return QuaternionFromAxisAngle(rotAxis, angleRad);
+}
+
 // Activates the final phase of the ThousandAttack
 // All projectiles move toward the calculated destination point
 void ThousandAttack::activateFinal()
@@ -301,20 +317,28 @@ void TripletAttack::update()
                     z += p.pos().z;
                 }
                 this->averageConnectorPos = {x / size, y / size, z / size};
+
+                for (auto &c : this->connectors)
+                {
+                    Vector3 originalDirection = Vector3RotateByQuaternion({0.0f, 0.0f, 1.0f}, c.rotation);
+                    this->connectorForward.push_back(0);
+                }
             }
         }
         else
         {
             bool allConnectorsAtDestination = true;
-            const float fallingSpeed = 30.0f;
-            for (auto &c : this->connectors)
+            const float fallingSpeed = 1.5f;
+            for (int i = 0; i < this->connectors.size(); i++)
             {
-                if (Vector3DistanceSqr(c.pos, this->averageConnectorPos) > 0.1f)
+
+                allConnectorsAtDestination = false;
+                Vector3 originalDirection = Vector3RotateByQuaternion({0.0f, 0.0f, 1.0f}, this->connectors[i].rotation);
+                this->connectors[i].rotate(originalDirection, fallingSpeed);
+                this->connectorForward[i] += fallingSpeed;
+                if (this->connectorForward[i] >= 90)
                 {
-                    allConnectorsAtDestination = false;
-                    Vector3 direction = Vector3Normalize(Vector3Subtract(this->averageConnectorPos, c.pos));
-                    c.setRotationFromForward(direction);
-                    c.pos = Vector3MoveTowards(c.pos, this->averageConnectorPos, fallingSpeed * GetFrameTime());
+                    allConnectorsAtDestination = true;
                 }
             }
 

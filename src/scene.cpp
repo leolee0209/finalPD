@@ -17,10 +17,13 @@ void Scene::DrawRectangle(const Object &o) const
 {
     // Draw the object using a shared cube model scaled to the object's size.
     // DrawModelEx handles translation, rotation (axis + angle) and scale.
-    DrawModelEx(this->cubeModel, o.getPos(), o.getRotationAxis(), o.getRotationAngle(), o.getSize(), TOWER_COLOR);
+    Vector3 axis;
+    float angle;
+    o.getRotationAxisAngle(axis, angle);
+    DrawModelEx(this->cubeModel, o.getPos(), axis, angle, o.getSize(), TOWER_COLOR);
 
     // Draw wireframe using extended function to match rotation and scale
-    DrawModelWiresEx(this->cubeModel, o.getPos(), o.getRotationAxis(), o.getRotationAngle(), o.getSize(), DARKBLUE);
+    DrawModelWiresEx(this->cubeModel, o.getPos(), axis, angle, o.getSize(), DARKBLUE);
 }
 
 // Adds an entity to the scene

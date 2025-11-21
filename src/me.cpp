@@ -101,10 +101,5 @@ void Projectile::UpdateBody()
         this->velocity.y = 0;
         this->grounded = true;
     }
-    this->o = Object(
-        this->o.getSize(),
-        this->position,
-        this->o.getRotationAxis(),
-        this->o.getRotationAngle()
-    );
+    this->o.pos = this->position;
 }
