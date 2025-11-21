@@ -8,11 +8,11 @@
 class Entity
 {
 protected:
-    Object o;             // The object representing the entity's physical body
-    Vector3 position;     // Current position of the entity
-    Vector3 velocity;     // Current velocity of the entity
-    Vector3 direction;    // Current movement direction of the entity
-    bool grounded;        // Whether the entity is on the ground
+    Object o;          // The object representing the entity's physical body
+    Vector3 position;  // Current position of the entity
+    Vector3 velocity;  // Current velocity of the entity
+    Vector3 direction; // Current movement direction of the entity
+    bool grounded;     // Whether the entity is on the ground
 
 public:
     // Default constructor initializes the entity with default values
@@ -38,7 +38,7 @@ public:
     const Vector3 &vel() const { return this->velocity; }
     const Vector3 &dir() const { return this->direction; }
     const Object &obj() const { return this->o; }
-    bool isGrounded() { return this->grounded; }
+    bool isGrounded() const { return this->grounded; }
 
     // Virtual function to update the entity's body (to be overridden by derived classes)
     virtual void UpdateBody() {};
@@ -48,8 +48,8 @@ public:
 class Me : public Entity
 {
 private:
-    int health;          // Player's health
-    MyCamera camera;     // Camera associated with the player
+    int health;      // Player's health
+    MyCamera camera; // Camera associated with the player
 
 public:
     // Default constructor initializes the player with default values
@@ -81,7 +81,7 @@ public:
 class Enemy : public Entity
 {
 private:
-    int health;          // Enemy's health
+    int health; // Enemy's health
 
 public:
     // Default constructor initializes the enemy with default values
@@ -102,8 +102,8 @@ public:
 class Projectile : public Entity
 {
 private:
-    float friction;      // Friction applied to the projectile when grounded
-    float airDrag;       // Air drag applied to the projectile when in the air
+    float friction; // Friction applied to the projectile when grounded
+    float airDrag;  // Air drag applied to the projectile when in the air
 
 public:
     // Default constructor initializes the projectile with default values

@@ -8,6 +8,7 @@ class AttackManager
 {
 private:
     std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
+    std::vector<TripletAttack *> tripletAttack;
 
 public:
     ~AttackManager(); // Destructor to clean up dynamically allocated attacks
@@ -17,6 +18,7 @@ public:
 
     // Retrieves or creates a ThousandAttack for the given entity
     ThousandAttack *getThousandAttack(Entity *spawnedBy);
+    TripletAttack *getTripletAttack(Entity *spawnedBy);
 
     // Returns a list of objects representing all projectiles for rendering or collision detection
     std::vector<const Object *> getObjects() const;

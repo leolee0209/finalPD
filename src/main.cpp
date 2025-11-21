@@ -34,6 +34,10 @@ int main(void)
         {
             scene.am.getThousandAttack(&player)->spawnProjectile();
         }
+        if (IsKeyPressed(KEY_E))
+        {
+            scene.am.getTripletAttack(&player)->spawnProjectile();
+        }
 
         //----------------------------------------------------------------------------------
 

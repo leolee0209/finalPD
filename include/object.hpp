@@ -5,12 +5,11 @@
 class Object // maybe first expect it to be a box(3d rectangle)
 {
 protected:
+public:
     Vector3 size;         // Dimensions of the object (width, height, depth)
     Vector3 pos;          // Position of the object in 3D space
     Vector3 rotationAxis; // Axis to rotate around (default up)
     float rotationAngle;  // Rotation angle in degrees
-
-public:
     // Checks if the object has collided with another object
     // TODO: Replace `bool` with a more detailed "collision information" structure
     bool collided();
