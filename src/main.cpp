@@ -3,6 +3,8 @@
 #include "me.hpp"
 #include "scene.hpp"
 #include "attackManager.hpp"
+#include "uiManager.hpp"
+#include "resource_dir.hpp"
 
 int main(void)
 {
@@ -12,9 +14,12 @@ int main(void)
     const int screenHeight = 450;
 
     InitWindow(screenWidth, screenHeight, "raylib [core] example - 3d camera fps");
+    SearchAndSetResourceDir("resources");
 
     Me player;
     Scene scene;
+    UIManager uiManager("mahjong.png", 9, 44, 60);
+    uiManager.muim.addTile(MahjongTileType::CHARACTER_6, {10, 10});
 
     DisableCursor();  // Limit cursor to relative movement inside the window
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
@@ -47,6 +52,7 @@ int main(void)
         //----------------------------------------------------------------------------------
 
         scene.Update();
+        uiManager.update();
 
         // Draw-----------------------------------------------------------------------------
         BeginDrawing();
@@ -57,14 +63,7 @@ int main(void)
         scene.DrawScene();
         EndMode3D();
 
-        // Draw info box
-        DrawRectangle(5, 5, 330, 75, Fade(SKYBLUE, 0.5f));
-        DrawRectangleLines(5, 5, 330, 75, BLUE);
-
-        DrawText("Camera controls:", 15, 15, 10, BLACK);
-        DrawText("- Move keys: W, A, S, D, Space, Left-Ctrl", 15, 30, 10, BLACK);
-        DrawText("- Look around: arrow keys or mouse", 15, 45, 10, BLACK);
-        // DrawText(TextFormat("- Velocity Len: (%06.3f)", Vector2Length({player.velocity.x, player.velocity.z})), 15, 60, 10, BLACK);
+        uiManager.draw();
 
         EndDrawing();
         //----------------------------------------------------------------------------------
@@ -72,6 +71,7 @@ int main(void)
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
+    uiManager.cleanup();
     CloseWindow(); // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
 
