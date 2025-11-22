@@ -1,33 +1,40 @@
 #pragma once
 #include <vector>
 #include <raylib.h>
-// TODO maybe holds information for a single thing(pos, mesh...)
-class Object // maybe first expect it to be a box(3d rectangle)
-{
-private:
-    Vector3 size;
-    Vector3 pos;
+#include "attackManager.hpp"
+#include "me.hpp"
+#include "object.hpp"
 
-public:
-    bool collided(); // maybe change bool to "collision information" to better convey collision
-    const Vector3 &getSize() { return this->size; }
-    const Vector3 &getPos() { return this->pos; }
-    Object() {};
-    Object(Vector3 sizes, Vector3 poss)
-    {
-        this->size = sizes;
-        this->pos = poss;
-    };
-};
+// The Scene class represents the game world, including entities, objects, and attacks.
 class Scene
 {
 private:
-    std::vector<Object> objects;
-    Object floor;
-    void DrawRectangle(Object &o);
+    std::vector<Entity> entities; // List of entities in the scene (e.g., enemies, NPCs)
+    std::vector<Object> objects;  // List of static objects in the scene (e.g., towers, obstacles)
+    Object floor;                 // Represents the floor of the scene
+
+    // Helper function to draw a 3D rectangle (cube) for an object
+    void DrawRectangle(const Object &o) const;
 
 public:
-    void DrawScene();
+    AttackManager am; // Manages all attacks in the scene
+    Model cubeModel;   // Shared cube model used to render rotated cubes
+
+    // Destructor (will unload model in implementation)
+    ~Scene();
+
+    // Adds an entity to the scene
+    void addEntity(Entity e);
+
+    // Draws the entire scene, including objects, entities, and attacks
+    void DrawScene() const;
+
+    // Updates all entities and attacks in the scene
+    void Update();
+
+    // Constructor initializes the scene with default objects
     Scene();
-    bool collided(); // TODO check collision for all objects
+
+    // Checks for collisions between objects (not implemented yet)
+    bool collided(); // TODO: Implement collision detection for all objects
 };

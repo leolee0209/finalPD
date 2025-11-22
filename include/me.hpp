@@ -1,55 +1,134 @@
 #pragma once
 #include <raylib.h>
 #include <constant.hpp>
-#include "scene.hpp"
+#include "object.hpp"
+#include "mycamera.hpp"
+
+// Base class for all entities in the game (e.g., player, enemies, projectiles)
 class Entity
 {
 protected:
-    Vector3 position;
-    Vector3 velocity;
-    Vector3 dir;
-    bool grounded;
-    int health;
+    Object o;          // The object representing the entity's physical body
+    Vector3 position;  // Current position of the entity
+    Vector3 velocity;  // Current velocity of the entity
+    Vector3 direction; // Current movement direction of the entity
+    bool grounded;     // Whether the entity is on the ground
 
 public:
+    // Default constructor initializes the entity with default values
     Entity()
     {
         position = {0};
         velocity = {0};
-        dir = {0};
+        direction = {0};
         grounded = true;
     }
-    float px() { return this->position.x; }
-    float py() { return this->position.y; }
-    float pz() { return this->position.z; }
-    bool isGrounded() { return this->grounded; }
+
+    // Parameterized constructor initializes the entity with specific values
+    Entity(Vector3 pos, Vector3 vel, Vector3 d, bool g)
+    {
+        position = pos;
+        velocity = vel;
+        direction = d;
+        grounded = g;
+    }
+
+    // Getters for entity properties
+    const Vector3 &pos() const { return this->position; }
+    const Vector3 &vel() const { return this->velocity; }
+    const Vector3 &dir() const { return this->direction; }
+    const Object &obj() const { return this->o; }
+    bool isGrounded() const { return this->grounded; }
+
+    // Virtual function to update the entity's body (to be overridden by derived classes)
+    virtual void UpdateBody() {};
 };
 
+// Class representing the player character
 class Me : public Entity
 {
+private:
+    int health;      // Player's health
+    MyCamera camera; // Camera associated with the player
+
 public:
+    // Default constructor initializes the player with default values
     Me()
     {
         position = {0};
         velocity = {0};
-        dir = {0};
+        direction = {0};
         grounded = true;
         health = MAX_HEALTH_ME;
+
+        camera = MyCamera(this->position); // Initialize the camera with the player's position
     }
-    void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold);
+
+    // Updates the player's body (movement, jumping, etc.)
+    void UpdateBody(char side, char forward, bool jumpPressed, bool crouchHold);
+
+    // Updates the player's camera based on movement and actions
+    void UpdateCamera(char side, char forward, bool crouchHold);
+
+    // Getter for the player's camera
+    const Camera &getCamera() { return this->camera.getCamera(); }
+
+    // Getter for the player's look rotation (used for aiming and movement direction)
+    Vector2 &getLookRotation() { return this->camera.lookRotation; }
 };
+
+// Class representing an enemy entity
 class Enemy : public Entity
 {
 private:
-    Object o;
+    int health; // Enemy's health
+
 public:
+    // Default constructor initializes the enemy with default values
     Enemy()
     {
         position = {0};
         velocity = {0};
-        dir = {0};
+        direction = {0};
         grounded = true;
         health = MAX_HEALTH_ENEMY;
     }
+
+    // Updates the enemy's body (movement, jumping, etc.)
     void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold);
+};
+
+// Class representing a projectile (e.g., bullets, missiles)
+class Projectile : public Entity
+{
+private:
+    float friction; // Friction applied to the projectile when grounded
+    float airDrag;  // Air drag applied to the projectile when in the air
+
+public:
+    // Default constructor initializes the projectile with default values
+    Projectile()
+    {
+        position = {0};
+        velocity = {0};
+        direction = {0};
+        grounded = false;
+        friction = PROJECTILE_FRICTION;
+        airDrag = PROJECTILE_AIR_DRAG;
+    }
+
+    // Parameterized constructor initializes the projectile with specific values
+    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird)
+    {
+        this->position = pos;
+        this->velocity = vel;
+        this->direction = d;
+        this->grounded = g;
+        this->o = o1;
+        this->friction = fric;
+        this->airDrag = aird;
+    }
+
+    // Updates the projectile's body (movement, gravity, etc.)
+    void UpdateBody() override;
 };
