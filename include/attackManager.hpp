@@ -21,5 +21,5 @@ public:
     TripletAttack *getTripletAttack(Entity *spawnedBy);
 
     // Returns a list of objects representing all projectiles for rendering or collision detection
-    std::vector<const Object *> getObjects() const;
+    std::vector< Object *> getObjects() const;
 };

@@ -49,10 +49,10 @@ public:
     void update() override;
 
     // Returns a list of objects representing the projectiles for rendering or collision detection
-    std::vector<const Object *> obj()
+    std::vector< Object *> obj()
     {
-        std::vector<const Object *> ret;
-        for (const auto &p : this->projectiles)
+        std::vector< Object *> ret;
+        for ( auto &p : this->projectiles)
             ret.push_back(&p.obj());
         return ret;
     }
@@ -96,12 +96,12 @@ public:
     void update() override;
 
     // Return projectile objects and connector objects for rendering
-    std::vector<const Object *> obj()
+    std::vector< Object *> obj()
     {
-        std::vector<const Object *> ret;
-        for (const auto &p : this->projectiles)
+        std::vector< Object *> ret;
+        for ( auto &p : this->projectiles)
             ret.push_back(&p.obj());
-        for (const auto &c : this->connectors)
+        for ( auto &c : this->connectors)
             ret.push_back(&c);
         return ret;
     }

@@ -42,7 +42,7 @@ int main(void)
         //----------------------------------------------------------------------------------
 
         // Update Player---------------------------------------------------------------------------
-        player.UpdateBody(sideway, forward, IsKeyPressed(KEY_SPACE), crouching);
+        player.UpdateBody(scene, sideway, forward, IsKeyPressed(KEY_SPACE), crouching);
         player.UpdateCamera(sideway, forward, crouching);
         //----------------------------------------------------------------------------------
 

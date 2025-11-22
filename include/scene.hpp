@@ -14,7 +14,7 @@ private:
     Object floor;                 // Represents the floor of the scene
 
     // Helper function to draw a 3D rectangle (cube) for an object
-    void DrawRectangle(const Object &o) const;
+    void DrawRectangle( Object &o) const;
 
 public:
     AttackManager am; // Manages all attacks in the scene
@@ -35,6 +35,6 @@ public:
     // Constructor initializes the scene with default objects
     Scene();
 
-    // Checks for collisions between objects (not implemented yet)
-    bool collided(); // TODO: Implement collision detection for all objects
+    // Getter for the list of objects in the scene
+    std::vector<Object>& getObjects() ;
 };

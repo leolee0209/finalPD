@@ -46,9 +46,9 @@ TripletAttack *AttackManager::getTripletAttack(Entity *spawnedBy)
 }
 
 // Returns a list of objects representing all projectiles for rendering or collision detection
-std::vector<const Object *> AttackManager::getObjects() const
+std::vector<Object *> AttackManager::getObjects() const
 {
-    std::vector<const Object *> ret;
+    std::vector<Object *> ret;
 
     // Collect objects from all ThousandAttack instances
     for (const auto &a : this->thousandAttack)

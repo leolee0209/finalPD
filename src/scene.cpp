@@ -13,7 +13,7 @@ Scene::~Scene()
 }
 
 // Draws a 3D rectangle (cube) for the given object
-void Scene::DrawRectangle(const Object &o) const
+void Scene::DrawRectangle(Object &o) const
 {
     // Draw the object using a shared cube model scaled to the object's size.
     // DrawModelEx handles translation, rotation (axis + angle) and scale.
@@ -35,8 +35,8 @@ void Scene::addEntity(Entity e)
 // Draws the entire scene, including the floor, objects, entities, and attacks
 void Scene::DrawScene() const
 {
-    const int floorExtent = 25;       // Extent of the floor in both x and z directions
-    const float tileSize = 5.0f;      // Size of each floor tile
+    const int floorExtent = 25;                    // Extent of the floor in both x and z directions
+    const float tileSize = 5.0f;                   // Size of each floor tile
     const Color tileColor1 = {150, 200, 200, 255}; // Primary tile color
 
     // Draw the floor as a grid of tiles
@@ -56,13 +56,13 @@ void Scene::DrawScene() const
     }
 
     // Draw all static objects in the scene
-    for (const auto &o : this->objects)
+    for (auto o : this->objects)
     {
         DrawRectangle(o);
     }
 
     // Draw all entities in the scene
-    for (const auto &o : this->entities)
+    for (auto o : this->entities)
     {
         DrawRectangle(o.obj());
     }
@@ -110,4 +110,11 @@ Scene::Scene()
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     this->cubeModel = LoadModelFromMesh(cubeMesh);
+}
+
+
+// Getter for the list of objects in the scene
+std::vector<Object>& Scene::getObjects() 
+{
+    return this->objects;
 }

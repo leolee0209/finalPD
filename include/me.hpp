@@ -4,6 +4,8 @@
 #include "object.hpp"
 #include "mycamera.hpp"
 
+class Scene;
+
 // Base class for all entities in the game (e.g., player, enemies, projectiles)
 class Entity
 {
@@ -37,11 +39,12 @@ public:
     const Vector3 &pos() const { return this->position; }
     const Vector3 &vel() const { return this->velocity; }
     const Vector3 &dir() const { return this->direction; }
+    Object &obj() { return this->o; }
     const Object &obj() const { return this->o; }
     bool isGrounded() const { return this->grounded; }
 
     // Virtual function to update the entity's body (to be overridden by derived classes)
-    virtual void UpdateBody() {};
+    virtual void UpdateBody(Scene* scene = nullptr) {};
 };
 
 // Class representing the player character
@@ -65,7 +68,7 @@ public:
     }
 
     // Updates the player's body (movement, jumping, etc.)
-    void UpdateBody(char side, char forward, bool jumpPressed, bool crouchHold);
+    void UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, bool crouchHold);
 
     // Updates the player's camera based on movement and actions
     void UpdateCamera(char side, char forward, bool crouchHold);
@@ -95,7 +98,7 @@ public:
     }
 
     // Updates the enemy's body (movement, jumping, etc.)
-    void UpdateBody(float rot, char side, char forward, bool jumpPressed, bool crouchHold);
+    void UpdateBody(Scene& scene, float rot, char side, char forward, bool jumpPressed, bool crouchHold);
 };
 
 // Class representing a projectile (e.g., bullets, missiles)
@@ -130,5 +133,5 @@ public:
     }
 
     // Updates the projectile's body (movement, gravity, etc.)
-    void UpdateBody() override;
+    void UpdateBody(Scene* scene = nullptr) override;
 };

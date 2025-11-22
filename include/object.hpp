@@ -1,6 +1,7 @@
 #pragma once
 #include <raylib.h>
 #include <raymath.h>
+#include "obb.hpp"
 
 class Object // maybe first expect it to be a box(3d rectangle)
 {
@@ -8,10 +9,12 @@ public:
     Vector3 size;
     Vector3 pos;
     Quaternion rotation;
+    OBB obb;
 
     // Checks if the object has collided with another object
-    // TODO: Replace `bool` with a more detailed "collision information" structure
-    bool collided();
+    CollisionResult collided(Object& other);
+
+    void UpdateOBB();
 
     // Getter for the object's size
     const Vector3 &getSize() const { return this->size; }
