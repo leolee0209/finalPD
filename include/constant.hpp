@@ -21,3 +21,6 @@
 #define MAX_HEALTH_ENEMY 100
 
 #define TOWER_COLOR {150, 200, 200, 255}
+
+#define  SCREEN_WIDTH  800
+#define  SCREEN_HEIGHT  450

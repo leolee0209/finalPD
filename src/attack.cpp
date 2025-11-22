@@ -3,6 +3,7 @@
 #include "constant.hpp"
 #include <raymath.h>
 #include <iostream>
+#include <algorithm>
 
 Quaternion GetQuaternionFromForward(Vector3 forward)
 {
@@ -40,7 +41,7 @@ void ThousandAttack::activateFinal()
     {
         Vector3 newDir = Vector3Normalize({this->dest.x - p.pos().x, 0, this->dest.z - p.pos().z});
         Vector3 newVel = {newDir.x * ThousandAttack::finalVel, 0, newDir.z * ThousandAttack::finalVel};
-        p = Projectile(p.pos(), newVel, newDir, p.isGrounded(), p.obj(), 1, 1);
+        p = Projectile(p.pos(), newVel, newDir, p.isGrounded(), p.obj(), 1, 1, p.type);
     }
 }
 
@@ -48,43 +49,32 @@ void ThousandAttack::activateFinal()
 // Removes projectiles that have reached the destination or overshot it
 bool ThousandAttack::endFinal()
 {
-    std::vector<int> remove; // Indices of projectiles to remove
-
-    for (int i = 0; i < this->projectiles.size(); i++)
+    auto should_remove = [&](const Projectile &p)
     {
-        const Projectile &p = this->projectiles[i];
-
-        // Check if the projectile is within a small margin of the destination
         if (Vector3DistanceSqr(p.pos(), this->dest) <= 0.1f)
         {
-            remove.push_back(i);
+            return true;
         }
-        else
+        // Check if the projectile has overshot the destination
+        Vector3 toDest = Vector3Subtract(this->dest, p.pos());
+        if (Vector3DotProduct(toDest, p.vel()) <= 0) // Negative dot product means it's moving away
         {
-            // Check if the projectile has overshot the destination
-            Vector3 toDest = Vector3Subtract(this->dest, p.pos());
-            float dotProduct = Vector3DotProduct(toDest, p.vel());
-            if (dotProduct <= 0) // Negative dot product means it's moving away
-            {
-                remove.push_back(i);
-            }
+            return true;
         }
-    }
+        return false;
+    };
 
-    // Remove projectiles that are no longer valid
-    for (const auto &i : remove)
-    {
-        this->projectiles[i] = this->projectiles.back();
-        this->projectiles.pop_back();
-        this->count--;
-    }
+    size_t old_size = this->projectiles.size();
+    this->projectiles.erase(
+        std::remove_if(this->projectiles.begin(), this->projectiles.end(), should_remove),
+        this->projectiles.end());
+    this->count -= (old_size - this->projectiles.size());
 
     // Return true if all projectiles have been removed
-    return this->projectiles.size() == 0;
+    return this->projectiles.empty();
 }
 
-// Spawns a new projectile for the ThousandAttack
-void ThousandAttack::spawnProjectile()
+void ThousandAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, Rectangle tile_rect)
 {
     float yaw;
     float pitch;
@@ -98,6 +88,7 @@ void ThousandAttack::spawnProjectile()
     else // If spawned by another entity (e.g., enemy)
     {
         // TODO: Implement behavior for other entities
+        return;
     }
 
     // Compute the forward direction vector based on yaw and pitch
@@ -117,6 +108,9 @@ void ThousandAttack::spawnProjectile()
     Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
     Object o({1, 1, 1}, pos);
     o.setRotationFromForward(forward);
+    o.useTexture = true;
+    o.texture = texture;
+    o.sourceRect = tile_rect;
 
     // Create the projectile and add it to the list
     Projectile projectile(
@@ -126,7 +120,8 @@ void ThousandAttack::spawnProjectile()
         false,   // Not grounded
         o,       // Object representation
         FRICTION,
-        AIR_DRAG);
+        AIR_DRAG,
+        tile);
 
     this->projectiles.push_back(projectile);
     this->count++;
@@ -145,7 +140,17 @@ void ThousandAttack::update()
     // Check if the final phase should be activated
     if (!this->activated && this->projectiles.size() >= ThousandAttack::activate)
     {
-        if (this->projectiles.back().isGrounded())
+        bool allGrounded = true;
+        for (const auto &p : this->projectiles)
+        {
+            if (!p.isGrounded())
+            {
+                allGrounded = false;
+                break;
+            }
+        }
+
+        if (allGrounded)
         {
             this->activated = true;
             activateFinal();
@@ -164,14 +169,12 @@ void ThousandAttack::update()
 
 // TripletAttack implementation
 
-void TripletAttack::spawnProjectile()
+void TripletAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, Rectangle tile_rect)
 {
     if (projectiles.size() >= 3)
     {
         return;
     }
-
-    state = SHOOTING;
 
     float yaw;
     float pitch;
@@ -200,6 +203,9 @@ void TripletAttack::spawnProjectile()
     Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
     Object o({1, 1, 1}, pos);
     o.setRotationFromForward(forward);
+    o.useTexture = true;
+    o.texture = texture;
+    o.sourceRect = tile_rect;
 
     // Create the projectile and add it to the list
     Projectile projectile(
@@ -209,7 +215,8 @@ void TripletAttack::spawnProjectile()
         false,   // Not grounded
         o,       // Object representation
         FRICTION,
-        AIR_DRAG);
+        AIR_DRAG,
+        tile);
 
     this->projectiles.push_back(projectile);
 }
@@ -225,9 +232,6 @@ void TripletAttack::update()
     switch (state)
     {
     case READY:
-        // Do nothing, waiting for spawnProjectile to be called
-        break;
-    case SHOOTING:
         if (projectiles.size() >= 3)
         {
             // once all 3 projectiles are on the ground, switch to connecting
@@ -355,4 +359,92 @@ void TripletAttack::update()
         state = READY;
         break;
     }
+}
+
+void SingleTileAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, Rectangle tile_rect)
+{
+    float yaw;
+    float pitch;
+
+    if (Me *player = dynamic_cast<Me *>(this->spawnedBy))
+    {
+        yaw = player->getLookRotation().x;
+        pitch = player->getLookRotation().y;
+    }
+    else
+    {
+        return;
+    }
+
+    Vector3 forward = {
+        cosf(pitch) * sinf(yaw),
+        0.0f,
+        cosf(pitch) * cosf(yaw)};
+    forward = Vector3Normalize(forward);
+
+    Vector3 vel = {-forward.x * 30 + this->spawnedBy->vel().x, 16, -forward.z * 30 + this->spawnedBy->vel().z};
+    Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
+    Object o({1, 1, 1}, pos);
+    o.setRotationFromForward(forward);
+    o.useTexture = true;
+    o.texture = texture;
+    o.sourceRect = tile_rect;
+
+    Projectile projectile(
+        pos,
+        vel,
+        forward,
+        false,
+        o,
+        FRICTION,
+        AIR_DRAG,
+        tile);
+
+    this->projectiles.push_back(projectile);
+    // this->lifetime.push_back(2.0f); // 2 seconds lifetime
+}
+
+void SingleTileAttack::update()
+{
+    for (auto &p : projectiles)
+    {
+        p.UpdateBody();
+    }
+
+    // for (int i = 0; i < projectiles.size(); i++)
+    // {
+    //     lifetime[i] -= GetFrameTime();
+    //     if (lifetime[i] <= 0)
+    //     {
+    //         projectiles.erase(projectiles.begin() + i);
+    //         lifetime.erase(lifetime.begin() + i);
+    //         i--;
+    //     }
+    // }
+}
+
+void ThousandAttack::addProjectiles(std::vector<Projectile> &&new_projectiles)
+{
+    projectiles.insert(projectiles.end(), std::make_move_iterator(new_projectiles.begin()), std::make_move_iterator(new_projectiles.end()));
+    this->count = projectiles.size();
+}
+
+void TripletAttack::addProjectiles(std::vector<Projectile> &&new_projectiles)
+{
+    projectiles.insert(projectiles.end(), std::make_move_iterator(new_projectiles.begin()), std::make_move_iterator(new_projectiles.end()));
+}
+
+std::vector<Projectile> SingleTileAttack::takeLastProjectiles(int n)
+{
+    std::vector<Projectile> taken;
+    if (projectiles.size() < n)
+    {
+        return taken;
+    }
+
+    auto start_it = projectiles.end() - n;
+    taken.insert(taken.end(), std::make_move_iterator(start_it), std::make_move_iterator(projectiles.end()));
+    projectiles.erase(start_it, projectiles.end());
+
+    return taken;
 }

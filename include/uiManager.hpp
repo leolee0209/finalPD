@@ -83,8 +83,12 @@ public:
     }
 
     void addTile(MahjongTileType type, Vector2 position);
+    void createPlayerHand(int screenWidth, int screenHeight);
     void update();
     void draw();
+    void nextTile();
+    void previousTile();
+    MahjongTileType getSelectedTile();
 
     // Returns the source rectangle for a given tile type.
     Rectangle getTile(MahjongTileType type)
@@ -99,7 +103,11 @@ public:
         return {x, y, static_cast<float>(this->tileWidth), static_cast<float>(this->tileHeight)};
     }
 
+    Texture2D& getSpriteSheet() { return spriteSheet; }
+
 private:
+    int selectedTileIndex = 0;
+    std::vector<MahjongTileType> playerHand;
     int tilesPerRow;
     int tileWidth, tileHeight;
     Texture2D spriteSheet;

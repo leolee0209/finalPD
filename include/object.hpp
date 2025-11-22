@@ -10,6 +10,9 @@ public:
     Vector3 pos;
     Quaternion rotation;
     OBB obb;
+    Texture2D* texture = nullptr;
+    Rectangle sourceRect;
+    bool useTexture = false;
 
     // Checks if the object has collided with another object
     CollisionResult collided(Object& other);

@@ -3,6 +3,7 @@
 #include <constant.hpp>
 #include "object.hpp"
 #include "mycamera.hpp"
+#include "uiManager.hpp"
 
 class Scene;
 
@@ -42,6 +43,10 @@ public:
     Object &obj() { return this->o; }
     const Object &obj() const { return this->o; }
     bool isGrounded() const { return this->grounded; }
+
+    // Setters for entity properties
+    void setVelocity(const Vector3 &newVel) { this->velocity = newVel; }
+    void setDirection(const Vector3 &newDir) { this->direction = newDir; }
 
     // Virtual function to update the entity's body (to be overridden by derived classes)
     virtual void UpdateBody(Scene* scene = nullptr) {};
@@ -109,6 +114,7 @@ private:
     float airDrag;  // Air drag applied to the projectile when in the air
 
 public:
+    MahjongTileType type;
     // Default constructor initializes the projectile with default values
     Projectile()
     {
@@ -121,7 +127,7 @@ public:
     }
 
     // Parameterized constructor initializes the projectile with specific values
-    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird)
+    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird, MahjongTileType _type)
     {
         this->position = pos;
         this->velocity = vel;
@@ -130,6 +136,7 @@ public:
         this->o = o1;
         this->friction = fric;
         this->airDrag = aird;
+        this->type = _type;
     }
 
     // Updates the projectile's body (movement, gravity, etc.)

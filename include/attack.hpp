@@ -3,6 +3,7 @@
 #include <vector>
 #include "object.hpp"
 #include <raylib.h>
+#include "uiManager.hpp"
 
 // Base class for all attack controllers, attack instances stored in attackManager
 class AttackController
@@ -43,10 +44,13 @@ public:
     }
 
     // Spawns a new projectile for this attack
-    void spawnProjectile();
+    void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
+    void addProjectiles(std::vector<Projectile>&& new_projectiles);
 
     // Updates the state of the attack (e.g., moves projectiles, checks for activation)
     void update() override;
+
+    bool isActivated() const { return this->activated; }
 
     // Returns a list of objects representing the projectiles for rendering or collision detection
     std::vector< Object *> obj()
@@ -64,7 +68,6 @@ private:
     enum TripletState
     {
         READY,
-        SHOOTING,
         CONNECTING,
         FINAL,
         DONE
@@ -92,7 +95,8 @@ public:
         fallingTimer = 0.f;
     }
 
-    void spawnProjectile();
+    void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
+    void addProjectiles(std::vector<Projectile>&& new_projectiles);
     void update() override;
 
     // Return projectile objects and connector objects for rendering
@@ -103,6 +107,30 @@ public:
             ret.push_back(&p.obj());
         for ( auto &c : this->connectors)
             ret.push_back(&c);
+        return ret;
+    }
+};
+
+class SingleTileAttack : public AttackController
+{
+private:
+    std::vector<Projectile> projectiles;
+    std::vector<float> lifetime;
+
+public:
+    SingleTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
+    void update() override;
+
+    std::vector<Projectile> takeLastProjectiles(int n);
+    std::vector<Projectile>& getProjectiles() { return this->projectiles; }
+
+    std::vector<Object *> obj()
+    {
+        std::vector<Object *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p.obj());
         return ret;
     }
 };

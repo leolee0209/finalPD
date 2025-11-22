@@ -14,11 +14,12 @@ private:
     Object floor;                 // Represents the floor of the scene
 
     // Helper function to draw a 3D rectangle (cube) for an object
-    void DrawRectangle( Object &o) const;
-
+    void DrawRectangle(Object &o) const;
+    void DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color) const;                      // Draw cube textured
+    void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position, float width, float height, float length, Color color) const; // Draw cube with a region of a texture
 public:
     AttackManager am; // Manages all attacks in the scene
-    Model cubeModel;   // Shared cube model used to render rotated cubes
+    Model cubeModel;  // Shared cube model used to render rotated cubes
 
     // Destructor (will unload model in implementation)
     ~Scene();
@@ -36,5 +37,5 @@ public:
     Scene();
 
     // Getter for the list of objects in the scene
-    std::vector<Object>& getObjects() ;
+    std::vector<Object> &getObjects();
 };

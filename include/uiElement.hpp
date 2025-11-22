@@ -12,6 +12,11 @@ public:
     virtual void draw() = 0;
     virtual void update() = 0;
 
+    virtual Rectangle getBounds() const
+    {
+        return {position.x, position.y, size.x, size.y};
+    }
+
 protected:
     Vector2 position;
     Vector2 size;
