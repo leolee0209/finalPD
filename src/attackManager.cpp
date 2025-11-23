@@ -13,14 +13,14 @@ AttackManager::~AttackManager()
 }
 
 // Updates all ThousandAttack instances
-void AttackManager::update()
+void AttackManager::update(UpdateContext& uc)
 {
     for (auto &a : this->thousandAttack)
-        a->update();
+        a->update(uc);
     for (auto &a : this->tripletAttack)
-        a->update();
+        a->update(uc);
     for (auto &a : this->singleTileAttack)
-        a->update();
+        a->update(uc);
 }
 
 void AttackManager::recordThrow(MahjongTileType tile, Entity* player, Texture2D* texture, Rectangle tile_rect)

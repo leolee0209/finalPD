@@ -1,5 +1,5 @@
 #include "object.hpp"
-
+#include "scene.hpp"
 void Object::UpdateOBB()
 {
     this->obb.center = this->pos;
@@ -7,7 +7,21 @@ void Object::UpdateOBB()
     this->obb.rotation = this->rotation;
 }
 
-CollisionResult Object::collided(Object& other)
+CollisionResult Object::collided(Object &thiso, Object &other)
 {
-    return GetCollisionOBBvsOBB(&this->obb, &other.obb);
+    other.UpdateOBB();
+    return GetCollisionOBBvsOBB(&thiso.obb, &other.obb);
+}
+
+std::vector<CollisionResult> Object::collided(Object &thiso, Scene *scene)
+{
+    std::vector<CollisionResult> r;
+    thiso.UpdateOBB();
+    for (auto &o : scene->getObjects())
+    {
+        CollisionResult cr = Object::collided(thiso, *o);
+        if (cr.collided)
+            r.push_back(cr);
+    }
+    return r;
 }

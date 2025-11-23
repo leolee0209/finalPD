@@ -4,7 +4,7 @@
 #include "object.hpp"
 #include <raylib.h>
 #include "uiManager.hpp"
-
+#include "updateContext.hpp"
 // Base class for all attack controllers, attack instances stored in attackManager
 class AttackController
 {
@@ -14,7 +14,7 @@ protected:
 
 public:
     Entity *const spawnedBy; // The entity (player or enemy) that spawned this attack
-    virtual void update() = 0; // Pure virtual function to update the attack
+    virtual void update(UpdateContext& uc) = 0; // Pure virtual function to update the attack
     virtual void draw() {}     // Virtual function for custom rendering
 };
 
@@ -48,7 +48,7 @@ public:
     void addProjectiles(std::vector<Projectile>&& new_projectiles);
 
     // Updates the state of the attack (e.g., moves projectiles, checks for activation)
-    void update() override;
+    void update(UpdateContext& uc) override;
 
     bool isActivated() const { return this->activated; }
 
@@ -97,7 +97,7 @@ public:
 
     void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
     void addProjectiles(std::vector<Projectile>&& new_projectiles);
-    void update() override;
+    void update(UpdateContext& uc) override;
 
     // Return projectile objects and connector objects for rendering
     std::vector< Object *> obj()
@@ -121,7 +121,7 @@ public:
     SingleTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
 
     void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
-    void update() override;
+    void update(UpdateContext& uc) override;
 
     std::vector<Projectile> takeLastProjectiles(int n);
     std::vector<Projectile>& getProjectiles() { return this->projectiles; }

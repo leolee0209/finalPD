@@ -2,7 +2,9 @@
 #include <raylib.h>
 #include <raymath.h>
 #include "obb.hpp"
+#include <vector>
 
+class Scene;
 class Object // maybe first expect it to be a box(3d rectangle)
 {
 public:
@@ -15,7 +17,8 @@ public:
     bool useTexture = false;
 
     // Checks if the object has collided with another object
-    CollisionResult collided(Object& other);
+    static CollisionResult collided(Object& thiso, Object& other);
+    static std::vector<CollisionResult> collided(Object &thiso, Scene* scene);
 
     void UpdateOBB();
 

@@ -129,12 +129,12 @@ void ThousandAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, R
 
 // Updates the Entities controlled by ThousandAttack
 // Handles projectile movement, activation of the final phase, and cleanup
-void ThousandAttack::update()
+void ThousandAttack::update(UpdateContext& uc)
 {
     // Update all projectiles
     for (auto &p : this->projectiles)
     {
-        p.UpdateBody();
+        p.UpdateBody(uc);
     }
 
     // Check if the final phase should be activated
@@ -221,12 +221,12 @@ void TripletAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, Re
     this->projectiles.push_back(projectile);
 }
 
-void TripletAttack::update()
+void TripletAttack::update(UpdateContext& uc)
 {
     // Update projectile physics first
     for (auto &p : projectiles)
     {
-        p.UpdateBody();
+        p.UpdateBody(uc);
     }
 
     switch (state)
@@ -404,11 +404,11 @@ void SingleTileAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture,
     // this->lifetime.push_back(2.0f); // 2 seconds lifetime
 }
 
-void SingleTileAttack::update()
+void SingleTileAttack::update(UpdateContext& uc)
 {
     for (auto &p : projectiles)
     {
-        p.UpdateBody();
+        p.UpdateBody(uc);
     }
 
     // for (int i = 0; i < projectiles.size(); i++)

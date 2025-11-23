@@ -3,6 +3,7 @@
 #include <vector>
 #include "object.hpp"
 #include "uiManager.hpp"
+#include "updateContext.hpp"
 
 // Manages all attacks in the game, instance hold by scene
 class AttackManager
@@ -19,7 +20,7 @@ public:
     ~AttackManager(); // Destructor to clean up dynamically allocated attacks
 
     // Updates all attacks managed by the AttackManager
-    void update();
+    void update(UpdateContext& uc);
 
     void recordThrow(MahjongTileType tile, Entity* player, Texture2D* texture, Rectangle tile_rect);
 

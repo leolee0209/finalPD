@@ -4,14 +4,14 @@
 #include "raymath.h"
 
 // Updates the player's state based on user input and physics
-void Me::UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, bool crouchHold)
+void Me::applyPlayerMovement(UpdateContext& uc)
 {
     // Get player look direction
     float rot = this->camera.lookRotation.x;
 
     // Normalize input vector to prevent faster diagonal movement
-    Vector2 input = {(float)side, (float)-forward};
-    if ((side != 0) && (forward != 0))
+    Vector2 input = {(float)uc.playerInput.side, (float)-uc.playerInput.forward};
+    if ((uc.playerInput.side != 0) && (uc.playerInput.forward != 0))
         input = Vector2Normalize(input);
 
     float delta = GetFrameTime();
@@ -21,7 +21,7 @@ void Me::UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, boo
         this->velocity.y -= GRAVITY * delta;
 
     // Handle jumping
-    if (this->grounded && jumpPressed)
+    if (this->grounded && uc.playerInput.jumpPressed)
     {
         this->velocity.y = JUMP_FORCE;
         this->grounded = false;
@@ -58,7 +58,7 @@ void Me::UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, boo
 
     // Clamp acceleration to avoid exceeding max speed
     // More info here: https://youtu.be/v3zT3Z5apaM?t=165
-    float maxSpeed = (crouchHold ? CROUCH_SPEED : MAX_SPEED);
+    float maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
     float accel = Clamp(maxSpeed - speed, 0.f, MAX_ACCEL * delta);
 
     // Apply acceleration to horizontal velocity
@@ -72,7 +72,7 @@ void Me::UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, boo
     this->position.x += this->velocity.x * delta;
     this->position.y += this->velocity.y * delta;
     this->position.z += this->velocity.z * delta;
-    
+
     // Update the underlying object's position and OBB
     this->o.pos = this->position;
     this->o.UpdateOBB();
@@ -81,32 +81,31 @@ void Me::UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, boo
     for (int i = 0; i < 5; i++)
     {
         bool collided = false;
-        for (auto& obj : scene.getObjects())
-        {
-            obj.UpdateOBB();
-            CollisionResult result = this->o.collided(obj);
-            if (result.collided)
-            {
-                collided = true;
-                // Move the player out of the collided object
-                this->position = Vector3Add(this->position, Vector3Scale(result.normal, result.penetration));
-                this->o.pos = this->position;
-                this->o.UpdateOBB();
+        // The scene parameter is a Scene*, so we dereference it to pass to getObjects()
 
-                // Project velocity onto the normal and remove it to prevent sinking into the object
-                float dot = Vector3DotProduct(this->velocity, result.normal);
-                if (dot < 0) {
-                    this->velocity = Vector3Subtract(this->velocity, Vector3Scale(result.normal, dot));
-                }
+        std::vector<CollisionResult> results = Object::collided(this->o,uc.scene);
+        for (auto &result : results)
+        {
+            collided = true;
+            // Move the player out of the collided object
+            this->position = Vector3Add(this->position, Vector3Scale(result.normal, result.penetration));
+            this->o.pos = this->position;
+            this->o.UpdateOBB();
+
+            // Project velocity onto the normal and remove it to prevent sinking into the object
+            float dot = Vector3DotProduct(this->velocity, result.normal);
+            if (dot < 0)
+            {
+                this->velocity = Vector3Subtract(this->velocity, Vector3Scale(result.normal, dot));
             }
         }
+
         // If no collisions in an iteration, exit the loop
         if (!collided)
         {
             break;
         }
     }
-
 
     // Floor collision
     if (this->position.y <= 0.0f)
@@ -119,44 +118,62 @@ void Me::UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, boo
     this->o.pos = this->position;
 }
 
-// Updates the camera's position and orientation based on player movement
-void Me::UpdateCamera(char side, char forward, bool crouchHold)
+void Me::UpdateBody(UpdateContext& uc)
 {
-    this->camera.UpdateCamera(side, forward, crouchHold, this->position, this->grounded);
+    this->applyPlayerMovement(uc);
+    this->UpdateCamera(uc);
 }
 
-// Updates the projectile's state based on physics
-void Projectile::UpdateBody(Scene* scene)
+// Updates the camera's position and orientation based on player movement
+void Me::UpdateCamera(UpdateContext& uc)
 {
-    const float delta = GetFrameTime();
+    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded);
+}
 
-    // Apply gravity if the projectile is in the air
+// Updates the projectile's body (movement, gravity, etc.)
+void Projectile::UpdateBody(UpdateContext& uc)
+{
+    float delta = GetFrameTime();
+    // 1. Apply gravity if not grounded
     if (!this->grounded)
+    {
         this->velocity.y -= GRAVITY * delta;
-    
-    // Apply friction or air drag
-    float decel = (this->grounded ? this->friction : this->airDrag);
+    }
+
+    // 2. Apply friction or air drag to horizontal velocity
+    float decel = (this->grounded ? friction : airDrag);
     Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
 
-    // If horizontal velocity is very low, set it to zero
-    float hvelLength = Vector3Length(hvel); // Magnitude
-    if (hvelLength < (MAX_SPEED * 0.02f))
+    // 3. If horizontal velocity is very low, set it to zero
+    if (Vector3Length(hvel) < (MAX_SPEED * 0.01f))
+    {
         hvel = {0};
+    }
+
     this->velocity.x = hvel.x;
     this->velocity.z = hvel.z;
 
-    // Update projectile position based on velocity
+    // 4. Update position based on velocity
     this->position.x += this->velocity.x * delta;
     this->position.y += this->velocity.y * delta;
     this->position.z += this->velocity.z * delta;
 
-    // Floor collision
+    // 5. Update the internal Object's position and OBB (needed before collision checks)
+    this->o.pos = this->position;
+    this->o.UpdateOBB();
+
+    // 6. Floor collision
     if (this->position.y <= 0.0f)
     {
         this->position.y = 0.0f;
-        this->velocity.y = 0;
+        this->velocity.y = 0.0f;
         this->grounded = true;
     }
-    // Final update of the object's position
-    this->o.pos = this->position;
+    else if (this->grounded && this->velocity.y < 0.01f)
+    {
+        this->grounded = false;
+    }
+
+    // 7. Final Update OBB after all position changes
+    this->o.UpdateOBB();
 }

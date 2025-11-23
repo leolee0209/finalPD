@@ -5,6 +5,10 @@
 // Destructor: unload shared model resources
 Scene::~Scene()
 {
+    for(auto& e:this->entities){
+        delete e;
+    }
+    this->entities.clear();
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
@@ -35,9 +39,9 @@ void Scene::DrawRectangle(Object &o) const
 }
 
 // Adds an entity to the scene
-void Scene::addEntity(Entity e)
+void Scene::addEntity(Entity* e)
 {
-    this->entities.push_back(e); // Add the entity to the list of entities
+    this->entities.push_back(std::move(e)); // Add the entity to the list of entities
 }
 
 // Draws the entire scene, including the floor, objects, entities, and attacks
@@ -66,13 +70,13 @@ void Scene::DrawScene() const
     // Draw all static objects in the scene
     for (auto o : this->objects)
     {
-        DrawRectangle(o);
+        DrawRectangle(*o);
     }
 
     // Draw all entities in the scene
-    for (auto o : this->entities)
+    for (const auto& e : this->entities)
     {
-        DrawRectangle(o.obj());
+        DrawRectangle(e->obj());
     }
 
     // Draw all projectiles managed by the AttackManager
@@ -86,16 +90,16 @@ void Scene::DrawScene() const
 }
 
 // Updates all entities and attacks in the scene
-void Scene::Update()
+void Scene::Update(UpdateContext& uc)
 {
     // Update all entities in the scene
-    for (auto &e : this->entities)
+    for (auto& e : this->entities)
     {
-        e.UpdateBody();
+        e->UpdateBody(uc);
     }
 
     // Update all attacks managed by the AttackManager
-    this->am.update();
+    this->am.update(uc);
 }
 
 // Constructor initializes the scene with default objects
@@ -107,13 +111,13 @@ Scene::Scene()
     Vector3 towerPos = {16.0f, 16.0f, 16.0f}; // Initial position of the first tower
 
     // Add four towers to the scene in a symmetrical pattern
-    this->objects.push_back(Object(towerSize, towerPos));
+    this->objects.push_back(new Object(towerSize, towerPos));
     towerPos.x *= -1;
-    this->objects.push_back(Object(towerSize, towerPos));
+    this->objects.push_back(new Object(towerSize, towerPos));
     towerPos.z *= -1;
-    this->objects.push_back(Object(towerSize, towerPos));
+    this->objects.push_back(new Object(towerSize, towerPos));
     towerPos.x *= -1;
-    this->objects.push_back(Object(towerSize, towerPos));
+    this->objects.push_back(new Object(towerSize, towerPos));
 
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
@@ -122,7 +126,7 @@ Scene::Scene()
 
 
 // Getter for the list of objects in the scene
-std::vector<Object>& Scene::getObjects() 
+std::vector<Object*>& Scene::getObjects() 
 {
     return this->objects;
 }
