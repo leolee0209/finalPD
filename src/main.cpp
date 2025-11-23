@@ -20,7 +20,7 @@ int main(void)
 
     { // Create an enemy (mahjong tile)
         Enemy *enemy = new Enemy;
-        enemy->obj().size = {2.0f, 2.0f, 0.5f};  // Example size for a mahjong tile
+        enemy->obj().size = Vector3Scale({44, 60, 40},0.06);  // Example size for a mahjong tile
         enemy->obj().pos = {0.0f, 1.0f, 0.0f}; // Example starting position
 
         // Get the mahjong texture from the UIManager

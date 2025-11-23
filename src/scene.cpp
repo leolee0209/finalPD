@@ -22,7 +22,24 @@ void Scene::DrawRectangle(Object &o) const
     if (o.useTexture && o.texture != nullptr)
     {
         // Draw the object using a textured cube
-        DrawCubeTextureRec(*o.texture, o.sourceRect, o.pos, o.size.x, o.size.y, o.size.z, WHITE);
+        // We must manually apply the rotation matrix because DrawCubeTextureRec
+        // calculates vertices in world space by default.
+        
+        rlPushMatrix();
+            // 1. Translate to the object's position
+            rlTranslatef(o.pos.x, o.pos.y, o.pos.z);
+
+            // 2. Apply the object's rotation
+            Vector3 axis;
+            float angle;
+            o.getRotationAxisAngle(axis, angle);
+            rlRotatef(angle, axis.x, axis.y, axis.z);
+
+            // 3. Draw the cube at the local origin (0,0,0)
+            // We pass {0,0,0} as the position because we have already moved 
+            // the drawing context to the object's location using rlTranslatef.
+            DrawCubeTextureRec(*o.texture, o.sourceRect, {0.0f, 0.0f, 0.0f}, o.size.x, o.size.y, o.size.z, WHITE);
+        rlPopMatrix();
     }
     else
     {

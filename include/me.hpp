@@ -55,6 +55,11 @@ class Enemy : public Entity
 {
 private:
     int health; // Enemy's health
+    
+    // Animation state variables
+    float runTimer;
+    float runLerp;
+    Vector3 facingDirection; // Added for smooth turning
 
 public:
     // Default constructor initializes the enemy with default values
@@ -65,6 +70,11 @@ public:
         direction = {0};
         grounded = true;
         health = MAX_HEALTH_ENEMY;
+        
+        // Initialize animation state
+        runTimer = 0.0f;
+        runLerp = 0.0f;
+        facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
     }
 
     // Updates the enemy's body (movement, jumping, etc.)
