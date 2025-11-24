@@ -22,6 +22,7 @@ protected:
     Vector2 size;
     Texture2D *texture;
 };
+
 class UITexturedSquare : public UIElement
 {
 public:
@@ -34,4 +35,20 @@ public:
 
 private:
     Rectangle sourceRect;
+};
+
+// New Class: Simple crosshair drawn with rectangles
+class UICrosshair : public UIElement
+{
+public:
+    UICrosshair(Vector2 position, int length = 10, int thickness = 2, Color color = GREEN);
+    ~UICrosshair() override = default;
+
+    void draw() override;
+    void update() override;
+
+private:
+    int length;
+    int thickness;
+    Color color;
 };

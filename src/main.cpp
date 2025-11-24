@@ -17,6 +17,8 @@ int main(void)
     Scene scene;
     UIManager uiManager("mahjong.png", 9, 44, 60);
     uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
+    
+    uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
 
     { // Create an enemy (mahjong tile)
         Enemy *enemy = new Enemy;
