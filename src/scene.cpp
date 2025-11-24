@@ -85,7 +85,6 @@ void Scene::DrawScene() const
     // Draw all entities in the EnemyManager
     for (const auto &e : this->em.getObjects())
     {
-        std::cout << e->pos.x << "\n";
         DrawRectangle(*e);
     }
 
