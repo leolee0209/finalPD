@@ -2,7 +2,9 @@
 #include <raylib.h>
 #include <raymath.h>
 #include "obb.hpp"
-
+#include <vector>
+class Entity;
+class Scene;
 class Object // maybe first expect it to be a box(3d rectangle)
 {
 public:
@@ -10,12 +12,14 @@ public:
     Vector3 pos;
     Quaternion rotation;
     OBB obb;
-    Texture2D* texture = nullptr;
+    Texture2D *texture = nullptr;
     Rectangle sourceRect;
     bool useTexture = false;
 
-    // Checks if the object has collided with another object
-    CollisionResult collided(Object& other);
+    // Always return result no matter if collided or not
+    static CollisionResult collided(Object &thiso, Object &other);
+    // Might be empty if no collision
+    static std::vector<CollisionResult> collided(Object &thiso, Scene *scene);
 
     void UpdateOBB();
 
@@ -47,7 +51,7 @@ public:
         Quaternion q_rot = QuaternionFromAxisAngle(Vector3Normalize(axis), angleDeg * DEG2RAD);
         this->rotation = QuaternionMultiply(q_rot, this->rotation);
     }
-    
+
     void rotate(const Quaternion &q)
     {
         this->rotation = QuaternionMultiply(q, this->rotation);
@@ -70,7 +74,7 @@ public:
     }
 
     // Default constructor initializes the object with default values
-    Object() : size{1,1,1}, pos{0,0,0}, rotation(QuaternionIdentity()) {};
+    Object() : size{1, 1, 1}, pos{0, 0, 0}, rotation(QuaternionIdentity()) {};
 
     // Parameterized constructor initializes the object with specific size and position
     Object(Vector3 sizes, Vector3 poss) : size(sizes), pos(poss), rotation(QuaternionIdentity()) {};

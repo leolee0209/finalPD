@@ -4,7 +4,7 @@
 #include "object.hpp"
 #include <raylib.h>
 #include "uiManager.hpp"
-
+#include "updateContext.hpp"
 // Base class for all attack controllers, attack instances stored in attackManager
 class AttackController
 {
@@ -13,9 +13,10 @@ protected:
     AttackController(Entity *_spawnedBy) : spawnedBy(_spawnedBy) {}
 
 public:
-    Entity *const spawnedBy; // The entity (player or enemy) that spawned this attack
-    virtual void update() = 0; // Pure virtual function to update the attack
-    virtual void draw() {}     // Virtual function for custom rendering
+    Entity *const spawnedBy;                    // The entity (player or enemy) that spawned this attack
+    virtual void update(UpdateContext &uc) = 0; // Pure virtual function to update the attack
+    virtual void draw() {}                      // Virtual function for custom rendering
+    virtual std::vector<Entity *> getEntities() = 0;
 };
 
 // logic for the "Thousand Attack" ability
@@ -44,20 +45,27 @@ public:
     }
 
     // Spawns a new projectile for this attack
-    void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
-    void addProjectiles(std::vector<Projectile>&& new_projectiles);
+    void spawnProjectile(MahjongTileType tile, Texture2D *texture, Rectangle tile_rect);
+    void addProjectiles(std::vector<Projectile> &&new_projectiles);
 
     // Updates the state of the attack (e.g., moves projectiles, checks for activation)
-    void update() override;
+    void update(UpdateContext &uc) override;
 
     bool isActivated() const { return this->activated; }
 
     // Returns a list of objects representing the projectiles for rendering or collision detection
-    std::vector< Object *> obj()
+    std::vector<Object *> obj()
     {
-        std::vector< Object *> ret;
-        for ( auto &p : this->projectiles)
+        std::vector<Object *> ret;
+        for (auto &p : this->projectiles)
             ret.push_back(&p.obj());
+        return ret;
+    }
+    std::vector<Entity *> getEntities() override
+    {
+        std::vector<Entity *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p);
         return ret;
     }
 };
@@ -86,6 +94,7 @@ private:
     static constexpr float connectorThickness = 0.15f; // thickness of the connector boxes
     static constexpr float finalHeight = 6.0f;
     static constexpr float finalGrowthRate = 0.15f;
+
 public:
     TripletAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
     {
@@ -95,18 +104,25 @@ public:
         fallingTimer = 0.f;
     }
 
-    void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
-    void addProjectiles(std::vector<Projectile>&& new_projectiles);
-    void update() override;
+    void spawnProjectile(MahjongTileType tile, Texture2D *texture, Rectangle tile_rect);
+    void addProjectiles(std::vector<Projectile> &&new_projectiles);
+    void update(UpdateContext &uc) override;
 
     // Return projectile objects and connector objects for rendering
-    std::vector< Object *> obj()
+    std::vector<Object *> obj()
     {
-        std::vector< Object *> ret;
-        for ( auto &p : this->projectiles)
+        std::vector<Object *> ret;
+        for (auto &p : this->projectiles)
             ret.push_back(&p.obj());
-        for ( auto &c : this->connectors)
+        for (auto &c : this->connectors)
             ret.push_back(&c);
+        return ret;
+    }
+    std::vector<Entity *> getEntities() override
+    {
+        std::vector<Entity *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p);
         return ret;
     }
 };
@@ -116,21 +132,30 @@ class SingleTileAttack : public AttackController
 private:
     std::vector<Projectile> projectiles;
     std::vector<float> lifetime;
+    static constexpr float shootHoriSpeed = 30;
+    static constexpr float shootVertSpeed = 10;
 
 public:
     SingleTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
 
-    void spawnProjectile(MahjongTileType tile, Texture2D* texture, Rectangle tile_rect);
-    void update() override;
+    void spawnProjectile(MahjongTileType tile, Texture2D *texture, Rectangle tile_rect);
+    void update(UpdateContext &uc) override;
 
     std::vector<Projectile> takeLastProjectiles(int n);
-    std::vector<Projectile>& getProjectiles() { return this->projectiles; }
+    std::vector<Projectile> &getProjectiles() { return this->projectiles; }
 
     std::vector<Object *> obj()
     {
         std::vector<Object *> ret;
         for (auto &p : this->projectiles)
             ret.push_back(&p.obj());
+        return ret;
+    }
+    std::vector<Entity *> getEntities() override
+    {
+        std::vector<Entity *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p);
         return ret;
     }
 };

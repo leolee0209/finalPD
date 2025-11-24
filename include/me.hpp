@@ -4,9 +4,9 @@
 #include "object.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
+#include "updateContext.hpp"
 
-class Scene;
-
+struct DamageResult;
 // Base class for all entities in the game (e.g., player, enemies, projectiles)
 class Entity
 {
@@ -16,6 +16,7 @@ protected:
     Vector3 velocity;  // Current velocity of the entity
     Vector3 direction; // Current movement direction of the entity
     bool grounded;     // Whether the entity is on the ground
+    static void resolveCollision(Entity *e, UpdateContext &uc);
 
 public:
     // Default constructor initializes the entity with default values
@@ -49,15 +50,52 @@ public:
     void setDirection(const Vector3 &newDir) { this->direction = newDir; }
 
     // Virtual function to update the entity's body (to be overridden by derived classes)
-    virtual void UpdateBody(Scene* scene = nullptr) {};
+    virtual void UpdateBody(UpdateContext& uc) = 0;
 };
 
+// Class representing an enemy entity
+class Enemy : public Entity
+{
+private:
+    int health; // Enemy's health
+    
+    // Animation state variables
+    float runTimer;
+    float runLerp;
+    Vector3 facingDirection; // Added for smooth turning
+
+public:
+    // Default constructor initializes the enemy with default values
+    Enemy()
+    {
+        position = {0};
+        velocity = {0};
+        direction = {0};
+        grounded = true;
+        health = MAX_HEALTH_ENEMY;
+        
+        // Initialize animation state
+        runTimer = 0.0f;
+        runLerp = 0.0f;
+        facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
+    }
+
+    // Updates the enemy's body (movement, jumping, etc.)
+    void UpdateBody(UpdateContext& uc) override;
+    bool damage(DamageResult &dResult);
+};
 // Class representing the player character
 class Me : public Entity
 {
 private:
     int health;      // Player's health
     MyCamera camera; // Camera associated with the player
+
+    // New: Struct to hold player input state
+    
+
+    // New: Private method for core player movement logic
+    void applyPlayerMovement(UpdateContext& uc);
 
 public:
     // Default constructor initializes the player with default values
@@ -71,12 +109,11 @@ public:
 
         camera = MyCamera(this->position); // Initialize the camera with the player's position
     }
-
-    // Updates the player's body (movement, jumping, etc.)
-    void UpdateBody(Scene& scene, char side, char forward, bool jumpPressed, bool crouchHold);
+    // Overrides Entity's UpdateBody
+    void UpdateBody(UpdateContext& uc) override;
 
     // Updates the player's camera based on movement and actions
-    void UpdateCamera(char side, char forward, bool crouchHold);
+    void UpdateCamera(UpdateContext& uc);
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
@@ -85,26 +122,7 @@ public:
     Vector2 &getLookRotation() { return this->camera.lookRotation; }
 };
 
-// Class representing an enemy entity
-class Enemy : public Entity
-{
-private:
-    int health; // Enemy's health
 
-public:
-    // Default constructor initializes the enemy with default values
-    Enemy()
-    {
-        position = {0};
-        velocity = {0};
-        direction = {0};
-        grounded = true;
-        health = MAX_HEALTH_ENEMY;
-    }
-
-    // Updates the enemy's body (movement, jumping, etc.)
-    void UpdateBody(Scene& scene, float rot, char side, char forward, bool jumpPressed, bool crouchHold);
-};
 
 // Class representing a projectile (e.g., bullets, missiles)
 class Projectile : public Entity
@@ -140,5 +158,11 @@ public:
     }
 
     // Updates the projectile's body (movement, gravity, etc.)
-    void UpdateBody(Scene* scene = nullptr) override;
+    void UpdateBody(UpdateContext& uc) override;
 };
+
+typedef struct DamageResult{
+    float damage;
+    CollisionResult &cResult;
+    DamageResult(float _damage, CollisionResult &_cResult) : damage(_damage), cResult(_cResult) {};
+} DamageResult;
