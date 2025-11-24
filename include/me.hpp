@@ -5,6 +5,8 @@
 #include "mycamera.hpp"
 #include "uiManager.hpp"
 #include "updateContext.hpp"
+
+struct DamageResult;
 // Base class for all entities in the game (e.g., player, enemies, projectiles)
 class Entity
 {
@@ -14,6 +16,7 @@ protected:
     Vector3 velocity;  // Current velocity of the entity
     Vector3 direction; // Current movement direction of the entity
     bool grounded;     // Whether the entity is on the ground
+    static void resolveCollision(Entity *e, UpdateContext &uc);
 
 public:
     // Default constructor initializes the entity with default values
@@ -79,6 +82,7 @@ public:
 
     // Updates the enemy's body (movement, jumping, etc.)
     void UpdateBody(UpdateContext& uc) override;
+    bool damage(DamageResult &dResult);
 };
 // Class representing the player character
 class Me : public Entity
@@ -156,3 +160,9 @@ public:
     // Updates the projectile's body (movement, gravity, etc.)
     void UpdateBody(UpdateContext& uc) override;
 };
+
+typedef struct DamageResult{
+    float damage;
+    CollisionResult &cResult;
+    DamageResult(float _damage, CollisionResult &_cResult) : damage(_damage), cResult(_cResult) {};
+} DamageResult;

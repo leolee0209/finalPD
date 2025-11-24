@@ -29,7 +29,7 @@ int main(void)
         enemy->obj().useTexture = true;
         enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_1); // Use entire texture
 
-        scene.addEntity(enemy); // Add the enemy to the scene
+        scene.em.addEnemy(enemy); // Add the enemy to the scene
     }
 
     DisableCursor();  // Limit cursor to relative movement inside the window

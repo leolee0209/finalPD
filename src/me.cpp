@@ -2,9 +2,10 @@
 #include "scene.hpp"
 #include "constant.hpp"
 #include "raymath.h"
+#include <iostream>
 
 // Updates the player's state based on user input and physics
-void Me::applyPlayerMovement(UpdateContext& uc)
+void Me::applyPlayerMovement(UpdateContext &uc)
 {
     // Get player look direction
     float rot = this->camera.lookRotation.x;
@@ -78,34 +79,7 @@ void Me::applyPlayerMovement(UpdateContext& uc)
     this->o.UpdateOBB();
 
     // Iterative collision resolution to handle complex collisions and sliding
-    for (int i = 0; i < 5; i++)
-    {
-        bool collided = false;
-        // The scene parameter is a Scene*, so we dereference it to pass to getObjects()
-
-        std::vector<CollisionResult> results = Object::collided(this->o,uc.scene);
-        for (auto &result : results)
-        {
-            collided = true;
-            // Move the player out of the collided object
-            this->position = Vector3Add(this->position, Vector3Scale(result.normal, result.penetration));
-            this->o.pos = this->position;
-            this->o.UpdateOBB();
-
-            // Project velocity onto the normal and remove it to prevent sinking into the object
-            float dot = Vector3DotProduct(this->velocity, result.normal);
-            if (dot < 0)
-            {
-                this->velocity = Vector3Subtract(this->velocity, Vector3Scale(result.normal, dot));
-            }
-        }
-
-        // If no collisions in an iteration, exit the loop
-        if (!collided)
-        {
-            break;
-        }
-    }
+    Entity::resolveCollision(this, uc);
 
     // Floor collision
     if (this->position.y <= 0.0f)
@@ -118,20 +92,20 @@ void Me::applyPlayerMovement(UpdateContext& uc)
     this->o.pos = this->position;
 }
 
-void Me::UpdateBody(UpdateContext& uc)
+void Me::UpdateBody(UpdateContext &uc)
 {
     this->applyPlayerMovement(uc);
     this->UpdateCamera(uc);
 }
 
 // Updates the camera's position and orientation based on player movement
-void Me::UpdateCamera(UpdateContext& uc)
+void Me::UpdateCamera(UpdateContext &uc)
 {
     this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded);
 }
 
 // Updates the projectile's body (movement, gravity, etc.)
-void Projectile::UpdateBody(UpdateContext& uc)
+void Projectile::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     // 1. Apply gravity if not grounded
@@ -162,6 +136,17 @@ void Projectile::UpdateBody(UpdateContext& uc)
     this->o.pos = this->position;
     this->o.UpdateOBB();
 
+    // do collision
+    auto results = Object::collided(this->o, uc.scene);
+    for (auto &result : results)
+    {
+        if (Enemy *e = dynamic_cast<Enemy *>(result.with))
+        {
+            auto dResult = DamageResult(10, result);
+            uc.scene->em.damage(e, dResult);
+        }
+    }
+
     // 6. Floor collision
     if (this->position.y <= 0.0f)
     {
@@ -176,4 +161,38 @@ void Projectile::UpdateBody(UpdateContext& uc)
 
     // 7. Final Update OBB after all position changes
     this->o.UpdateOBB();
+}
+
+void Entity::resolveCollision(Entity *e, UpdateContext &uc)
+{
+    for (int i = 0; i < 5; i++)
+    {
+        std::vector<CollisionResult> results = Object::collided(e->o, uc.scene);
+        if (e != uc.player)
+        {
+            auto playerResult = Object::collided(e->o, uc.player->obj());
+            if (playerResult.collided)
+                results.push_back(playerResult);
+        }
+        if (results.size() == 0)
+            break;
+        for (auto &result : results)
+        {
+            if (result.with == e)
+                continue;
+            e->position = Vector3Add(e->position, Vector3Scale(result.normal, result.penetration));
+            e->o.pos = e->position;
+            e->o.UpdateOBB();
+
+            float dot = Vector3DotProduct(e->velocity, result.normal);
+            if (dot < 0)
+            {
+                e->velocity = Vector3Subtract(e->velocity, Vector3Scale(result.normal, dot));
+            }
+            // if (fabs(result.normal.y) > 0.7f && result.normal.y > 0)
+            // {
+            //     e->grounded = true;
+            // }
+        }
+    }
 }

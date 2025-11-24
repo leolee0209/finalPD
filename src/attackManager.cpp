@@ -62,7 +62,6 @@ void AttackManager::checkActivation(Entity *player)
         // Transfer projectiles from single attack to thousand attack
         attack->addProjectiles(singleAttack->takeLastProjectiles(3));
         combo_found = true;
-        std::cout << "found\n";
     }
     // Triplet attack: 3 different character tiles in order
     else if (t1_val >= char_1 && t1_val <= char_9 &&
@@ -123,6 +122,29 @@ SingleTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
     // Create a new SingleTileAttack if none exists for the entity
     this->singleTileAttack.push_back(new SingleTileAttack(spawnedBy));
     return this->singleTileAttack.back();
+}
+
+std::vector<Entity *> AttackManager::getEntities()
+{
+    std::vector<Entity *> ret;
+
+    // Collect objects from all ThousandAttack instances
+    for (const auto &a : this->thousandAttack)
+    {
+        auto v = a->getEntities();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &a : this->tripletAttack)
+    {
+        auto v = a->getEntities();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &a : this->singleTileAttack)
+    {
+        auto v = a->getEntities();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    return ret;
 }
 
 // Returns a list of objects representing all projectiles for rendering or collision detection

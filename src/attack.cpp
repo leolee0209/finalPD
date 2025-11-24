@@ -129,7 +129,7 @@ void ThousandAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, R
 
 // Updates the Entities controlled by ThousandAttack
 // Handles projectile movement, activation of the final phase, and cleanup
-void ThousandAttack::update(UpdateContext& uc)
+void ThousandAttack::update(UpdateContext &uc)
 {
     // Update all projectiles
     for (auto &p : this->projectiles)
@@ -221,7 +221,7 @@ void TripletAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture, Re
     this->projectiles.push_back(projectile);
 }
 
-void TripletAttack::update(UpdateContext& uc)
+void TripletAttack::update(UpdateContext &uc)
 {
     // Update projectile physics first
     for (auto &p : projectiles)
@@ -371,6 +371,11 @@ void SingleTileAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture,
         yaw = player->getLookRotation().x;
         pitch = player->getLookRotation().y;
     }
+    else if (Enemy *enemy = dynamic_cast<Enemy *>(this->spawnedBy))
+    {
+        yaw = enemy->dir().x;
+        pitch = enemy->dir().y;
+    }
     else
     {
         return;
@@ -382,7 +387,7 @@ void SingleTileAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture,
         cosf(pitch) * cosf(yaw)};
     forward = Vector3Normalize(forward);
 
-    Vector3 vel = {-forward.x * 30 + this->spawnedBy->vel().x, 16, -forward.z * 30 + this->spawnedBy->vel().z};
+    Vector3 vel = {-forward.x * shootHoriSpeed + this->spawnedBy->vel().x, shootVertSpeed, -forward.z * shootHoriSpeed + this->spawnedBy->vel().z};
     Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
     Object o({1, 1, 1}, pos);
     o.setRotationFromForward(forward);
@@ -404,7 +409,7 @@ void SingleTileAttack::spawnProjectile(MahjongTileType tile, Texture2D *texture,
     // this->lifetime.push_back(2.0f); // 2 seconds lifetime
 }
 
-void SingleTileAttack::update(UpdateContext& uc)
+void SingleTileAttack::update(UpdateContext &uc)
 {
     for (auto &p : projectiles)
     {

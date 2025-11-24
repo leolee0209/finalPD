@@ -3,10 +3,10 @@
 #include "raymath.h"    // For Vector3 operations
 #include "constant.hpp" // For constants like GRAVITY, FRICTION, AIR_DRAG, MAX_SPEED, MAX_ACCEL
 #include <iostream>
-#include <cmath>        // For sinf, cosf
+#include <cmath> // For sinf, cosf
 
 // Implement Enemy::UpdateBody
-void Enemy::UpdateBody(UpdateContext& uc)
+void Enemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     float floory = this->o.size.y / 2;
@@ -21,20 +21,20 @@ void Enemy::UpdateBody(UpdateContext& uc)
     }
 
     // 2. Calculate direction to player
-    Vector3 directionToPlayer = Vector3Subtract(uc.player->pos(), this->position); 
+    Vector3 directionToPlayer = Vector3Subtract(uc.player->pos(), this->position);
     directionToPlayer.y = 0; // Ignore Y-axis for horizontal movement direction
-    
+
     if (Vector3LengthSqr(directionToPlayer) > 0.001f)
-    { 
+    {
         directionToPlayer = Vector3Normalize(directionToPlayer);
     }
     else
     {
-        directionToPlayer = {0}; 
+        directionToPlayer = {0};
     }
 
     // 3. Set enemy's desired movement direction (Physics uses snappy input)
-    this->direction = directionToPlayer; 
+    this->direction = directionToPlayer;
 
     // 4. Apply friction or air drag to horizontal velocity
     float decel = (this->grounded ? FRICTION : AIR_DRAG);
@@ -47,10 +47,10 @@ void Enemy::UpdateBody(UpdateContext& uc)
         hvel = {0};
     }
 
-    float speed = Vector3DotProduct(hvel, this->direction); 
+    float speed = Vector3DotProduct(hvel, this->direction);
 
     // 6. Clamp acceleration to avoid exceeding max speed
-    float maxEnemySpeed = 3.0f; 
+    float maxEnemySpeed = 3.0f;
     float accel = Clamp(maxEnemySpeed - speed, 0.f, MAX_ACCEL * delta);
 
     // 7. Apply acceleration to horizontal velocity
@@ -65,77 +65,27 @@ void Enemy::UpdateBody(UpdateContext& uc)
     this->position.y += this->velocity.y * delta;
     this->position.z += this->velocity.z * delta;
 
-    // 9. Update the internal Object's position and OBB 
+    // 9. Update the internal Object's position and OBB
     this->o.pos = this->position;
     this->o.UpdateOBB();
 
-    // 10. Iterative collision resolution 
-    for (int i = 0; i < 5; i++)
-    {
-        bool collidedThisIteration = false;
+    // 10. Iterative collision resolution
+    Entity::resolveCollision(this, uc);
 
-        std::vector<CollisionResult> results = Object::collided(this->o,uc.scene);
-        for (CollisionResult &result : results)
-        {
-            collidedThisIteration = true;
-            this->position = Vector3Add(this->position, Vector3Scale(result.normal, result.penetration));
-            this->o.pos = this->position;
-            this->o.UpdateOBB();
-
-            float dot = Vector3DotProduct(this->velocity, result.normal);
-            if (dot < 0)
-            {
-                this->velocity = Vector3Subtract(this->velocity, Vector3Scale(result.normal, dot));
-            }
-            if (fabs(result.normal.y) > 0.7f && result.normal.y > 0)
-            {
-                this->grounded = true;
-            }
-        }
-
-        if (&uc.player->obj() != &this->o) 
-        {
-            uc.player->obj().UpdateOBB(); 
-            CollisionResult result = Object::collided(this->o, uc.player->obj());
-            if (result.collided)
-            {
-                collidedThisIteration = true;
-                this->position = Vector3Add(this->position, Vector3Scale(result.normal, result.penetration));
-                this->o.pos = this->position;
-                this->o.UpdateOBB();
-
-                float dot = Vector3DotProduct(this->velocity, result.normal);
-                if (dot < 0)
-                {
-                    this->velocity = Vector3Subtract(this->velocity, Vector3Scale(result.normal, dot));
-                }
-                if (fabs(result.normal.y) > 0.7f && result.normal.y > 0)
-                {
-                    this->grounded = true;
-                }
-            }
-        }
-
-        if (!collidedThisIteration)
-        {
-            break;
-        }
-    }
-
-    // 11. Floor collision 
+    // 11. Floor collision
     if (this->position.y <= floory)
     {
         this->position.y = floory;
         this->velocity.y = 0;
         this->grounded = true;
     }
-    else if (this->grounded && this->velocity.y < floory+0.01f)
+    else if (this->grounded && this->velocity.y < floory + 0.01f)
     {
         this->grounded = false;
     }
 
     // --- SMOOTH ROTATION LOGIC ---
-    
+
     // Smoothly update the visual facing direction towards the target
     if (Vector3LengthSqr(directionToPlayer) > 0.001f)
     {
@@ -149,17 +99,17 @@ void Enemy::UpdateBody(UpdateContext& uc)
     this->o.setRotationFromForward(this->facingDirection);
 
     // --- Vivid Movement Animation ---
-    
+
     // Calculate horizontal speed
     float horizontalSpeed = Vector3Length({this->velocity.x, 0, this->velocity.z});
-    
+
     // Update Animation State
     float targetRunLerp = (horizontalSpeed > 0.1f && this->grounded) ? 1.0f : 0.0f;
     this->runLerp = Lerp(this->runLerp, targetRunLerp, 10.0f * delta);
 
     if (this->runLerp > 0.01f)
     {
-        this->runTimer += delta * 15.0f; 
+        this->runTimer += delta * 15.0f;
     }
 
     // 1. Apply Bobbing
@@ -167,19 +117,26 @@ void Enemy::UpdateBody(UpdateContext& uc)
     this->o.pos.y += bobY;
 
     // 2. Apply Sway
-    float swayAngle = sinf(this->runTimer) * 10.0f * this->runLerp; 
-    
+    float swayAngle = sinf(this->runTimer) * 10.0f * this->runLerp;
+
     // Use smoothed facing direction for sway/lean axis
     Vector3 forwardDir = this->facingDirection;
-    if (Vector3LengthSqr(forwardDir) < 0.001f) forwardDir = {0, 0, 1};
+    if (Vector3LengthSqr(forwardDir) < 0.001f)
+        forwardDir = {0, 0, 1};
 
     this->o.rotate(forwardDir, swayAngle);
 
-    // 3. Apply Lean 
-    float leanAngle = horizontalSpeed * 2.0f; 
+    // 3. Apply Lean
+    float leanAngle = horizontalSpeed * 2.0f;
     Vector3 rightDir = Vector3CrossProduct(forwardDir, {0, 1, 0});
     this->o.rotate(rightDir, leanAngle);
 
     // 13. Final Update OBB
     this->o.UpdateOBB();
+}
+
+bool Enemy::damage(DamageResult &dResult)
+{
+    this->health -= dResult.damage;
+    return this->health > 0;
 }
