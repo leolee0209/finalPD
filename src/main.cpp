@@ -16,8 +16,8 @@ int main(void)
     Me player;
     Scene scene;
     UIManager uiManager("mahjong.png", 9, 44, 60);
-    uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     
+    uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
 
     { // Create an enemy (mahjong tile)
@@ -48,19 +48,17 @@ int main(void)
         char sideway = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
         char forward = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S));
         bool crouching = IsKeyDown(KEY_LEFT_CONTROL);
+
+        // Create UpdateContext early so we can pass it to recordThrow and other systems.
+        UpdateContext uc(&scene, &player, PlayerInput(sideway, forward, IsKeyPressed(KEY_SPACE), crouching), &uiManager);
+
         if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
         {
-            MahjongTileType selectedTile = uiManager.muim.getSelectedTile();
-            if (selectedTile != MahjongTileType::EMPTY)
-            {
-                Texture2D &texture = uiManager.muim.getSpriteSheet();
-                Rectangle rect = uiManager.muim.getTile(selectedTile);
-                scene.am.recordThrow(selectedTile, &player, &texture, rect);
-            }
+            // main now only requests a spawn. spawnProjectile will record the throw via AttackManager.
+            ThousandTileAttack *single = scene.am.getSingleTileAttack(&player);
+            if (single)
+                single->spawnProjectile(uc);
         }
-
-        UpdateContext uc(&scene, &player, PlayerInput(sideway, forward, IsKeyPressed(KEY_SPACE), crouching));
-
         //----------------------------------------------------------------------------------
 
         // Update Player---------------------------------------------------------------------------
