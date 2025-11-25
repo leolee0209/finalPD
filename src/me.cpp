@@ -17,19 +17,11 @@ void Me::applyPlayerMovement(UpdateContext &uc)
 
     float delta = GetFrameTime();
 
-    // Apply gravity if the player is not on the ground
-    if (!this->grounded)
-        this->velocity.y -= GRAVITY * delta;
-
-    // Handle jumping
+    // Handle jumping (gravity & vertical motion handled by ApplyPhysics)
     if (this->grounded && uc.playerInput.jumpPressed)
     {
         this->velocity.y = JUMP_FORCE;
         this->grounded = false;
-
-        // Sound can be played at this moment
-        // SetSoundPitch(fxJump, 1.0f + (GetRandomValue(-100, 100)*0.001));
-        // PlaySound(fxJump);
     }
 
     // Calculate the direction the player is facing
@@ -45,51 +37,20 @@ void Me::applyPlayerMovement(UpdateContext &uc)
     // Smoothly interpolate to the desired direction
     this->direction = Vector3Lerp(this->direction, desiredDir, CONTROL * delta);
 
-    // Apply friction or air drag to horizontal velocity
-    float decel = (this->grounded ? FRICTION : AIR_DRAG);
-    Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
+    // Use shared physics helper to handle gravity, friction/air-drag, accel,
+    // position integration, collisions and floor handling.
+    Entity::PhysicsParams params;
+    params.useGravity = true;
+    params.gravity = GRAVITY;
+    params.decelGround = FRICTION;
+    params.decelAir = AIR_DRAG;
+    params.maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
+    params.maxAccel = MAX_ACCEL;
+    params.floorY = 0.0f;
+    params.iterativeCollisionResolve = true;
+    params.zeroThreshold = params.maxSpeed * 0.01f;
 
-    // If horizontal velocity is very low, set it to zero
-    float hvelLength = Vector3Length(hvel); // Magnitude
-    if (hvelLength < (MAX_SPEED * 0.01f))
-        hvel = {0};
-
-    // This is what creates strafing
-    float speed = Vector3DotProduct(hvel, this->direction);
-
-    // Clamp acceleration to avoid exceeding max speed
-    // More info here: https://youtu.be/v3zT3Z5apaM?t=165
-    float maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
-    float accel = Clamp(maxSpeed - speed, 0.f, MAX_ACCEL * delta);
-
-    // Apply acceleration to horizontal velocity
-    hvel.x += this->direction.x * accel;
-    hvel.z += this->direction.z * accel;
-
-    this->velocity.x = hvel.x;
-    this->velocity.z = hvel.z;
-
-    // Update player position based on velocity
-    this->position.x += this->velocity.x * delta;
-    this->position.y += this->velocity.y * delta;
-    this->position.z += this->velocity.z * delta;
-
-    // Update the underlying object's position and OBB
-    this->o.pos = this->position;
-    this->o.UpdateOBB();
-
-    // Iterative collision resolution to handle complex collisions and sliding
-    Entity::resolveCollision(this, uc);
-
-    // Floor collision
-    if (this->position.y <= 0.0f)
-    {
-        this->position.y = 0.0f;
-        this->velocity.y = 0.0f;
-        this->grounded = true; // Enable jumping
-    }
-    // Final update of the object's position
-    this->o.pos = this->position;
+    Entity::ApplyPhysics(this, uc, params);
 }
 
 void Me::UpdateBody(UpdateContext &uc)
@@ -107,36 +68,22 @@ void Me::UpdateCamera(UpdateContext &uc)
 // Updates the projectile's body (movement, gravity, etc.)
 void Projectile::UpdateBody(UpdateContext &uc)
 {
-    float delta = GetFrameTime();
-    // 1. Apply gravity if not grounded
-    if (!this->grounded)
-    {
-        this->velocity.y -= GRAVITY * delta;
-    }
+    // Use shared physics helper for the core physics/integration steps.
+    Entity::PhysicsParams params;
+    params.useGravity = true;
+    params.gravity = GRAVITY;
+    params.decelGround = this->friction;
+    params.decelAir = this->airDrag;
+    // projectile doesn't accelerate by direction input
+    params.maxSpeed = 0.0f;
+    params.maxAccel = 0.0f;
+    params.floorY = 0.0f;
+    params.iterativeCollisionResolve = false;
+    params.zeroThreshold = 0.01f; // small threshold for zeroing hvel
 
-    // 2. Apply friction or air drag to horizontal velocity
-    float decel = (this->grounded ? friction : airDrag);
-    Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
+    Entity::ApplyPhysics(this, uc, params);
 
-    // 3. If horizontal velocity is very low, set it to zero
-    if (Vector3Length(hvel) < (MAX_SPEED * 0.01f))
-    {
-        hvel = {0};
-    }
-
-    this->velocity.x = hvel.x;
-    this->velocity.z = hvel.z;
-
-    // 4. Update position based on velocity
-    this->position.x += this->velocity.x * delta;
-    this->position.y += this->velocity.y * delta;
-    this->position.z += this->velocity.z * delta;
-
-    // 5. Update the internal Object's position and OBB (needed before collision checks)
-    this->o.pos = this->position;
-    this->o.UpdateOBB();
-
-    // do collision
+    // Do projectile-specific collision handling (damage to enemies)
     auto results = Object::collided(this->o, uc.scene);
     for (auto &result : results)
     {
@@ -146,21 +93,6 @@ void Projectile::UpdateBody(UpdateContext &uc)
             uc.scene->em.damage(e, dResult);
         }
     }
-
-    // 6. Floor collision
-    if (this->position.y <= 0.0f)
-    {
-        this->position.y = 0.0f;
-        this->velocity.y = 0.0f;
-        this->grounded = true;
-    }
-    else if (this->grounded && this->velocity.y < 0.01f)
-    {
-        this->grounded = false;
-    }
-
-    // 7. Final Update OBB after all position changes
-    this->o.UpdateOBB();
 }
 
 void Entity::resolveCollision(Entity *e, UpdateContext &uc)
@@ -195,4 +127,69 @@ void Entity::resolveCollision(Entity *e, UpdateContext &uc)
             // }
         }
     }
+}
+
+void Entity::ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p)
+{
+    float delta = GetFrameTime();
+
+    // 1. Gravity
+    if (p.useGravity && !e->grounded)
+    {
+        e->velocity.y -= p.gravity * delta;
+    }
+
+    // 2. Apply friction or air drag to horizontal velocity
+    float decel = (e->grounded ? p.decelGround : p.decelAir);
+    Vector3 hvel = {e->velocity.x * decel, 0.0f, e->velocity.z * decel};
+
+    // 3. Zero small horizontal velocity
+    float threshold = (p.zeroThreshold > 0.0f) ? p.zeroThreshold : (p.maxSpeed > 0.0f ? p.maxSpeed * 0.01f : MAX_SPEED * 0.01f);
+    if (Vector3Length(hvel) < threshold)
+    {
+        hvel = {0, 0, 0};
+    }
+
+    // 4. Optionally apply acceleration along entity direction
+    if (p.maxAccel > 0.0f)
+    {
+        float speed = Vector3DotProduct(hvel, e->direction);
+        float accel = Clamp(p.maxSpeed - speed, 0.f, p.maxAccel * delta);
+        hvel.x += e->direction.x * accel;
+        hvel.z += e->direction.z * accel;
+    }
+
+    e->velocity.x = hvel.x;
+    e->velocity.z = hvel.z;
+
+    // 5. Integrate position
+    e->position.x += e->velocity.x * delta;
+    e->position.y += e->velocity.y * delta;
+    e->position.z += e->velocity.z * delta;
+
+    // 6. Update object and OBB
+    e->o.pos = e->position;
+    e->o.UpdateOBB();
+
+    // 7. Optional iterative collision resolution
+    if (p.iterativeCollisionResolve)
+    {
+        Entity::resolveCollision(e, uc);
+    }
+
+    // 8. Floor collision (using provided floorY)
+    if (e->position.y <= p.floorY)
+    {
+        e->position.y = p.floorY;
+        e->velocity.y = 0.0f;
+        e->grounded = true;
+    }
+    else if (e->grounded && e->velocity.y < p.floorY + 0.01f)
+    {
+        e->grounded = false;
+    }
+
+    // 9. Final OBB update after any positional corrections
+    e->o.pos = e->position;
+    e->o.UpdateOBB();
 }

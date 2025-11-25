@@ -15,11 +15,6 @@ void Enemy::UpdateBody(UpdateContext &uc)
     this->o.pos = this->position;
 
     // 1. Apply gravity if not grounded
-    if (!this->grounded)
-    {
-        this->velocity.y -= GRAVITY * delta;
-    }
-
     // 2. Calculate direction to player
     Vector3 directionToPlayer = Vector3Subtract(uc.player->pos(), this->position);
     directionToPlayer.y = 0; // Ignore Y-axis for horizontal movement direction
@@ -36,53 +31,20 @@ void Enemy::UpdateBody(UpdateContext &uc)
     // 3. Set enemy's desired movement direction (Physics uses snappy input)
     this->direction = directionToPlayer;
 
-    // 4. Apply friction or air drag to horizontal velocity
-    float decel = (this->grounded ? FRICTION : AIR_DRAG);
-    Vector3 hvel = {this->velocity.x * decel, 0.0f, this->velocity.z * decel};
-
-    // 5. If horizontal velocity is very low, set it to zero
-    float hvelLength = Vector3Length(hvel);
-    if (hvelLength < (MAX_SPEED * 0.01f))
-    {
-        hvel = {0};
-    }
-
-    float speed = Vector3DotProduct(hvel, this->direction);
-
-    // 6. Clamp acceleration to avoid exceeding max speed
+    // 4. Use shared physics helper with enemy-specific tuning
+    Entity::PhysicsParams params;
+    params.useGravity = true;
+    params.gravity = GRAVITY;
+    params.decelGround = FRICTION;
+    params.decelAir = AIR_DRAG;
     float maxEnemySpeed = 3.0f;
-    float accel = Clamp(maxEnemySpeed - speed, 0.f, MAX_ACCEL * delta);
+    params.maxSpeed = maxEnemySpeed;
+    params.maxAccel = MAX_ACCEL;
+    params.floorY = floory;
+    params.iterativeCollisionResolve = true;
+    params.zeroThreshold = maxEnemySpeed * 0.01f;
 
-    // 7. Apply acceleration to horizontal velocity
-    hvel.x += this->direction.x * accel;
-    hvel.z += this->direction.z * accel;
-
-    this->velocity.x = hvel.x;
-    this->velocity.z = hvel.z;
-
-    // 8. Update position based on velocity
-    this->position.x += this->velocity.x * delta;
-    this->position.y += this->velocity.y * delta;
-    this->position.z += this->velocity.z * delta;
-
-    // 9. Update the internal Object's position and OBB
-    this->o.pos = this->position;
-    this->o.UpdateOBB();
-
-    // 10. Iterative collision resolution
-    Entity::resolveCollision(this, uc);
-
-    // 11. Floor collision
-    if (this->position.y <= floory)
-    {
-        this->position.y = floory;
-        this->velocity.y = 0;
-        this->grounded = true;
-    }
-    else if (this->grounded && this->velocity.y < floory + 0.01f)
-    {
-        this->grounded = false;
-    }
+    Entity::ApplyPhysics(this, uc, params);
 
     // --- SMOOTH ROTATION LOGIC ---
 

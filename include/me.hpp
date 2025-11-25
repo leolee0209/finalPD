@@ -16,7 +16,25 @@ protected:
     Vector3 velocity;  // Current velocity of the entity
     Vector3 direction; // Current movement direction of the entity
     bool grounded;     // Whether the entity is on the ground
+    // Shared physics parameters for movement/physics update
+    struct PhysicsParams
+    {
+        bool useGravity = true;
+        float gravity = GRAVITY;
+        float decelGround = FRICTION;
+        float decelAir = AIR_DRAG;
+        float maxSpeed = MAX_SPEED; // desired max horizontal speed
+        float maxAccel = MAX_ACCEL; // max acceleration (units/sec^2)
+        float floorY = 0.0f;        // floor Y-level for ground collision
+        bool iterativeCollisionResolve = false; // whether to call resolveCollision
+        float zeroThreshold = 0.0f; // if >0 use as absolute threshold for zeroing hvel, else uses maxSpeed*0.01
+    };
+    
     static void resolveCollision(Entity *e, UpdateContext &uc);
+    // Apply general movement & physics to an entity using the given parameters.
+    // This centralizes gravity, friction/air-drag, accel, position integration,
+    // floor collision, and optional iterative collision resolution.
+    static void ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p);
 
 public:
     // Default constructor initializes the entity with default values
