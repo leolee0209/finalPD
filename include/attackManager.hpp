@@ -9,9 +9,9 @@
 class AttackManager
 {
 private:
-    std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
-    std::vector<TripletAttack *> tripletAttack;
-    std::vector<SingleTileAttack *> singleTileAttack;
+    //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
+    //std::vector<TripletAttack *> tripletAttack;
+    std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
 
     void checkActivation(Entity *player);
@@ -22,12 +22,12 @@ public:
     // Updates all attacks managed by the AttackManager
     void update(UpdateContext& uc);
 
-    void recordThrow(MahjongTileType tile, Entity* player, Texture2D* texture, Rectangle tile_rect);
+    void recordThrow(UpdateContext &uc);
 
     // Retrieves or creates a ThousandAttack for the given entity
-    ThousandAttack *getThousandAttack(Entity *spawnedBy);
-    TripletAttack *getTripletAttack(Entity *spawnedBy);
-    SingleTileAttack *getSingleTileAttack(Entity *spawnedBy);
+    //ThousandAttack *getThousandAttack(Entity *spawnedBy);
+    //TripletAttack *getTripletAttack(Entity *spawnedBy);
+    ThousandTileAttack *getSingleTileAttack(Entity *spawnedBy);
 
     std::vector<Entity *> getEntities();
     // Returns a list of objects representing all projectiles for rendering or collision detection

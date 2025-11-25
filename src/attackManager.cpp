@@ -3,11 +3,7 @@
 
 // Destructor cleans up dynamically allocated ThousandAttack instances
 AttackManager::~AttackManager()
-{
-    for (auto &a : this->thousandAttack)
-        delete a;
-    for (auto &a : this->tripletAttack)
-        delete a;
+ {
     for (auto &a : this->singleTileAttack)
         delete a;
 }
@@ -15,23 +11,21 @@ AttackManager::~AttackManager()
 // Updates all ThousandAttack instances
 void AttackManager::update(UpdateContext& uc)
 {
-    for (auto &a : this->thousandAttack)
-        a->update(uc);
-    for (auto &a : this->tripletAttack)
-        a->update(uc);
     for (auto &a : this->singleTileAttack)
         a->update(uc);
 }
 
-void AttackManager::recordThrow(MahjongTileType tile, Entity* player, Texture2D* texture, Rectangle tile_rect)
+void AttackManager::recordThrow(UpdateContext &uc)
 {
-    // Always spawn a single projectile for every throw
-    SingleTileAttack *singleAttack = getSingleTileAttack(player);
-    singleAttack->spawnProjectile(tile, texture, tile_rect);
-
-    // Record the throw and check if it completes a special combo
-    this->thrownTiles.push_back({tile, tile_rect});
-    this->checkActivation(player);
+    // Record the thrown tile (spawn already done by ThousandTileAttack::spawnProjectile)
+    if (uc.uiManager)
+    {
+        MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+        Rectangle rect = uc.uiManager->muim.getTile(tile);
+        this->thrownTiles.push_back({tile, rect});
+    }
+    // Check for combos using the player's history
+    this->checkActivation(uc.player);
 }
 
 void AttackManager::checkActivation(Entity *player)
@@ -56,11 +50,11 @@ void AttackManager::checkActivation(Entity *player)
     // Thousand attack: 3 same character tiles
     if (t1_val >= char_1 && t1_val <= char_9 && t1 == t2 && t2 == t3)
     {
-        ThousandAttack *attack = getThousandAttack(player);
-        SingleTileAttack *singleAttack = getSingleTileAttack(player);
-        
-        // Transfer projectiles from single attack to thousand attack
-        attack->addProjectiles(singleAttack->takeLastProjectiles(3));
+        ThousandTileAttack *singleAttack = getSingleTileAttack(player);
+        if (singleAttack)
+        {
+            singleAttack->startThousandMode();
+        }
         combo_found = true;
     }
     // Triplet attack: 3 different character tiles in order
@@ -70,11 +64,11 @@ void AttackManager::checkActivation(Entity *player)
     {
         if (t1_val + 1 == t2_val && t2_val + 1 == t3_val)
         {
-            TripletAttack *attack = getTripletAttack(player);
-            SingleTileAttack *singleAttack = getSingleTileAttack(player);
-
-            // Transfer projectiles from single attack to triplet attack
-            attack->addProjectiles(singleAttack->takeLastProjectiles(3));
+            ThousandTileAttack *singleAttack = getSingleTileAttack(player);
+            if (singleAttack)
+            {
+                singleAttack->startTripletMode();
+            }
             combo_found = true;
         }
     }
@@ -85,60 +79,21 @@ void AttackManager::checkActivation(Entity *player)
     }
 }
 
-
-// Retrieves an existing ThousandAttack for the given entity or creates a new one
-ThousandAttack *AttackManager::getThousandAttack(Entity *spawnedBy)
-{
-    for (const auto &a : this->thousandAttack)
-    {
-        if (a->spawnedBy == spawnedBy)
-            return a;
-    }
-
-    // Create a new ThousandAttack if none exists for the entity
-    this->thousandAttack.push_back(new ThousandAttack(spawnedBy));
-    return this->thousandAttack.back();
-}
-
-TripletAttack *AttackManager::getTripletAttack(Entity *spawnedBy)
-{
-    for (const auto &a : this->tripletAttack)
-    {
-        if (a->spawnedBy == spawnedBy)
-            return a;
-    }
-    // Create a new ThousandAttack if none exists for the entity
-    this->tripletAttack.push_back(new TripletAttack(spawnedBy));
-    return this->tripletAttack.back();
-}
-
-SingleTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
+ThousandTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
 {
     for (const auto &a : this->singleTileAttack)
     {
         if (a->spawnedBy == spawnedBy)
             return a;
     }
-    // Create a new SingleTileAttack if none exists for the entity
-    this->singleTileAttack.push_back(new SingleTileAttack(spawnedBy));
+    // Create a new ThousandTileAttack if none exists for the entity
+    this->singleTileAttack.push_back(new ThousandTileAttack(spawnedBy));
     return this->singleTileAttack.back();
 }
 
 std::vector<Entity *> AttackManager::getEntities()
 {
     std::vector<Entity *> ret;
-
-    // Collect objects from all ThousandAttack instances
-    for (const auto &a : this->thousandAttack)
-    {
-        auto v = a->getEntities();
-        ret.insert(ret.end(), v.begin(), v.end());
-    }
-    for (const auto &a : this->tripletAttack)
-    {
-        auto v = a->getEntities();
-        ret.insert(ret.end(), v.begin(), v.end());
-    }
     for (const auto &a : this->singleTileAttack)
     {
         auto v = a->getEntities();
@@ -151,18 +106,6 @@ std::vector<Entity *> AttackManager::getEntities()
 std::vector<Object *> AttackManager::getObjects() const
 {
     std::vector<Object *> ret;
-
-    // Collect objects from all ThousandAttack instances
-    for (const auto &a : this->thousandAttack)
-    {
-        auto v = a->obj();
-        ret.insert(ret.end(), v.begin(), v.end());
-    }
-    for (const auto &a : this->tripletAttack)
-    {
-        auto v = a->obj();
-        ret.insert(ret.end(), v.begin(), v.end());
-    }
     for (const auto &a : this->singleTileAttack)
     {
         auto v = a->obj();
