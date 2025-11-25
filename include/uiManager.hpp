@@ -5,6 +5,11 @@
 #include <unordered_map>
 #include "uiElement.hpp"
 
+/**
+ * @brief Enumeration of Mahjong tile types used by the UI sprite sheet.
+ *
+ * `TILE_COUNT` can be used to size arrays referencing the full tile set.
+ */
 enum class MahjongTileType
 {
     // Dot suit (Tong)
@@ -63,6 +68,13 @@ enum class MahjongTileType
     TILE_COUNT // Not a tile, but gives the total number of tile types
 };
 
+/**
+ * @brief Helper to manage the Mahjong tile sprite sheet and player hand UI.
+ *
+ * MahjongUIManager loads a tile spritesheet and provides helpers to create
+ * a simple player hand UI, select tiles and return source rectangles for
+ * drawing individual tiles.
+ */
 class MahjongUIManager
 {
 public:
@@ -114,6 +126,13 @@ private:
     std::vector<UIElement *> elements;
 };
 
+/**
+ * @brief High-level UI facade used by game systems.
+ *
+ * Holds a `MahjongUIManager` (tile sprites), a list of additional
+ * `UIElement`s and provides `update()`/`draw()` entry points called each
+ * frame by the main loop.
+ */
 class UIManager
 {
 public:

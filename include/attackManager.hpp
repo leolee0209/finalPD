@@ -5,7 +5,12 @@
 #include "uiManager.hpp"
 #include "updateContext.hpp"
 
-// Manages all attacks in the game, instance hold by scene
+/**
+ * @brief Manages all attack controllers and tracks thrown tiles for combos.
+ *
+ * AttackManager owns per-spawner `ThousandTileAttack` instances and records
+ * recent thrown tiles to detect combo activations (thousand/triplet).
+ */
 class AttackManager
 {
 private:
@@ -19,17 +24,28 @@ private:
 public:
     ~AttackManager(); // Destructor to clean up dynamically allocated attacks
 
-    // Updates all attacks managed by the AttackManager
+    /**
+     * @brief Update all managed attacks (call each frame).
+     */
     void update(UpdateContext& uc);
 
+    /**
+     * @brief Record a thrown tile into history for combo detection.
+     */
     void recordThrow(UpdateContext &uc);
 
-    // Retrieves or creates a ThousandAttack for the given entity
-    //ThousandAttack *getThousandAttack(Entity *spawnedBy);
-    //TripletAttack *getTripletAttack(Entity *spawnedBy);
+    /**
+     * @brief Retrieve or create a `ThousandTileAttack` bound to `spawnedBy`.
+     */
     ThousandTileAttack *getSingleTileAttack(Entity *spawnedBy);
 
+    /**
+     * @brief Get all entity pointers managed by attacks (projectiles).
+     */
     std::vector<Entity *> getEntities();
-    // Returns a list of objects representing all projectiles for rendering or collision detection
+
+    /**
+     * @brief Get objects representing all projectiles/connectors for rendering/collision.
+     */
     std::vector< Object *> getObjects() const;
 };

@@ -1,6 +1,13 @@
 #pragma once
 #include <raylib.h>
 
+/**
+ * @brief Base class for on-screen 2D UI widgets.
+ *
+ * Derive from UIElement and implement `draw()` and `update()`. Position and
+ * size are in screen pixels. UIManager is expected to own elements added to
+ * its list and handle lifetime.
+ */
 class UIElement
 {
 public:
@@ -9,7 +16,14 @@ public:
     {
     }
 
+    /**
+     * @brief Draw the element. Called every frame by the UI manager.
+     */
     virtual void draw() = 0;
+
+    /**
+     * @brief Update element state (input handling, animations).
+     */
     virtual void update() = 0;
 
     virtual Rectangle getBounds() const
@@ -23,6 +37,11 @@ protected:
     Texture2D *texture;
 };
 
+/**
+ * @brief Simple textured quad drawn using the provided Texture2D.
+ *
+ * Optional `sourceRect` selects a region from a spritesheet.
+ */
 class UITexturedSquare : public UIElement
 {
 public:
@@ -37,7 +56,12 @@ private:
     Rectangle sourceRect;
 };
 
-// New Class: Simple crosshair drawn with rectangles
+/**
+ * @brief Minimal crosshair UI element.
+ *
+ * Draws two slim rectangles (horizontal/vertical) at the configured
+ * screen position.
+ */
 class UICrosshair : public UIElement
 {
 public:

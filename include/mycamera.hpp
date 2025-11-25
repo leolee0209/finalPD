@@ -1,6 +1,14 @@
 #pragma once
 #include <raylib.h>
 #include "constant.hpp"
+
+/**
+ * @brief Simple first-person camera helper used by the player (`Me`).
+ *
+ * MyCamera maintains a `Camera` instance and smoothing state for head
+ * bob/lean and look rotation. Call `UpdateCamera(...)` each frame to update
+ * the camera transform based on player movement and crouch state.
+ */
 class MyCamera
 {
 private:
@@ -35,5 +43,15 @@ public:
         UpdateCameraFPS();
     }
     const Camera &getCamera() { return this->camera; }
+
+    /**
+     * @brief Update internal camera transform from player state.
+     *
+     * @param sideway -1/0/1 for strafing input
+     * @param forward -1/0/1 for forward/back input
+     * @param crouching true if player is holding crouch
+     * @param playerPos player's world position
+     * @param isGrounded whether player is currently grounded
+     */
     void UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded);
 };

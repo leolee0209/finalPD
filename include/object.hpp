@@ -5,6 +5,14 @@
 #include <vector>
 class Entity;
 class Scene;
+/**
+ * @brief Simple axis-aligned/rotated 3D box Object used for physics and rendering.
+ *
+ * `Object` represents a textured or untextured box in world space. It stores
+ * `size`, `pos` and `rotation` (quaternion) and provides helpers to update the
+ * cached `OBB` for collision tests. Use `useTexture` and `sourceRect` when
+ * drawing textured cubes via Scene helpers.
+ */
 class Object // maybe first expect it to be a box(3d rectangle)
 {
 public:
@@ -16,11 +24,27 @@ public:
     Rectangle sourceRect;
     bool useTexture = false;
 
-    // Always return result no matter if collided or not
+    /**
+     * @brief Test collision between two Objects and return a CollisionResult.
+     *
+     * This function always returns a CollisionResult for the pair. Use the
+     * returned `collided` flag to check whether penetration occurred.
+     */
     static CollisionResult collided(Object &thiso, Object &other);
-    // Might be empty if no collision
+
+    /**
+     * @brief Test collision between this object and all static scene objects.
+     *
+     * Returns a vector of CollisionResult entries (may be empty).
+     */
     static std::vector<CollisionResult> collided(Object &thiso, Scene *scene);
 
+    /**
+     * @brief Recompute the object's OBB from `pos`, `size` and `rotation`.
+     *
+     * Call whenever `pos`, `size` or `rotation` change before running collision
+     * queries.
+     */
     void UpdateOBB();
 
     // Getter for the object's size
@@ -45,7 +69,12 @@ public:
         this->rotation = q;
     }
 
-    // Applies a rotation on top of the current rotation
+    /**
+     * @brief Apply an incremental rotation around an axis.
+     *
+     * @param axis Rotation axis in world/local space (will be normalized).
+     * @param angleDeg Angle in degrees to rotate by.
+     */
     void rotate(const Vector3 &axis, float angleDeg)
     {
         Quaternion q_rot = QuaternionFromAxisAngle(Vector3Normalize(axis), angleDeg * DEG2RAD);
@@ -57,8 +86,14 @@ public:
         this->rotation = QuaternionMultiply(q, this->rotation);
     }
 
-    // Set rotation so the object's forward (+Z) faces `forward` direction.
-    // Computes rotation axis and angle and stores them (angle in degrees).
+    /**
+     * @brief Set rotation so the object's local +Z faces the provided direction.
+     *
+     * Useful for orienting visual models to face a movement or target
+     * direction. The `forward` vector will be normalized internally.
+     *
+     * @param forward Target forward direction in world space.
+     */
     void setRotationFromForward(Vector3 forward)
     {
         Vector3 modelForward = {0.0f, 0.0f, 1.0f};
@@ -73,12 +108,18 @@ public:
         this->rotation = QuaternionFromAxisAngle(Vector3Normalize(rotAxis), angleRad);
     }
 
-    // Default constructor initializes the object with default values
+    /**
+     * @brief Default constructor: unit cube at origin with identity rotation.
+     */
     Object() : size{1, 1, 1}, pos{0, 0, 0}, rotation(QuaternionIdentity()) {};
 
-    // Parameterized constructor initializes the object with specific size and position
+    /**
+     * @brief Construct with explicit size and position (identity rotation).
+     */
     Object(Vector3 sizes, Vector3 poss) : size(sizes), pos(poss), rotation(QuaternionIdentity()) {};
 
-    // Parameterized constructor with explicit rotation
+    /**
+     * @brief Construct with explicit size, position and rotation.
+     */
     Object(Vector3 sizes, Vector3 poss, Quaternion rot) : size(sizes), pos(poss), rotation(rot) {};
 };

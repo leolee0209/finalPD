@@ -6,7 +6,15 @@
 #include "enemyManager.hpp"
 
 class Object;
-// The Scene class represents the game world, including entities, objects, and attacks.
+
+/**
+ * @brief Represents the 3D world and manages objects, entities and attacks.
+ *
+ * Scene owns static objects, a floor Object, an AttackManager and an
+ * EnemyManager. It provides `DrawScene()` to render the world (call inside a
+ * camera Begin/End) and `Update(UpdateContext&)` to advance game simulation
+ * each frame.
+ */
 class Scene
 {
 private:
@@ -22,15 +30,37 @@ public:
     EnemyManager em;
     Model cubeModel; // Shared cube model used to render rotated cubes
 
-    // Destructor (will unload model in implementation and deallocate entities)
+    /**
+     * @brief Destructor will release GPU resources (model) and deallocate owned data.
+     */
     ~Scene();
-    // Draws the entire scene, including objects, entities, and attacks
+
+    /**
+     * @brief Render the full scene, objects, entities and attacks.
+     *
+     * Call while a 3D camera block is active.
+     */
     void DrawScene() const;
-    // Updates all entities and attacks in the scene
+
+    /**
+     * @brief Advance scene simulation: update enemies, attacks and other systems.
+     *
+     * @param uc Frame update context (scene, player, input snapshot).
+     */
     void Update(UpdateContext &uc);
-    // Constructor initializes the scene with default objects
+
+    /**
+     * @brief Construct a new Scene with default objects and managers.
+     */
     Scene();
-    // Getter for the list of objects in the scene
+
+    /**
+     * @brief Return the vector of static objects placed in the scene.
+     */
     std::vector<Object *> getStaticObjects() const;
+
+    /**
+     * @brief Return a list of entity pointers currently in the scene.
+     */
     std::vector<Entity *> getEntities();
 };

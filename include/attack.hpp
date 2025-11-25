@@ -6,7 +6,15 @@
 #include "me.hpp"
 
 class Object;
-// Base class for all attack controllers, attack instances stored in attackManager
+
+/**
+ * @brief Abstract base for attack controllers that spawn and manage projectiles.
+ *
+ * Each AttackController is owned/managed by `AttackManager` and is bound to a
+ * spawning `Entity` (stored in `spawnedBy`). Implement `update()` to advance
+ * the controller and `getEntities()` to return any Entities (projectiles)
+ * the controller manages.
+ */
 class AttackController
 {
 protected:
@@ -20,6 +28,12 @@ public:
     virtual std::vector<Entity *> getEntities() = 0;
 };
 
+/**
+ * @brief Tile-based attack controller used by players/enemies.
+ *
+ * Manages a list of `Projectile` instances and supports multiple modes
+ * (normal firing, thousand-mode convergence, triplet connector mode).
+ */
 class ThousandTileAttack : public AttackController
 {
 private:

@@ -7,7 +7,16 @@
 #include "updateContext.hpp"
 
 struct DamageResult;
-// Base class for all entities in the game (e.g., player, enemies, projectiles)
+/**
+ * @brief Base class for all entities in the game (player, enemies, projectiles).
+ *
+ * Stores the physical `Object` (`o`) used for collisions, plus kinematic
+ * state: `position`, `velocity`, `direction` and `grounded` flag.
+ *
+ * Implementations should override `UpdateBody(UpdateContext&)` and may call
+ * `ApplyPhysics(...)` to perform common gravity, drag, acceleration,
+ * integration and floor collision logic.
+ */
 class Entity
 {
 protected:
@@ -16,7 +25,12 @@ protected:
     Vector3 velocity;  // Current velocity of the entity
     Vector3 direction; // Current movement direction of the entity
     bool grounded;     // Whether the entity is on the ground
-    // Shared physics parameters for movement/physics update
+    /**
+     * @brief Parameters that control the shared physics integration.
+     *
+     * These values are used by `ApplyPhysics` to tune gravity, ground/air
+     * deceleration, maximum horizontal speed/acceleration, and floor level.
+     */
     struct PhysicsParams
     {
         bool useGravity = true;
@@ -31,9 +45,17 @@ protected:
     };
     
     static void resolveCollision(Entity *e, UpdateContext &uc);
-    // Apply general movement & physics to an entity using the given parameters.
-    // This centralizes gravity, friction/air-drag, accel, position integration,
-    // floor collision, and optional iterative collision resolution.
+    /**
+     * @brief Apply common physics integration to an entity.
+     *
+     * This helper performs gravity application, ground/air drag, optional
+     * acceleration along `entity->direction`, position integration,
+     * optional iterative collision resolution, and floor clamping.
+     *
+     * @param e Entity to update (modified in-place).
+     * @param uc Frame update context (scene, player, input snapshot).
+     * @param p Physics tuning parameters.
+     */
     static void ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p);
 
 public:
@@ -67,11 +89,25 @@ public:
     void setVelocity(const Vector3 &newVel) { this->velocity = newVel; }
     void setDirection(const Vector3 &newDir) { this->direction = newDir; }
 
-    // Virtual function to update the entity's body (to be overridden by derived classes)
+    /**
+     * @brief Per-frame body update.
+     *
+     * Override this in derived classes to implement behavior (AI, player
+     * input, projectiles). Use `ApplyPhysics()` to perform the low-level
+     * integration and collision resolution when appropriate.
+     *
+     * @param uc Frame update context with scene and input snapshot.
+     */
     virtual void UpdateBody(UpdateContext& uc) = 0;
 };
 
 // Class representing an enemy entity
+/**
+ * @brief Enemy entity with simple AI and animation state.
+ *
+ * Enemy::UpdateBody implements chasing the player, smoothing rotation and
+ * basic run/bob animations. Damage is applied via `damage(DamageResult&)`.
+ */
 class Enemy : public Entity
 {
 private:
@@ -103,6 +139,13 @@ public:
     bool damage(DamageResult &dResult);
 };
 // Class representing the player character
+/**
+ * @brief Player-controlled entity.
+ *
+ * `Me` owns a `MyCamera` for first-person rendering and handles player
+ * movement via `applyPlayerMovement`. Use `getLookRotation()` to obtain
+ * the current camera look direction for aiming.
+ */
 class Me : public Entity
 {
 private:
@@ -143,6 +186,13 @@ public:
 
 
 // Class representing a projectile (e.g., bullets, missiles)
+/**
+ * @brief Physics-driven projectile spawned by attacks.
+ *
+ * Projectiles use friction/airDrag parameters and perform collision checks
+ * against the scene. They do not accelerate themselves (handled by
+ * the spawner/attack controller).
+ */
 class Projectile : public Entity
 {
 private:
