@@ -2,34 +2,6 @@
 #include "raylib.h"
 #include "raymath.h"
 class Entity;
-// Represents an Oriented Bounding Box (OBB) in 3D space.
-// An OBB is a rectangular box that is not necessarily aligned with the coordinate axes.
-// It is defined by its center position, its rotation, and its half-extents (half the size along each of its local axes).
-struct OBB
-{
-    Quaternion rotation; // The rotation of the box.
-    Vector3 center;      // The center of the box in world space.
-    Vector3 halfExtents; // The half-lengths of the box along its local x, y, and z axes.
-};
-
-// Extracts the local axes (right, up, forward) of an OBB from its rotation quaternion.
-// These axes are orthonormal (mutually perpendicular and of unit length).
-inline void OBB_GetAxes(const OBB *obb, Vector3 *right, Vector3 *up, Vector3 *forward)
-{
-    // Convert the quaternion to a 3x3 rotation matrix.
-    // The columns of the rotation matrix are the local axes of the rotated object.
-    Matrix rot = QuaternionToMatrix(obb->rotation);
-
-    *right = (Vector3){rot.m0, rot.m1, rot.m2};    // First column
-    *up = (Vector3){rot.m4, rot.m5, rot.m6};       // Second column
-    *forward = (Vector3){rot.m8, rot.m9, rot.m10}; // Third column
-}
-
-// Calculates the 8 corners of the OBB in world space.
-#pragma once
-#include "raylib.h"
-#include "raymath.h"
-class Entity;
 
 /**
  * @brief Oriented Bounding Box (OBB) representation for 3D collision tests.
