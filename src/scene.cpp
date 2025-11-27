@@ -79,19 +79,22 @@ void Scene::DrawScene() const
     // Draw all static objects in the scene
     for (auto &o : this->objects)
     {
-        DrawRectangle(*o);
+        if (o && o->isVisible())
+            DrawRectangle(*o);
     }
 
     // Draw all entities in the EnemyManager
     for (const auto &e : this->em.getObjects())
     {
-        DrawRectangle(*e);
+        if (e && e->isVisible())
+            DrawRectangle(*e);
     }
 
     // Draw all projectiles managed by the AttackManager
     for (const auto &o : this->am.getObjects())
     {
-        DrawRectangle(*o);
+        if (o && o->isVisible())
+            DrawRectangle(*o);
     }
 
     // Draw a red sun in the sky
@@ -136,12 +139,14 @@ std::vector<Object *> Scene::getStaticObjects() const
     return this->objects;
 }
 
-std::vector<Entity *> Scene::getEntities()
+std::vector<Entity *> Scene::getEntities(EntityCategory cat)
 {
     std::vector<Entity *> r;
-    auto amEntities = this->am.getEntities();
+    // Query attack manager for projectiles if requested
+    auto amEntities = this->am.getEntities(cat);
     r.insert(r.end(), amEntities.begin(), amEntities.end());
-    auto emEntities = this->em.getEntities();
+    // Query enemy manager for enemies if requested
+    auto emEntities = this->em.getEntities(cat);
     r.insert(r.end(), emEntities.begin(), emEntities.end());
 
     return r;

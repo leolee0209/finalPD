@@ -59,6 +59,14 @@ int main(void)
             if (single)
                 single->spawnProjectile(uc);
         }
+
+        if (IsKeyPressed(KEY_F))
+        {
+            if (MeleePushAttack *melee = scene.am.getMeleeAttack(&player))
+            {
+                melee->trigger(uc);
+            }
+        }
         //----------------------------------------------------------------------------------
 
         // Update Player---------------------------------------------------------------------------

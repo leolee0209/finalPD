@@ -23,6 +23,14 @@ public:
     Texture2D *texture = nullptr;
     Rectangle sourceRect;
     bool useTexture = false;
+    /**
+     * @brief Whether this Object should be rendered by Scene drawing helpers.
+     *
+     * Some Objects are purely physical (collision helper volumes, invisible
+     * effects, or helper geometry) and should not be drawn. Set this to
+     * `false` to hide the object while preserving its OBB/collision data.
+     */
+    bool visible = true;
 
     /**
      * @brief Test collision between two Objects and return a CollisionResult.
@@ -122,4 +130,8 @@ public:
      * @brief Construct with explicit size, position and rotation.
      */
     Object(Vector3 sizes, Vector3 poss, Quaternion rot) : size(sizes), pos(poss), rotation(rot) {};
+    
+    // Visibility helpers
+    void setVisible(bool v) { this->visible = v; }
+    bool isVisible() const { return this->visible; }
 };

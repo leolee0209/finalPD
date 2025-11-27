@@ -150,8 +150,6 @@ void ThousandTileAttack::update(UpdateContext &uc)
         }
         break;
     case MODE_TRIPLET_CONNECTING:
-        updateTriplet(uc);
-        break;
     case MODE_TRIPLET_FINAL:
     {
         // animate connectors expanding / rotating to final height
@@ -191,13 +189,16 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     float yaw;
     float pitch;
 
-    if (uc.player == this->spawnedBy)
+    // Determine spawner orientation without RTTI: use category() then static_cast
+    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
     {
-        yaw = uc.player->getLookRotation().x;
-        pitch = uc.player->getLookRotation().y;
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        yaw = player->getLookRotation().x;
+        pitch = player->getLookRotation().y;
     }
-    else if (Enemy *enemy = dynamic_cast<Enemy *>(this->spawnedBy))
+    else if (this->spawnedBy && this->spawnedBy->category() == ENTITY_ENEMY)
     {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
         yaw = enemy->dir().x;
         pitch = enemy->dir().y;
     }
@@ -221,7 +222,6 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     const auto tile = uc.uiManager->muim.getSelectedTile();
     o.texture = &uc.uiManager->muim.getSpriteSheet();
     o.sourceRect = uc.uiManager->muim.getTile(tile);
-    
 
     Projectile projectile(
         pos,
@@ -236,4 +236,173 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     this->projectiles.push_back(projectile);
     uc.scene->am.recordThrow(uc);
     // this->lifetime.push_back(2.0f); // 2 seconds lifetime
+}
+
+// --- MeleePushAttack ------------------------------------------------------------------
+void MeleePushAttack::update(UpdateContext &uc)
+{
+    (void)uc;
+    float delta = GetFrameTime();
+
+    if (this->cooldownRemaining > 0.0f)
+    {
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
+
+    for (auto &volume : this->effectVolumes)
+    {
+        volume.remainingLife -= delta;
+    }
+
+    this->effectVolumes.erase(
+        std::remove_if(
+            this->effectVolumes.begin(),
+            this->effectVolumes.end(),
+            [](const EffectVolume &v)
+            {
+                return v.remainingLife <= 0.0f;
+            }),
+        this->effectVolumes.end());
+}
+
+std::vector<Object *> MeleePushAttack::obj() const
+{
+    std::vector<Object *> ret;
+    ret.reserve(this->effectVolumes.size());
+    for (const auto &volume : this->effectVolumes)
+    {
+        ret.push_back(const_cast<Object *>(&volume.area));
+    }
+    return ret;
+}
+
+Vector3 MeleePushAttack::getForwardVector() const
+{
+    if (this->spawnedBy)
+    {
+        if (this->spawnedBy->category() == ENTITY_PLAYER)
+        {
+            const Me *player = static_cast<const Me *>(this->spawnedBy);
+            float yaw = player->getLookRotation().x;
+            Vector3 forward = {sinf(yaw), 0.0f, cosf(yaw)};
+            return Vector3Normalize(forward);
+        }
+        if (this->spawnedBy->category() == ENTITY_ENEMY)
+        {
+            const Enemy *enemy = static_cast<const Enemy *>(this->spawnedBy);
+            Vector3 dir = enemy->dir();
+            Vector3 forward = {dir.x, 0.0f, dir.z};
+            if (Vector3LengthSqr(forward) < 0.0001f)
+                forward = {0.0f, 0.0f, 1.0f};
+            return Vector3Normalize(forward);
+        }
+    }
+    return {0.0f, 0.0f, 1.0f};
+}
+
+MeleePushAttack::EffectVolume MeleePushAttack::buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const
+{
+    /*
+     * Build a short-lived effect volume representing the melee sweep.
+     * The volume is an oriented box (OBB) placed half-way along the
+     * `pushRange` in front of the attacker, with width computed from
+     * the swing angle so it approximates a fan / cone sweep.
+     *
+     * This Object is then used both for collision testing (OBB vs OBB)
+     * and for visualization (rendered as a temporary cube by Scene).
+     */
+    EffectVolume volume;
+    Vector3 forwardNorm = forward;
+    if (Vector3LengthSqr(forwardNorm) < 0.0001f)
+    {
+        forwardNorm = {0.0f, 0.0f, 1.0f};
+    }
+    else
+    {
+        forwardNorm = Vector3Normalize(forwardNorm);
+    }
+
+    float halfAngle = pushAngle * 0.5f;
+    float sweepWidth = 2.0f * pushRange * tanf(halfAngle);
+    Vector3 size = {sweepWidth, effectHeight, pushRange};
+    Vector3 center = Vector3Add(origin, Vector3Scale(forwardNorm, -pushRange * 0.5f));
+    center.y = origin.y + effectYOffset;
+
+    // Create the visual/physical Object representing the area and cache its OBB
+    volume.area = Object(size, center);
+    volume.area.visible = false;
+    // Orient the box so its local +Z axis points along the forward direction
+    volume.area.setRotationFromForward(forwardNorm);
+    // Update the OBB used by collision helpers
+    volume.area.UpdateOBB();
+    // Short lifetime so the visual feedback disappears quickly
+    volume.remainingLife = effectLifetime;
+
+    return volume;
+}
+
+bool MeleePushAttack::pushEnemies(UpdateContext &uc, EffectVolume &volume)
+{
+    if (!uc.scene)
+        return false;
+
+    bool hit = false;
+    for (auto entity : uc.scene->getEntities(ENTITY_ENEMY))
+    {
+        if (!entity || entity == this->spawnedBy)
+            continue;
+        Enemy *enemy = static_cast<Enemy *>(entity);
+        CollisionResult collision = Object::collided(volume.area, enemy->obj());
+        if (!collision.collided)
+            continue;
+
+        Vector3 origin = this->spawnedBy->pos();
+        Vector3 delta = Vector3Subtract(enemy->pos(), origin);
+        delta.y = 0.0f;
+        float distSq = Vector3LengthSqr(delta);
+
+        Vector3 dirNorm;
+        if (distSq > 0.0001f)
+        {
+            dirNorm = Vector3Scale(delta, 1.0f / sqrtf(distSq));
+        }
+        else
+        {
+            Quaternion q = volume.area.getRotation();
+            dirNorm = Vector3RotateByQuaternion({0.0f, 0.0f, 1.0f}, q);
+        }
+
+        Vector3 push = Vector3Scale(dirNorm, pushForce);
+        enemy->applyKnockback(push, knockbackDuration, verticalLift);
+        hit = true;
+    }
+    return hit;
+}
+
+void MeleePushAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f)
+        return;
+
+    Vector3 origin = this->spawnedBy->pos();
+    Vector3 forward = this->getForwardVector();
+    /*
+     * On trigger: build a short-lived effect volume, immediately test
+     * enemies against it (so knockback happens the same frame), and
+     * also keep the volume in `effectVolumes` so Scene can render the
+     * area for a brief visual cue.
+     */
+    EffectVolume volume = this->buildEffectVolume(origin, forward);
+    bool hit = this->pushEnemies(uc, volume);
+    // Store for a short time so the sweep is visible
+    this->effectVolumes.push_back(volume);
+    (void)hit;
+
+    this->cooldownRemaining = cooldownDuration;
+
+    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        player->triggerMeleeSwing(swingDuration);
+    }
 }

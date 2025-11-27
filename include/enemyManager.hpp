@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "updateContext.hpp"
+#include "me.hpp"
 #include "object.hpp"
 class Enemy;
 class Object;
@@ -17,5 +18,5 @@ public:
     void update(UpdateContext &uc);
     void damage(Enemy *enemy, DamageResult &dResult);
     std::vector<Object *> getObjects() const;
-    std::vector<Entity *> getEntities();
+    std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ENEMY);
 };

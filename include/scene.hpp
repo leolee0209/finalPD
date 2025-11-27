@@ -62,5 +62,5 @@ public:
     /**
      * @brief Return a list of entity pointers currently in the scene.
      */
-    std::vector<Entity *> getEntities();
+    std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
 };

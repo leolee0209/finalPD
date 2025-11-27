@@ -17,6 +17,7 @@ private:
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
     std::vector<ThousandTileAttack *> singleTileAttack;
+    std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
 
     void checkActivation(Entity *player);
@@ -40,9 +41,14 @@ public:
     ThousandTileAttack *getSingleTileAttack(Entity *spawnedBy);
 
     /**
+     * @brief Retrieve or create a melee push attack controller for `spawnedBy`.
+     */
+    MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
+
+    /**
      * @brief Get all entity pointers managed by attacks (projectiles).
      */
-    std::vector<Entity *> getEntities();
+    std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_PROJECTILE);
 
     /**
      * @brief Get objects representing all projectiles/connectors for rendering/collision.

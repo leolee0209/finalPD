@@ -17,6 +17,9 @@ private:
     float headTimer;
     float walkLerp;
     Vector2 lean;
+    float swingRoll = 0.0f;
+    float swingLean = 0.0f;
+    float swingLift = 0.0f;
 
     void UpdateCameraFPS();
 
@@ -30,6 +33,9 @@ public:
         headTimer = 0.0f;
         walkLerp = 0.0f;
         lean = {0};
+        swingRoll = 0.0f;
+        swingLean = 0.0f;
+        swingLift = 0.0f;
 
         this->camera = {0};
         this->camera.fovy = 60.0f;
@@ -52,6 +58,7 @@ public:
      * @param crouching true if player is holding crouch
      * @param playerPos player's world position
      * @param isGrounded whether player is currently grounded
+     * @param swingAmount normalized melee swing influence [0,1]
      */
-    void UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded);
+    void UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded, float swingAmount = 0.0f);
 };

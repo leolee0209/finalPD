@@ -56,13 +56,37 @@ void Me::applyPlayerMovement(UpdateContext &uc)
 void Me::UpdateBody(UpdateContext &uc)
 {
     this->applyPlayerMovement(uc);
+    if (this->meleeSwingTimer > 0.0f)
+    {
+        float delta = GetFrameTime();
+        this->meleeSwingTimer = fmaxf(0.0f, this->meleeSwingTimer - delta);
+    }
     this->UpdateCamera(uc);
 }
 
 // Updates the camera's position and orientation based on player movement
 void Me::UpdateCamera(UpdateContext &uc)
 {
-    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded);
+    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded, this->getMeleeSwingAmount());
+}
+
+void Me::triggerMeleeSwing(float durationSeconds)
+{
+    if (durationSeconds > 0.0f)
+        this->meleeSwingDuration = durationSeconds;
+    this->meleeSwingTimer = this->meleeSwingDuration;
+}
+
+float Me::getMeleeSwingAmount() const
+{
+    if (this->meleeSwingDuration <= 0.0f)
+        return 0.0f;
+    return Clamp(this->meleeSwingTimer / this->meleeSwingDuration, 0.0f, 1.0f);
+}
+
+EntityCategory Me::category() const
+{
+    return ENTITY_PLAYER;
 }
 
 // Updates the projectile's body (movement, gravity, etc.)
@@ -87,12 +111,18 @@ void Projectile::UpdateBody(UpdateContext &uc)
     auto results = Object::collided(this->o, uc.scene);
     for (auto &result : results)
     {
-        if (Enemy *e = dynamic_cast<Enemy *>(result.with))
+        if (result.with && result.with->category() == ENTITY_ENEMY)
         {
+            Enemy *e = static_cast<Enemy *>(result.with);
             auto dResult = DamageResult(10, result);
             uc.scene->em.damage(e, dResult);
         }
     }
+}
+
+EntityCategory Projectile::category() const
+{
+    return ENTITY_PROJECTILE;
 }
 
 void Entity::resolveCollision(Entity *e, UpdateContext &uc)

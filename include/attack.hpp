@@ -94,3 +94,43 @@ public:
         return ret;
     }
 };
+
+/**
+ * @brief Short-range melee push attack that applies knockback to enemies.
+ */
+class MeleePushAttack : public AttackController
+{
+public:
+    explicit MeleePushAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj() const;
+
+    void trigger(UpdateContext &uc);
+
+private:
+    struct EffectVolume
+    {
+        Object area;
+        float remainingLife;
+    };
+
+    float cooldownRemaining = 0.0f;
+    static constexpr float cooldownDuration = 0.8f;
+    static constexpr float swingDuration = 0.25f;
+    static constexpr float pushForce = 50.0f;
+    static constexpr float pushRange = 10.0f;
+    static constexpr float pushAngle = 70.0f * DEG2RAD;
+    static constexpr float knockbackDuration = 0.45f;
+    static constexpr float verticalLift = 2.5f;
+    static constexpr float effectLifetime = 0.2f;
+    static constexpr float effectHeight = 3.5f;
+    static constexpr float effectYOffset = 0.5f;
+
+    std::vector<EffectVolume> effectVolumes;
+
+    Vector3 getForwardVector() const;
+    bool pushEnemies(UpdateContext &uc, EffectVolume &volume);
+    EffectVolume buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const;
+};

@@ -6,6 +6,8 @@ AttackManager::~AttackManager()
  {
     for (auto &a : this->singleTileAttack)
         delete a;
+    for (auto &m : this->meleeAttacks)
+        delete m;
 }
 
 // Updates all ThousandAttack instances
@@ -13,6 +15,8 @@ void AttackManager::update(UpdateContext& uc)
 {
     for (auto &a : this->singleTileAttack)
         a->update(uc);
+    for (auto &m : this->meleeAttacks)
+        m->update(uc);
 }
 
 void AttackManager::recordThrow(UpdateContext &uc)
@@ -91,13 +95,28 @@ ThousandTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
     return this->singleTileAttack.back();
 }
 
-std::vector<Entity *> AttackManager::getEntities()
+MeleePushAttack *AttackManager::getMeleeAttack(Entity *spawnedBy)
+{
+    for (const auto &m : this->meleeAttacks)
+    {
+        if (m->spawnedBy == spawnedBy)
+            return m;
+    }
+    this->meleeAttacks.push_back(new MeleePushAttack(spawnedBy));
+    return this->meleeAttacks.back();
+}
+
+std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
 {
     std::vector<Entity *> ret;
-    for (const auto &a : this->singleTileAttack)
+    // If caller requests projectiles or all entities, include projectiles
+    if (cat == ENTITY_PROJECTILE || cat == ENTITY_ALL)
     {
-        auto v = a->getEntities();
-        ret.insert(ret.end(), v.begin(), v.end());
+        for (const auto &a : this->singleTileAttack)
+        {
+            auto v = a->getEntities();
+            ret.insert(ret.end(), v.begin(), v.end());
+        }
     }
     return ret;
 }
@@ -109,6 +128,11 @@ std::vector<Object *> AttackManager::getObjects() const
     for (const auto &a : this->singleTileAttack)
     {
         auto v = a->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &m : this->meleeAttacks)
+    {
+        auto v = m->obj();
         ret.insert(ret.end(), v.begin(), v.end());
     }
     return ret;
