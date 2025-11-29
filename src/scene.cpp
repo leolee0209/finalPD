@@ -4,6 +4,7 @@
 #include <rlgl.h>
 #include "enemyManager.hpp"
 #include <iostream>
+#include <cmath>
 // Destructor: unload shared model resources
 Scene::~Scene()
 {
@@ -17,6 +18,11 @@ Scene::~Scene()
 // Draws a 3D rectangle (cube) for the given object
 void Scene::DrawRectangle(Object &o) const
 {
+    if (o.isSphere())
+    {
+        DrawSphereObject(o);
+        return;
+    }
     if (o.useTexture && o.texture != nullptr)
     {
         // Draw the object using a textured cube
@@ -50,6 +56,20 @@ void Scene::DrawRectangle(Object &o) const
 
         // Draw wireframe using extended function to match rotation and scale
         DrawModelWiresEx(this->cubeModel, o.getPos(), axis, angle, o.getSize(), DARKBLUE);
+    }
+}
+
+void Scene::DrawSphereObject(Object &o) const
+{
+    float radius = o.getSphereRadius();
+    if (o.useTexture && o.texture != nullptr)
+    {
+        this->DrawTexturedSphere(*o.texture, o.sourceRect, o.pos, radius, o.tint);
+    }
+    else
+    {
+        DrawSphereEx(o.pos, radius, 24, 32, o.tint);
+        DrawSphereWires(o.pos, radius, 16, 16, DARKBLUE);
     }
 }
 
@@ -323,4 +343,70 @@ void Scene::DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 posi
     rlEnd();
 
     rlSetTexture(0);
+}
+
+void Scene::DrawTexturedSphere(Texture2D &texture, const Rectangle &source, const Vector3 &position, float radius, Color tint) const
+{
+    int rings = 32;
+    int slices = 48;
+    float texWidth = (float)texture.width;
+    float texHeight = (float)texture.height;
+
+    Rectangle src = source;
+    if (src.width <= 0.0f || src.height <= 0.0f)
+    {
+        src = {0.0f, 0.0f, texWidth, texHeight};
+    }
+    float uBase = src.x / texWidth;
+    float vBase = src.y / texHeight;
+    float uScale = src.width / texWidth;
+    float vScale = src.height / texHeight;
+
+    rlPushMatrix();
+    rlTranslatef(position.x, position.y, position.z);
+    rlSetTexture(texture.id);
+    rlBegin(RL_TRIANGLES);
+    rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+
+    auto emitVertex = [&](float lat, float lon, float uFrac, float vFrac)
+    {
+        float x = cosf(lon) * cosf(lat);
+        float y = sinf(lat);
+        float z = sinf(lon) * cosf(lat);
+        float u = uBase + uScale * uFrac;
+        float v = vBase + vScale * vFrac;
+        rlTexCoord2f(u, v);
+        rlNormal3f(x, y, z);
+        rlVertex3f(x * radius, y * radius, z * radius);
+    };
+
+    float latStep = PI / rings;
+    float lonStep = (2.0f * PI) / slices;
+
+    for (int ring = 0; ring < rings; ++ring)
+    {
+        float lat0 = -PI / 2.0f + ring * latStep;
+        float lat1 = lat0 + latStep;
+        float v0 = (float)ring / rings;
+        float v1 = (float)(ring + 1) / rings;
+        for (int slice = 0; slice < slices; ++slice)
+        {
+            float lon0 = slice * lonStep;
+            float lon1 = lon0 + lonStep;
+            float u0 = (float)slice / slices;
+            float u1 = (float)(slice + 1) / slices;
+
+            emitVertex(lat0, lon0, u0, v0);
+            emitVertex(lat1, lon0, u0, v1);
+            emitVertex(lat1, lon1, u1, v1);
+
+            emitVertex(lat0, lon0, u0, v0);
+            emitVertex(lat1, lon1, u1, v1);
+            emitVertex(lat0, lon1, u1, v0);
+        }
+    }
+
+    rlEnd();
+    rlSetTexture(0);
+    rlPopMatrix();
 }

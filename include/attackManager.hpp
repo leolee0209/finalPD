@@ -19,6 +19,7 @@ private:
     std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<DashAttack *> dashAttacks;
+    std::vector<DotBombAttack *> dotBombAttacks;
     std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
@@ -47,6 +48,8 @@ public:
      */
     MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
     DashAttack *getDashAttack(Entity *spawnedBy);
+    DotBombAttack *getDotBombAttack(Entity *spawnedBy);
+    bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**
      * @brief Get all entity pointers managed by attacks (projectiles).

@@ -17,18 +17,34 @@ void Me::applyPlayerMovement(UpdateContext &uc)
 
     float delta = GetFrameTime();
 
+    bool knockedBack = this->knockbackTimer > 0.0f;
+    if (knockedBack)
+    {
+        this->knockbackTimer = fmaxf(0.0f, this->knockbackTimer - delta);
+        knockedBack = this->knockbackTimer > 0.0f;
+    }
+
     if (this->meleeWindupTimer > 0.0f)
     {
         this->meleeWindupTimer = fmaxf(0.0f, this->meleeWindupTimer - delta);
     }
 
     bool lockMovement = this->meleeWindupTimer > 0.0f;
-    if (lockMovement)
+    if (knockedBack || lockMovement)
     {
         input = {0.0f, 0.0f};
         this->direction = Vector3Zero();
+    }
+    if (lockMovement)
+    {
         this->velocity.x = Lerp(this->velocity.x, 0.0f, 30.0f * delta);
         this->velocity.z = Lerp(this->velocity.z, 0.0f, 30.0f * delta);
+    }
+
+    bool airborne = !this->grounded;
+    if (airborne)
+    {
+        input = {0.0f, 0.0f};
     }
 
     // Handle jumping (gravity & vertical motion handled by ApplyPhysics)
@@ -62,7 +78,7 @@ void Me::applyPlayerMovement(UpdateContext &uc)
     params.decelGround = FRICTION;
     params.decelAir = AIR_DRAG;
     params.maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
-    params.maxAccel = MAX_ACCEL;
+    params.maxAccel = airborne ? 0.0f : MAX_ACCEL;
     params.floorY = 0.0f;
     params.iterativeCollisionResolve = true;
     params.zeroThreshold = params.maxSpeed * 0.01f;
@@ -121,6 +137,31 @@ void Me::addCameraShake(float magnitude, float duration)
 void Me::addCameraFovKick(float magnitude, float durationSeconds)
 {
     this->camera.addFovKick(magnitude, durationSeconds);
+}
+
+void Me::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift)
+{
+    this->velocity.x += pushVelocity.x;
+    this->velocity.z += pushVelocity.z;
+    if (lift > 0.0f)
+    {
+        this->velocity.y = fmaxf(this->velocity.y, lift);
+    }
+    this->grounded = false;
+    this->knockbackTimer = fmaxf(this->knockbackTimer, durationSeconds);
+}
+
+bool Me::damage(DamageResult &dResult)
+{
+    int appliedDamage = (int)(dResult.damage);
+    if (appliedDamage <= 0)
+        appliedDamage = 1;
+    this->health -= appliedDamage;
+    if (this->health < 0)
+        this->health = 0;
+    float shakeMagnitude = Clamp((float)appliedDamage / 40.0f, 0.1f, 0.7f);
+    this->addCameraShake(shakeMagnitude, 0.25f);
+    return this->health > 0;
 }
 
 EntityCategory Me::category() const

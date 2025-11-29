@@ -6,6 +6,10 @@
 #include <algorithm>
 #include "scene.hpp"
 
+Texture2D DotBombAttack::explosionTexture{};
+bool DotBombAttack::explosionTextureLoaded = false;
+int DotBombAttack::explosionTextureUsers = 0;
+
 // Helper: create quaternion that faces forward (used by setRotationFromForward / quaternion helpers already in file)
 Quaternion GetQuaternionFromForward(Vector3 forward)
 {
@@ -67,8 +71,354 @@ bool ThousandTileAttack::thousandEndFinal()
         std::remove_if(this->projectiles.begin(), this->projectiles.end(), should_remove),
         this->projectiles.end());
     this->count -= (old_size - this->projectiles.size());
-
     return this->projectiles.empty();
+}
+
+// --- DotBombAttack --------------------------------------------------------------------
+
+DotBombAttack::DotBombAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
+{
+    retainExplosionTexture();
+}
+
+DotBombAttack::~DotBombAttack()
+{
+    releaseExplosionTexture();
+}
+
+void DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
+{
+    if (!uc.scene || !this->spawnedBy)
+        return;
+
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        forward = Vector3Subtract(camera.target, camera.position);
+    }
+    else if (this->spawnedBy->category() == ENTITY_ENEMY)
+    {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
+        forward = enemy->dir();
+    }
+
+    if (Vector3LengthSqr(forward) < 0.0001f)
+    {
+        forward = {0.0f, 0.0f, -1.0f};
+    }
+    forward = Vector3Normalize(forward);
+
+    Vector3 pos = this->spawnedBy->pos();
+    pos.y += muzzleHeight;
+    Vector3 planarForward = {forward.x, 0.0f, forward.z};
+    if (Vector3LengthSqr(planarForward) > 0.0001f)
+    {
+        planarForward = Vector3Normalize(planarForward);
+        pos = Vector3Add(pos, Vector3Scale(planarForward, muzzleForwardOffset));
+    }
+
+    Vector3 velocity = Vector3Scale(forward, projectileSpeed);
+    velocity.y += projectileLift;
+
+    Object body({projectileRadius * 2.0f, projectileHeight, projectileLength}, pos);
+    body.setRotationFromForward(forward);
+    body.useTexture = uc.uiManager != nullptr;
+    if (uc.uiManager)
+    {
+        body.texture = &uc.uiManager->muim.getSpriteSheet();
+        body.sourceRect = uc.uiManager->muim.getTile(tile);
+        body.tint = WHITE;
+    }
+    body.UpdateOBB();
+
+    Bomb bomb;
+    bomb.projectile = Projectile(
+        pos,
+        velocity,
+        forward,
+        false,
+        body,
+        projectileFriction,
+        projectileDrag,
+        tile);
+    bomb.flightTimeRemaining = 4.0f;
+    bombs.push_back(bomb);
+}
+
+void DotBombAttack::retainExplosionTexture()
+{
+    if (++explosionTextureUsers > 1)
+        return;
+    explosionTexture = LoadTexture(explosionTexturePath);
+    explosionTextureLoaded = explosionTexture.id != 0;
+    if (!explosionTextureLoaded)
+    {
+        TraceLog(LOG_WARNING, "Failed to load explosion texture from %s", explosionTexturePath);
+    }
+}
+
+void DotBombAttack::releaseExplosionTexture()
+{
+    if (explosionTextureUsers <= 0)
+        return;
+    explosionTextureUsers--;
+    if (explosionTextureUsers == 0)
+    {
+        if (explosionTextureLoaded && IsWindowReady())
+        {
+            UnloadTexture(explosionTexture);
+        }
+        explosionTexture = Texture2D{};
+        explosionTextureLoaded = false;
+    }
+}
+
+void DotBombAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    for (auto &bomb : bombs)
+    {
+        if (!bomb.exploded)
+        {
+            bomb.flightTimeRemaining = fmaxf(0.0f, bomb.flightTimeRemaining - delta);
+            bomb.projectile.UpdateBody(uc);
+
+            bool hitEnvironment = false;
+            if (uc.scene)
+            {
+                const auto worldHits = Object::collided(bomb.projectile.obj(), uc.scene);
+                hitEnvironment = std::any_of(
+                    worldHits.begin(),
+                    worldHits.end(),
+                    [](const CollisionResult &hit)
+                    {
+                        return hit.with == nullptr; // static world geometry
+                    });
+            }
+
+            bool hitEnemy = false;
+            if (uc.scene && !hitEnvironment)
+            {
+                for (Entity *entity : uc.scene->em.getEntities())
+                {
+                    if (!entity || entity->category() != ENTITY_ENEMY)
+                        continue;
+                    Enemy *enemy = static_cast<Enemy *>(entity);
+                    CollisionResult result = Object::collided(bomb.projectile.obj(), enemy->obj());
+                    if (result.collided)
+                    {
+                        hitEnemy = true;
+                        break;
+                    }
+                }
+            }
+
+            bool timedOut = bomb.flightTimeRemaining <= 0.0f;
+            bool groundedHit = bomb.projectile.pos().y <= 0.2f && bomb.projectile.vel().y <= 0.0f;
+
+            if (hitEnvironment || hitEnemy || groundedHit || timedOut)
+            {
+                startExplosion(bomb, bomb.projectile.pos(), uc);
+            }
+        }
+        else
+        {
+            bomb.explosionTimer -= delta;
+            float normalized = 1.0f - (bomb.explosionTimer / explosionLifetime);
+            normalized = Clamp(normalized, 0.0f, 1.0f);
+            float radius = explosionStartRadius + (explosionEndRadius - explosionStartRadius) * normalized;
+            bomb.explosionFx.pos = {bomb.explosionOrigin.x, fmaxf(bomb.explosionOrigin.y, 0.0f), bomb.explosionOrigin.z};
+            bomb.explosionFx.setAsSphere(radius);
+
+            unsigned char alpha = (unsigned char)Clamp((1.0f - normalized) * 220.0f, 0.0f, 255.0f);
+            bomb.explosionFx.tint = {255, 190, 90, alpha};
+            updateExplosionBillboard(bomb, uc, normalized);
+        }
+    }
+
+    bombs.erase(
+        std::remove_if(
+            bombs.begin(),
+            bombs.end(),
+            [](const Bomb &bomb)
+            {
+                return bomb.exploded && bomb.explosionTimer <= 0.0f;
+            }),
+        bombs.end());
+}
+
+std::vector<Entity *> DotBombAttack::getEntities()
+{
+    std::vector<Entity *> ret;
+    for (auto &bomb : bombs)
+    {
+        if (!bomb.exploded)
+        {
+            ret.push_back(&bomb.projectile);
+        }
+    }
+    return ret;
+}
+
+std::vector<Object *> DotBombAttack::obj()
+{
+    std::vector<Object *> ret;
+    for (auto &bomb : bombs)
+    {
+        if (!bomb.exploded)
+        {
+            ret.push_back(&bomb.projectile.obj());
+        }
+        if (bomb.fxActive)
+        {
+            ret.push_back(&bomb.explosionFx);
+        }
+        if (bomb.spriteActive)
+        {
+            ret.push_back(&bomb.explosionSprite);
+        }
+    }
+    return ret;
+}
+
+void DotBombAttack::startExplosion(Bomb &bomb, const Vector3 &origin, UpdateContext &uc)
+{
+    if (bomb.exploded)
+        return;
+    bomb.exploded = true;
+    bomb.explosionTimer = explosionLifetime;
+    bomb.explosionOrigin = origin;
+    bomb.projectile.obj().setVisible(false);
+    bomb.fxActive = true;
+    Vector3 fxPos = {origin.x, fmaxf(origin.y, 0.0f), origin.z};
+    bomb.explosionFx = Object({1.0f, 1.0f, 1.0f}, fxPos);
+    bomb.explosionFx.setAsSphere(explosionStartRadius);
+    bomb.explosionFx.setVisible(true);
+    bomb.explosionFx.useTexture = false;
+    bomb.explosionFx.tint = {255, 190, 90, 220};
+    bomb.explosionSprite = Object({explosionSpriteStartSize, explosionSpriteStartSize, explosionSpriteDepth}, fxPos);
+    bomb.explosionSprite.setVisible(true);
+    bomb.explosionSprite.useTexture = explosionTextureLoaded;
+    if (explosionTextureLoaded)
+    {
+        bomb.explosionSprite.texture = &explosionTexture;
+        bomb.explosionSprite.sourceRect = {0.0f, 0.0f, (float)explosionTexture.width, (float)explosionTexture.height};
+    }
+    else
+    {
+        bomb.explosionSprite.texture = nullptr;
+    }
+    bomb.explosionSprite.tint = WHITE;
+    bomb.explosionSprite.UpdateOBB();
+    bomb.spriteActive = true;
+    applyExplosionEffects(origin, uc);
+}
+
+void DotBombAttack::applyExplosionEffects(const Vector3 &origin, UpdateContext &uc)
+{
+    if (!uc.scene)
+        return;
+
+    const float maxRadiusSq = explosionEndRadius * explosionEndRadius;
+    auto applyToEntity = [&](Entity *entity)
+    {
+        if (!entity)
+            return;
+        EntityCategory category = entity->category();
+        if (category != ENTITY_ENEMY && category != ENTITY_PLAYER)
+            return;
+
+        Vector3 delta = Vector3Subtract(entity->pos(), origin);
+        float distanceSq = Vector3LengthSqr(delta);
+        if (distanceSq > maxRadiusSq)
+            return;
+
+        Vector3 horizontal = {delta.x, 0.0f, delta.z};
+        if (Vector3LengthSqr(horizontal) < 0.0001f)
+        {
+            horizontal = {0.0f, 0.0f, 1.0f};
+        }
+        horizontal = Vector3Normalize(horizontal);
+        Vector3 push = Vector3Scale(horizontal, explosionKnockback);
+
+        Vector3 normal = delta;
+        if (Vector3LengthSqr(normal) < 0.0001f)
+        {
+            normal = {0.0f, 1.0f, 0.0f};
+        }
+        else
+        {
+            normal = Vector3Normalize(normal);
+        }
+
+        CollisionResult impact{};
+        impact.with = entity;
+        impact.collided = true;
+        impact.penetration = 0.0f;
+        impact.normal = normal;
+        DamageResult damage(explosionDamage, impact);
+
+        if (category == ENTITY_ENEMY)
+        {
+            Enemy *enemy = static_cast<Enemy *>(entity);
+            enemy->applyKnockback(push, explosionKnockbackDuration, explosionLift);
+            uc.scene->em.damage(enemy, damage);
+        }
+        else if (category == ENTITY_PLAYER)
+        {
+            Me *player = static_cast<Me *>(entity);
+            player->applyKnockback(push, explosionKnockbackDuration, explosionLift);
+            player->damage(damage);
+        }
+    };
+
+    if (uc.player)
+    {
+        applyToEntity(uc.player);
+    }
+
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        applyToEntity(entity);
+    }
+}
+
+void DotBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, float normalizedProgress)
+{
+    if (!bomb.spriteActive)
+        return;
+
+    float spriteSize = explosionSpriteStartSize + (explosionSpriteEndSize - explosionSpriteStartSize) * normalizedProgress;
+    bomb.explosionSprite.size = {spriteSize, spriteSize, explosionSpriteDepth};
+    float currentRadius = explosionStartRadius + (explosionEndRadius - explosionStartRadius) * normalizedProgress;
+    float minY = fmaxf(bomb.explosionOrigin.y, 0.0f);
+    Vector3 spritePos = {bomb.explosionOrigin.x, fmaxf(minY + currentRadius + spriteSize * 0.25f, spriteSize * 0.5f), bomb.explosionOrigin.z};
+
+    Vector3 faceDir = {0.0f, 0.0f, -1.0f};
+    if (uc.player)
+    {
+        const Camera &cam = uc.player->getCamera();
+        faceDir = Vector3Subtract(cam.position, bomb.explosionSprite.pos);
+        faceDir.y = 0.0f;
+        if (Vector3LengthSqr(faceDir) < 0.0001f)
+            faceDir = {0.0f, 0.0f, -1.0f};
+    }
+    faceDir = Vector3Normalize(faceDir);
+    bomb.explosionSprite.setRotationFromForward(faceDir);
+    spritePos = Vector3Add(spritePos, Vector3Scale(faceDir, 0.1f));
+    bomb.explosionSprite.pos = spritePos;
+    bomb.explosionSprite.UpdateOBB();
+
+    unsigned char spriteAlpha = (unsigned char)Clamp((1.0f - normalizedProgress) * 255.0f, 0.0f, 255.0f);
+    bomb.explosionSprite.tint.a = spriteAlpha;
+
+    if (normalizedProgress >= 1.0f)
+    {
+        bomb.spriteActive = false;
+        bomb.explosionSprite.setVisible(false);
+    }
 }
 
 // --- Triplet integration (connectors) moved into ThousandTileAttack ---
@@ -630,15 +980,99 @@ Vector3 DashAttack::computeDashDirection(const UpdateContext &uc) const
     return Vector3Normalize(desired);
 }
 
-void DashAttack::applyDashImpulse(Me *player)
+Vector3 DashAttack::computeCollisionAdjustedVelocity(Me *player, UpdateContext &uc, float desiredSpeed)
+{
+    Vector3 defaultVel = Vector3Scale(this->dashDirection, desiredSpeed);
+    if (!player || !uc.scene || desiredSpeed <= 0.0f)
+        return defaultVel;
+
+    float delta = GetFrameTime();
+    if (delta <= 0.0f)
+        return defaultVel;
+
+    Object probe = player->obj();
+    Vector3 startPos = player->pos();
+    probe.pos = startPos;
+    probe.UpdateOBB();
+
+    float remainingDistance = desiredSpeed * delta;
+    float approxSize = fmaxf(fmaxf(probe.size.x, probe.size.y), probe.size.z);
+    float stepSize = fmaxf(0.2f, approxSize * 0.25f);
+    Vector3 currentDir = this->dashDirection;
+    int guard = 0;
+
+    while (remainingDistance > 0.0001f && Vector3LengthSqr(currentDir) > 1e-5f && guard < 256)
+    {
+        ++guard;
+        float step = fminf(stepSize, remainingDistance);
+        Vector3 move = Vector3Scale(currentDir, step);
+        probe.pos = Vector3Add(probe.pos, move);
+        probe.UpdateOBB();
+
+        auto hits = Object::collided(probe, uc.scene);
+        bool blocked = false;
+        Vector3 blockNormal = {0.0f, 0.0f, 0.0f};
+        for (const CollisionResult &hit : hits)
+        {
+            if (hit.collided && hit.with == nullptr)
+            {
+                blocked = true;
+                blockNormal = hit.normal;
+                break;
+            }
+        }
+
+        if (blocked)
+        {
+            probe.pos = Vector3Subtract(probe.pos, move);
+            probe.UpdateOBB();
+
+            float normalDot = Vector3DotProduct(currentDir, blockNormal);
+            Vector3 slideDir = Vector3Subtract(currentDir, Vector3Scale(blockNormal, normalDot));
+            if (Vector3LengthSqr(slideDir) < 1e-4f)
+            {
+                remainingDistance = 0.0f;
+                break;
+            }
+            currentDir = Vector3Normalize(slideDir);
+            continue;
+        }
+
+        remainingDistance -= step;
+    }
+
+    Vector3 displacement = Vector3Subtract(probe.pos, startPos);
+    float displacementLenSq = Vector3LengthSqr(displacement);
+    if (displacementLenSq > 1e-6f)
+    {
+        Vector3 newDir = Vector3Scale(displacement, 1.0f / sqrtf(displacementLenSq));
+        this->dashDirection = newDir;
+    }
+    else
+    {
+        this->dashDirection = {0.0f, 0.0f, 0.0f};
+    }
+
+    if (delta <= 0.0f || displacementLenSq < 1e-6f)
+        return Vector3Zero();
+
+    return Vector3Scale(displacement, 1.0f / delta);
+}
+
+void DashAttack::applyDashImpulse(Me *player, UpdateContext &uc)
 {
     if (!player)
         return;
+    Vector3 dashVelocity = this->computeCollisionAdjustedVelocity(player, uc, dashSpeed);
     Vector3 vel = player->vel();
-    vel.x = this->dashDirection.x * dashSpeed;
-    vel.z = this->dashDirection.z * dashSpeed;
+    vel.x = dashVelocity.x;
+    vel.z = dashVelocity.z;
     player->setVelocity(vel);
     player->setDirection(Vector3Zero());
+    if (Vector3LengthSqr(dashVelocity) < 0.01f)
+    {
+        this->activeRemaining = 0.0f;
+    }
 }
 
 void DashAttack::update(UpdateContext &uc)
@@ -653,7 +1087,7 @@ void DashAttack::update(UpdateContext &uc)
         if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
         {
             Me *player = static_cast<Me *>(this->spawnedBy);
-            this->applyDashImpulse(player);
+            this->applyDashImpulse(player, uc);
         }
     }
 }
@@ -674,6 +1108,6 @@ void DashAttack::trigger(UpdateContext &uc)
     this->dashDirection = dir;
     this->activeRemaining = dashDuration;
     this->cooldownRemaining = dashCooldown;
-    this->applyDashImpulse(player);
+    this->applyDashImpulse(player, uc);
     player->addCameraFovKick(dashFovKick, dashFovKickDuration);
 }

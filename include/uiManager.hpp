@@ -3,70 +3,16 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <array>
 #include "uiElement.hpp"
+#include "mahjongTypes.hpp"
 
 /**
  * @brief Enumeration of Mahjong tile types used by the UI sprite sheet.
  *
  * `TILE_COUNT` can be used to size arrays referencing the full tile set.
  */
-enum class MahjongTileType
-{
-    // Dot suit (Tong)
-    DOT_1,
-    DOT_2,
-    DOT_3,
-    DOT_4,
-    DOT_5,
-    DOT_6,
-    DOT_7,
-    DOT_8,
-    DOT_9,
-    // Bamboo suit (Suo)
-    BAMBOO_1,
-    BAMBOO_2,
-    BAMBOO_3,
-    BAMBOO_4,
-    BAMBOO_5,
-    BAMBOO_6,
-    BAMBOO_7,
-    BAMBOO_8,
-    BAMBOO_9,
-    // Character suit (Wan)
-    CHARACTER_1,
-    CHARACTER_2,
-    CHARACTER_3,
-    CHARACTER_4,
-    CHARACTER_5,
-    CHARACTER_6,
-    CHARACTER_7,
-    CHARACTER_8,
-    CHARACTER_9,
-    // Winds
-    WIND_EAST,
-    WIND_SOUTH,
-    WIND_WEST,
-    WIND_NORTH,
-    // Dragons
-    DRAGON_RED,
-    DRAGON_GREEN,
-    DRAGON_WHITE,
-    // Others
-    BACK,
-    EMPTY,
-    // Seasons
-    SEASON_SPRING,
-    SEASON_SUMMER,
-    SEASON_AUTUMN,
-    SEASON_WINTER,
-    // Flowers
-    FLOWER_PLUM,
-    FLOWER_ORCHID,
-    FLOWER_CHRYSANTHEMUM,
-    FLOWER_BAMBOO,
-    
-    TILE_COUNT // Not a tile, but gives the total number of tile types
-};
+class AttackSlotElement;
 
 /**
  * @brief Helper to manage the Mahjong tile sprite sheet and player hand UI.
@@ -92,6 +38,8 @@ public:
             delete e;
         }
         elements.clear();
+        tileHitboxes.clear();
+        tileUsed.clear();
     }
 
     void addTile(MahjongTileType type, Vector2 position);
@@ -101,6 +49,14 @@ public:
     void nextTile();
     void previousTile();
     MahjongTileType getSelectedTile();
+    void selectTileByType(MahjongTileType type);
+    void selectTileByIndex(int index);
+    MahjongTileType getTileTypeAt(int index) const;
+    int getTileIndexAt(Vector2 position) const;
+    Rectangle getTileBounds(int index) const;
+    const std::vector<MahjongTileType> &getPlayerHand() const { return playerHand; }
+    bool isTileUsed(int index) const;
+    void setTileUsed(int index, bool used);
 
     // Returns the source rectangle for a given tile type.
     Rectangle getTile(MahjongTileType type)
@@ -124,6 +80,8 @@ private:
     int tileWidth, tileHeight;
     Texture2D spriteSheet;
     std::vector<UIElement *> elements;
+    std::vector<Rectangle> tileHitboxes;
+    std::vector<bool> tileUsed;
 };
 
 /**
@@ -136,7 +94,9 @@ private:
 class UIManager
 {
 public:
-    UIManager(const char *mahjongSpritePath, int tilesPerRow, int tileWidth, int tileHeight) : muim(MahjongUIManager(mahjongSpritePath, tilesPerRow, tileWidth, tileHeight)) {}
+
+    UIManager(const char *mahjongSpritePath, int tilesPerRow, int tileWidth, int tileHeight)
+        : muim(MahjongUIManager(mahjongSpritePath, tilesPerRow, tileWidth, tileHeight)) {}
     ~UIManager() = default;
     void cleanup();
 
@@ -144,10 +104,56 @@ public:
     void draw();
     void addElement(UIElement *element);
 
+    void setPauseMenuVisible(bool visible);
+    bool isPauseMenuVisible() const { return pauseMenuVisible; }
+    bool consumeResumeRequest();
+    bool consumeQuitRequest();
+    const std::vector<SlotTileEntry> &getSlotEntries(int slotIndex) const;
+
     MahjongUIManager muim;
 
 private:
     static Texture2D loadTexture(const std::string &fileName);
 
+    void updateHud();
+    void updatePauseMenu();
+    void drawHud();
+    void drawPauseMenu();
+
+    Rectangle getSmallButtonRect(int index) const;
+    void drawSmallButton(const Rectangle &rect, const char *label, bool hovered) const;
+
+    Rectangle getSlotRect(int index) const;
+    void drawDraggingTile();
+    void ensureSlotSetup();             // Initializes slot data from the hand on first use
+    void ensureSlotElements();          // Lazily instantiates AttackSlotElement widgets
+    void updateSlotElementLayout();     // Recomputes bounds + bindings every frame
+    AttackSlotElement *getSlotElement(int index) const;
+
+    void beginTileDragFromHand(int tileIndex, const Vector2 &mousePos);
+    void beginTileDragFromSlot(int slotIndex, int tileIndex, const Vector2 &mousePos);
+    void endTileDrag(const Vector2 &mousePos);
+    void addTileToSlot(int slotIndex, const SlotTileEntry &entry);
+
+    bool slotHasSpace(int slotIndex) const;
+    bool isValidSlotIndex(int slotIndex) const;
+    MahjongTileType getPrimaryTileForSlot(int slotIndex) const;
+    void refreshActiveSlotSelection();
+
     std::vector<UIElement *> elements;
+    bool pauseMenuVisible = false;
+    bool resumeRequested = false;
+    bool quitRequested = false;
+    static constexpr int slotCapacity = 3;
+    static constexpr int slotCount = 3;
+    std::array<std::vector<SlotTileEntry>, slotCount> attackSlots;
+    std::array<AttackSlotElement *, slotCount> slotElements{}; // Owned UI wrappers for each slot
+    int activeSlotIndex = 0;
+    bool slotsInitialized = false;
+    bool isDraggingTile = false;
+    bool draggingFromHand = false;
+    int draggingFromSlot = -1;
+    int draggingFromTileIndex = -1;
+    SlotTileEntry draggingTile;
+    Vector2 draggingTilePos{0.0f, 0.0f};
 };

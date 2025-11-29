@@ -13,13 +13,21 @@ class Scene;
  * cached `OBB` for collision tests. Use `useTexture` and `sourceRect` when
  * drawing textured cubes via Scene helpers.
  */
-class Object // maybe first expect it to be a box(3d rectangle)
+enum class ObjectShape
+{
+    Box,
+    Sphere
+};
+
+class Object
 {
 public:
     Vector3 size;
     Vector3 pos;
     Quaternion rotation;
     OBB obb;
+    ObjectShape shape = ObjectShape::Box;
+    float sphereRadius = 0.5f;
     Texture2D *texture = nullptr;
     Rectangle sourceRect;
     bool useTexture = false;
@@ -55,6 +63,12 @@ public:
      * queries.
      */
     void UpdateOBB();
+
+    // Shape helpers
+    void setAsBox(Vector3 sizes);
+    void setAsSphere(float radius);
+    bool isSphere() const { return this->shape == ObjectShape::Sphere; }
+    float getSphereRadius() const { return this->sphereRadius; }
 
     // Getter for the object's size
     const Vector3 &getSize() const { return this->size; }
@@ -120,17 +134,17 @@ public:
     /**
      * @brief Default constructor: unit cube at origin with identity rotation.
      */
-    Object() : size{1, 1, 1}, pos{0, 0, 0}, rotation(QuaternionIdentity()) {};
+    Object() : size{1, 1, 1}, pos{0, 0, 0}, rotation(QuaternionIdentity()) { setAsBox(this->size); };
 
     /**
      * @brief Construct with explicit size and position (identity rotation).
      */
-    Object(Vector3 sizes, Vector3 poss) : size(sizes), pos(poss), rotation(QuaternionIdentity()) {};
+    Object(Vector3 sizes, Vector3 poss) : size(sizes), pos(poss), rotation(QuaternionIdentity()) { setAsBox(sizes); };
 
     /**
      * @brief Construct with explicit size, position and rotation.
      */
-    Object(Vector3 sizes, Vector3 poss, Quaternion rot) : size(sizes), pos(poss), rotation(rot) {};
+    Object(Vector3 sizes, Vector3 poss, Quaternion rot) : size(sizes), pos(poss), rotation(rot) { setAsBox(sizes); };
     
     // Visibility helpers
     void setVisible(bool v) { this->visible = v; }
