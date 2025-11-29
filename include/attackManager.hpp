@@ -47,6 +47,7 @@ public:
      */
     MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
     DashAttack *getDashAttack(Entity *spawnedBy);
+    bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**
      * @brief Get all entity pointers managed by attacks (projectiles).

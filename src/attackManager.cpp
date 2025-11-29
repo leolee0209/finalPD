@@ -1,5 +1,20 @@
 #include "attackManager.hpp"
+#include <array>
+#include <algorithm>
 #include <iostream>
+
+namespace
+{
+bool isCharacterTile(MahjongTileType tile)
+{
+    return tile >= MahjongTileType::CHARACTER_1 && tile <= MahjongTileType::CHARACTER_9;
+}
+
+int getCharacterValue(MahjongTileType tile)
+{
+    return static_cast<int>(tile) - static_cast<int>(MahjongTileType::CHARACTER_1) + 1;
+}
+}
 
 // Destructor cleans up dynamically allocated ThousandAttack instances
 AttackManager::~AttackManager()
@@ -34,6 +49,83 @@ void AttackManager::recordThrow(UpdateContext &uc)
     }
     // Check for combos using the player's history
     this->checkActivation(uc.player);
+}
+
+bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
+{
+    if (!uc.player || !uc.uiManager)
+        return false;
+
+    const auto &slotEntries = uc.uiManager->getSlotEntries(slotIndex);
+    if (slotEntries.empty())
+        return false;
+
+    const bool canCheckCombo = slotEntries.size() >= 3;
+    std::array<int, 3> characterValues{};
+    bool allValidCharacters = true;
+    if (canCheckCombo)
+    {
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto &entry = slotEntries[i];
+            if (!entry.isValid() || !isCharacterTile(entry.tile))
+            {
+                allValidCharacters = false;
+                break;
+            }
+            characterValues[i] = getCharacterValue(entry.tile);
+        }
+    }
+
+    if (slotEntries.front().isValid())
+    {
+        uc.uiManager->muim.selectTileByIndex(slotEntries.front().handIndex);
+    }
+
+    const auto triggerDefaultThrow = [&]() -> bool {
+        if (ThousandTileAttack *singleAttack = getSingleTileAttack(uc.player))
+        {
+            singleAttack->spawnProjectile(uc);
+            return true;
+        }
+        return false;
+    };
+
+    if (!canCheckCombo || !allValidCharacters)
+    {
+        return triggerDefaultThrow();
+    }
+
+    bool isMeleeCombo = (characterValues[0] == characterValues[1]) && (characterValues[1] == characterValues[2]);
+    bool isDashCombo = false;
+    if (!isMeleeCombo)
+    {
+        auto sortedValues = characterValues;
+        std::sort(sortedValues.begin(), sortedValues.end());
+        isDashCombo = (sortedValues[0] + 1 == sortedValues[1]) && (sortedValues[1] + 1 == sortedValues[2]);
+    }
+
+    if (isMeleeCombo)
+    {
+        if (MeleePushAttack *melee = getMeleeAttack(uc.player))
+        {
+            melee->trigger(uc);
+            return true;
+        }
+        return false;
+    }
+
+    if (isDashCombo)
+    {
+        if (DashAttack *dash = getDashAttack(uc.player))
+        {
+            dash->trigger(uc);
+            return true;
+        }
+        return false;
+    }
+
+    return triggerDefaultThrow();
 }
 
 void AttackManager::checkActivation(Entity *player)
