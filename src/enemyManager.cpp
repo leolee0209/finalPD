@@ -49,10 +49,13 @@ void EnemyManager::damage(Enemy *enemy, DamageResult &dResult)
         this->RemoveEnemy(enemy);
 }
 
-std::vector<Entity *> EnemyManager::getEntities()
+std::vector<Entity *> EnemyManager::getEntities(EntityCategory cat)
 {
     std::vector<Entity *> r;
-    for (auto &e : this->enemies)
-        r.push_back(e);
+    if (cat == ENTITY_ENEMY || cat == ENTITY_ALL)
+    {
+        for (auto &e : this->enemies)
+            r.push_back(e);
+    }
     return r;
 }

@@ -2,7 +2,6 @@
 #include <raylib.h>
 #include "constant.hpp"
 #include <raymath.h>
-#include <iostream>
 #include "updateContext.hpp"
 #include <algorithm>
 #include "scene.hpp"
@@ -150,8 +149,6 @@ void ThousandTileAttack::update(UpdateContext &uc)
         }
         break;
     case MODE_TRIPLET_CONNECTING:
-        updateTriplet(uc);
-        break;
     case MODE_TRIPLET_FINAL:
     {
         // animate connectors expanding / rotating to final height
@@ -188,16 +185,25 @@ void ThousandTileAttack::update(UpdateContext &uc)
 }
 void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
 {
+    if (!uc.scene)
+        return;
+    AttackManager &am = uc.scene->am;
+    if (am.isAttackLockedByOther(this))
+        return;
+
     float yaw;
     float pitch;
 
-    if (uc.player == this->spawnedBy)
+    // Determine spawner orientation without RTTI: use category() then static_cast
+    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
     {
-        yaw = uc.player->getLookRotation().x;
-        pitch = uc.player->getLookRotation().y;
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        yaw = player->getLookRotation().x;
+        pitch = player->getLookRotation().y;
     }
-    else if (Enemy *enemy = dynamic_cast<Enemy *>(this->spawnedBy))
+    else if (this->spawnedBy && this->spawnedBy->category() == ENTITY_ENEMY)
     {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
         yaw = enemy->dir().x;
         pitch = enemy->dir().y;
     }
@@ -221,7 +227,6 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     const auto tile = uc.uiManager->muim.getSelectedTile();
     o.texture = &uc.uiManager->muim.getSpriteSheet();
     o.sourceRect = uc.uiManager->muim.getTile(tile);
-    
 
     Projectile projectile(
         pos,
@@ -236,4 +241,361 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     this->projectiles.push_back(projectile);
     uc.scene->am.recordThrow(uc);
     // this->lifetime.push_back(2.0f); // 2 seconds lifetime
+}
+
+// --- MeleePushAttack ------------------------------------------------------------------
+void MeleePushAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+
+    if (this->cooldownRemaining > 0.0f)
+    {
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
+
+    if (this->pendingStrike)
+    {
+        this->windupRemaining = fmaxf(0.0f, this->windupRemaining - delta);
+        if (this->windupRemaining <= 0.0f)
+        {
+            this->performStrike(uc);
+        }
+    }
+
+    this->updateTileIndicator(uc, delta);
+
+    for (auto &volume : this->effectVolumes)
+    {
+        volume.remainingLife -= delta;
+    }
+
+    this->effectVolumes.erase(
+        std::remove_if(
+            this->effectVolumes.begin(),
+            this->effectVolumes.end(),
+            [](const EffectVolume &v)
+            {
+                return v.remainingLife <= 0.0f;
+            }),
+        this->effectVolumes.end());
+}
+
+std::vector<Object *> MeleePushAttack::obj() const
+{
+    std::vector<Object *> ret;
+    ret.reserve(this->effectVolumes.size() + (this->tileIndicator.active ? 1U : 0U));
+    for (const auto &volume : this->effectVolumes)
+    {
+        ret.push_back(const_cast<Object *>(&volume.area));
+    }
+    if (this->tileIndicator.active)
+    {
+        ret.push_back(const_cast<Object *>(&this->tileIndicator.sprite));
+    }
+    return ret;
+}
+
+Vector3 MeleePushAttack::getForwardVector() const
+{
+    if (this->spawnedBy)
+    {
+        if (this->spawnedBy->category() == ENTITY_PLAYER)
+        {
+            const Me *player = static_cast<const Me *>(this->spawnedBy);
+            float yaw = player->getLookRotation().x;
+            Vector3 forward = {sinf(yaw), 0.0f, cosf(yaw)};
+            return Vector3Normalize(forward);
+        }
+        if (this->spawnedBy->category() == ENTITY_ENEMY)
+        {
+            const Enemy *enemy = static_cast<const Enemy *>(this->spawnedBy);
+            Vector3 dir = enemy->dir();
+            Vector3 forward = {dir.x, 0.0f, dir.z};
+            if (Vector3LengthSqr(forward) < 0.0001f)
+                forward = {0.0f, 0.0f, 1.0f};
+            return Vector3Normalize(forward);
+        }
+    }
+    return {0.0f, 0.0f, 1.0f};
+}
+
+MeleePushAttack::ViewBasis MeleePushAttack::getIndicatorViewBasis() const
+{
+    ViewBasis basis{{0.0f, indicatorYOffset, 0.0f}, {0.0f, 0.0f, 1.0f}};
+    if (!this->spawnedBy)
+        return basis;
+
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        const Me *player = static_cast<const Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        basis.position = camera.position;
+
+        Vector3 lookDir = Vector3Subtract(camera.target, camera.position);
+        if (Vector3LengthSqr(lookDir) < 0.0001f)
+            lookDir = {0.0f, 0.0f, 1.0f};
+        basis.forward = Vector3Normalize(lookDir);
+        return basis;
+    }
+
+    basis.position = this->spawnedBy->pos();
+    basis.position.y += indicatorYOffset;
+    basis.forward = this->getForwardVector();
+    return basis;
+}
+
+void MeleePushAttack::setIndicatorPose(const Vector3 &position, const Vector3 &forward)
+{
+    Vector3 facing = forward;
+    if (Vector3LengthSqr(facing) < 0.0001f)
+        facing = {0.0f, 0.0f, 1.0f};
+    facing = Vector3Scale(facing, -1.0f);
+
+    this->tileIndicator.sprite.pos = position;
+    this->tileIndicator.sprite.setRotationFromForward(facing);
+    this->tileIndicator.sprite.UpdateOBB();
+}
+
+MeleePushAttack::EffectVolume MeleePushAttack::buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const
+{
+    /*
+     * Build a short-lived effect volume representing the melee sweep.
+     * The volume is an oriented box (OBB) placed half-way along the
+     * `pushRange` in front of the attacker, with width computed from
+     * the swing angle so it approximates a fan / cone sweep.
+     *
+     * This Object is then used both for collision testing (OBB vs OBB)
+     * and for visualization (rendered as a temporary cube by Scene).
+     */
+    EffectVolume volume;
+    Vector3 forwardNorm = forward;
+    if (Vector3LengthSqr(forwardNorm) < 0.0001f)
+    {
+        forwardNorm = {0.0f, 0.0f, 1.0f};
+    }
+    else
+    {
+        forwardNorm = Vector3Normalize(forwardNorm);
+    }
+
+    float halfAngle = pushAngle * 0.5f;
+    float sweepWidth = 2.0f * pushRange * tanf(halfAngle);
+    Vector3 size = {sweepWidth, effectHeight, pushRange};
+    Vector3 center = Vector3Add(origin, Vector3Scale(forwardNorm, -pushRange * 0.5f));
+    center.y = origin.y + effectYOffset;
+
+    // Create the visual/physical Object representing the area and cache its OBB
+    volume.area = Object(size, center);
+    volume.area.setVisible(false);
+    // Orient the box so its local +Z axis points along the forward direction
+    volume.area.setRotationFromForward(forwardNorm);
+    // Update the OBB used by collision helpers
+    volume.area.UpdateOBB();
+    // Short lifetime so the visual feedback disappears quickly
+    volume.remainingLife = effectLifetime;
+
+    return volume;
+}
+
+bool MeleePushAttack::pushEnemies(UpdateContext &uc, EffectVolume &volume)
+{
+    if (!uc.scene)
+        return false;
+
+    bool hit = false;
+    for (auto entity : uc.scene->getEntities(ENTITY_ENEMY))
+    {
+        if (!entity || entity == this->spawnedBy)
+            continue;
+        Enemy *enemy = static_cast<Enemy *>(entity);
+        CollisionResult collision = Object::collided(volume.area, enemy->obj());
+        if (!collision.collided)
+            continue;
+
+        Vector3 origin = this->spawnedBy->pos();
+        Vector3 delta = Vector3Subtract(enemy->pos(), origin);
+        delta.y = 0.0f;
+        float distSq = Vector3LengthSqr(delta);
+
+        Vector3 dirNorm;
+        if (distSq > 0.0001f)
+        {
+            dirNorm = Vector3Scale(delta, 1.0f / sqrtf(distSq));
+        }
+        else
+        {
+            Quaternion q = volume.area.getRotation();
+            dirNorm = Vector3RotateByQuaternion({0.0f, 0.0f, 1.0f}, q);
+        }
+
+        Vector3 push = Vector3Scale(dirNorm, pushForce);
+        enemy->applyKnockback(push, knockbackDuration, verticalLift);
+        hit = true;
+    }
+    return hit;
+}
+
+void MeleePushAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f || this->pendingStrike)
+        return;
+
+    if (!uc.scene)
+        return;
+    AttackManager &am = uc.scene->am;
+    if (!am.tryLockAttack(this))
+        return;
+
+    this->pendingStrike = true;
+    this->windupRemaining = windupDuration;
+    this->requestPlayerWindupLock();
+    this->initializeTileIndicator(uc);
+}
+
+void MeleePushAttack::performStrike(UpdateContext &uc)
+{
+    Vector3 origin = this->spawnedBy->pos();
+    Vector3 forward = this->getForwardVector();
+    ViewBasis view = this->getIndicatorViewBasis();
+    EffectVolume volume = this->buildEffectVolume(origin, forward);
+    bool hit = this->pushEnemies(uc, volume);
+    this->effectVolumes.push_back(volume);
+    this->launchTileIndicator(view);
+
+    this->pendingStrike = false;
+    this->cooldownRemaining = cooldownDuration;
+    this->providePlayerFeedback(hit);
+    if (uc.scene)
+    {
+        uc.scene->am.releaseAttackLock(this);
+    }
+}
+
+void MeleePushAttack::requestPlayerWindupLock()
+{
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return;
+    Me *player = static_cast<Me *>(this->spawnedBy);
+    player->beginMeleeWindup(windupDuration);
+}
+
+void MeleePushAttack::providePlayerFeedback(bool hit)
+{
+    if (!this->spawnedBy)
+        return;
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        player->triggerMeleeSwing(swingDuration);
+        float shakeMag = cameraShakeMagnitude * (hit ? 1.0f : 0.5f);
+        player->addCameraShake(shakeMag, cameraShakeDuration);
+    }
+}
+
+void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
+{
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return;
+    if (!uc.uiManager)
+        return;
+
+    Texture2D &sheet = uc.uiManager->muim.getSpriteSheet();
+    MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+
+    this->tileIndicator.sprite.size = {indicatorWidth, indicatorHeight, indicatorThickness};
+    this->tileIndicator.sprite.useTexture = true;
+    this->tileIndicator.sprite.texture = &sheet;
+    this->tileIndicator.sprite.sourceRect = uc.uiManager->muim.getTile(tile);
+    this->tileIndicator.sprite.setVisible(true);
+
+    this->tileIndicator.active = true;
+    this->tileIndicator.launched = false;
+    this->tileIndicator.travelProgress = 0.0f;
+    this->tileIndicator.opacity = indicatorStartOpacity;
+
+    ViewBasis view = this->getIndicatorViewBasis();
+    this->tileIndicator.forward = view.forward;
+    Vector3 holdPos = Vector3Add(view.position, Vector3Scale(view.forward, indicatorHoldDistance));
+    this->tileIndicator.startPos = holdPos;
+    this->tileIndicator.targetPos = holdPos;
+    this->setIndicatorPose(holdPos, view.forward);
+
+    float alphaF = Clamp(indicatorStartOpacity * 255.0f, 0.0f, 255.0f);
+    this->tileIndicator.sprite.tint = {255, 255, 255, (unsigned char)alphaF};
+}
+
+void MeleePushAttack::updateTileIndicator(UpdateContext &uc, float deltaSeconds)
+{
+    (void)uc;
+    if (!this->tileIndicator.active)
+        return;
+    if (!this->spawnedBy)
+    {
+        this->deactivateTileIndicator();
+        return;
+    }
+
+    ViewBasis view = this->getIndicatorViewBasis();
+
+    if (!this->tileIndicator.launched)
+    {
+        this->tileIndicator.forward = view.forward;
+        Vector3 holdPos = Vector3Add(view.position, Vector3Scale(view.forward, indicatorHoldDistance));
+        this->tileIndicator.startPos = holdPos;
+        this->tileIndicator.targetPos = holdPos;
+        this->setIndicatorPose(holdPos, view.forward);
+
+        float progress = (windupDuration > 0.0f) ? 1.0f - (this->windupRemaining / windupDuration) : 1.0f;
+        progress = Clamp(progress, 0.0f, 1.0f);
+        float opacity = Lerp(indicatorStartOpacity, 1.0f, progress);
+        this->tileIndicator.opacity = opacity;
+        this->tileIndicator.sprite.tint.a = (unsigned char)Clamp(opacity * 255.0f, 0.0f, 255.0f);
+
+        if (!this->pendingStrike)
+        {
+            this->deactivateTileIndicator();
+        }
+    }
+    else
+    {
+        if (indicatorTravelDuration <= 0.0f)
+        {
+            this->setIndicatorPose(this->tileIndicator.targetPos, view.forward);
+            this->deactivateTileIndicator();
+            return;
+        }
+
+        this->tileIndicator.travelProgress += deltaSeconds / indicatorTravelDuration;
+        float t = Clamp(this->tileIndicator.travelProgress, 0.0f, 1.0f);
+        Vector3 pos = Vector3Lerp(this->tileIndicator.startPos, this->tileIndicator.targetPos, t);
+        this->setIndicatorPose(pos, view.forward);
+        this->tileIndicator.sprite.tint.a = 255;
+
+        if (this->tileIndicator.travelProgress >= 1.0f)
+        {
+            this->deactivateTileIndicator();
+        }
+    }
+}
+
+void MeleePushAttack::launchTileIndicator(const ViewBasis &view)
+{
+    if (!this->tileIndicator.active)
+        return;
+
+    this->tileIndicator.launched = true;
+    this->tileIndicator.travelProgress = 0.0f;
+    this->tileIndicator.forward = view.forward;
+    this->tileIndicator.startPos = this->tileIndicator.sprite.pos;
+    this->tileIndicator.targetPos = Vector3Add(view.position, Vector3Scale(view.forward, pushRange));
+    this->tileIndicator.sprite.tint.a = 255;
+    this->tileIndicator.sprite.setVisible(true);
+    this->setIndicatorPose(this->tileIndicator.sprite.pos, view.forward);
+}
+
+void MeleePushAttack::deactivateTileIndicator()
+{
+    this->tileIndicator.active = false;
+    this->tileIndicator.launched = false;
+    this->tileIndicator.sprite.setVisible(false);
 }

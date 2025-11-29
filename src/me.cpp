@@ -17,11 +17,28 @@ void Me::applyPlayerMovement(UpdateContext &uc)
 
     float delta = GetFrameTime();
 
+    if (this->meleeWindupTimer > 0.0f)
+    {
+        this->meleeWindupTimer = fmaxf(0.0f, this->meleeWindupTimer - delta);
+    }
+
+    bool lockMovement = this->meleeWindupTimer > 0.0f;
+    if (lockMovement)
+    {
+        input = {0.0f, 0.0f};
+        this->direction = Vector3Zero();
+        this->velocity.x = Lerp(this->velocity.x, 0.0f, 30.0f * delta);
+        this->velocity.z = Lerp(this->velocity.z, 0.0f, 30.0f * delta);
+    }
+
     // Handle jumping (gravity & vertical motion handled by ApplyPhysics)
     if (this->grounded && uc.playerInput.jumpPressed)
     {
-        this->velocity.y = JUMP_FORCE;
-        this->grounded = false;
+        if (!lockMovement)
+        {
+            this->velocity.y = JUMP_FORCE;
+            this->grounded = false;
+        }
     }
 
     // Calculate the direction the player is facing
@@ -56,13 +73,54 @@ void Me::applyPlayerMovement(UpdateContext &uc)
 void Me::UpdateBody(UpdateContext &uc)
 {
     this->applyPlayerMovement(uc);
+    if (this->meleeSwingTimer > 0.0f)
+    {
+        float delta = GetFrameTime();
+        this->meleeSwingTimer = fmaxf(0.0f, this->meleeSwingTimer - delta);
+    }
     this->UpdateCamera(uc);
 }
 
 // Updates the camera's position and orientation based on player movement
 void Me::UpdateCamera(UpdateContext &uc)
 {
-    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded);
+    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded, this->getMeleeSwingAmount());
+}
+
+void Me::triggerMeleeSwing(float durationSeconds)
+{
+    if (durationSeconds > 0.0f)
+        this->meleeSwingDuration = durationSeconds;
+    this->meleeSwingTimer = this->meleeSwingDuration;
+}
+
+float Me::getMeleeSwingAmount() const
+{
+    if (this->meleeSwingDuration <= 0.0f)
+        return 0.0f;
+    return Clamp(this->meleeSwingTimer / this->meleeSwingDuration, 0.0f, 1.0f);
+}
+
+void Me::beginMeleeWindup(float durationSeconds)
+{
+    if (durationSeconds <= 0.0f)
+        return;
+    this->meleeWindupTimer = fmaxf(this->meleeWindupTimer, durationSeconds);
+}
+
+bool Me::isInMeleeWindup() const
+{
+    return this->meleeWindupTimer > 0.0f;
+}
+
+void Me::addCameraShake(float magnitude, float duration)
+{
+    this->camera.addShake(magnitude, duration);
+}
+
+EntityCategory Me::category() const
+{
+    return ENTITY_PLAYER;
 }
 
 // Updates the projectile's body (movement, gravity, etc.)
@@ -87,12 +145,18 @@ void Projectile::UpdateBody(UpdateContext &uc)
     auto results = Object::collided(this->o, uc.scene);
     for (auto &result : results)
     {
-        if (Enemy *e = dynamic_cast<Enemy *>(result.with))
+        if (result.with && result.with->category() == ENTITY_ENEMY)
         {
+            Enemy *e = static_cast<Enemy *>(result.with);
             auto dResult = DamageResult(10, result);
             uc.scene->em.damage(e, dResult);
         }
     }
+}
+
+EntityCategory Projectile::category() const
+{
+    return ENTITY_PROJECTILE;
 }
 
 void Entity::resolveCollision(Entity *e, UpdateContext &uc)

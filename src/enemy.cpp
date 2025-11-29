@@ -28,8 +28,16 @@ void Enemy::UpdateBody(UpdateContext &uc)
         directionToPlayer = {0};
     }
 
+    bool knockedBack = this->knockbackTimer > 0.0f;
+    if (knockedBack)
+    {
+        this->knockbackTimer -= delta;
+        if (this->knockbackTimer < 0.0f)
+            this->knockbackTimer = 0.0f;
+    }
+
     // 3. Set enemy's desired movement direction (Physics uses snappy input)
-    this->direction = directionToPlayer;
+    this->direction = knockedBack ? Vector3Zero() : directionToPlayer;
 
     // 4. Use shared physics helper with enemy-specific tuning
     Entity::PhysicsParams params;
@@ -66,13 +74,22 @@ void Enemy::UpdateBody(UpdateContext &uc)
     float horizontalSpeed = Vector3Length({this->velocity.x, 0, this->velocity.z});
 
     // Update Animation State
-    float targetRunLerp = (horizontalSpeed > 0.1f && this->grounded) ? 1.0f : 0.0f;
+    float targetRunLerp = (horizontalSpeed > 0.1f && this->grounded && !knockedBack) ? 1.0f : 0.0f;
     this->runLerp = Lerp(this->runLerp, targetRunLerp, 10.0f * delta);
 
     if (this->runLerp > 0.01f)
     {
         this->runTimer += delta * 15.0f;
     }
+    else
+    {
+        this->runTimer = Lerp(this->runTimer, 0.0f, 5.0f * delta);
+    }
+
+    // Gradually recover the visual 'hit tilt' over time. A higher
+    // damping value here makes the tilt snap back faster; lower values
+    // produce a slower, more pronounced recovery.
+    this->hitTilt = Lerp(this->hitTilt, 0.0f, 6.0f * delta);
 
     // 1. Apply Bobbing
     float bobY = fabsf(cosf(this->runTimer)) * 0.2f * this->runLerp;
@@ -91,7 +108,17 @@ void Enemy::UpdateBody(UpdateContext &uc)
     // 3. Apply Lean
     float leanAngle = horizontalSpeed * 2.0f;
     Vector3 rightDir = Vector3CrossProduct(forwardDir, {0, 1, 0});
+    // Apply a base movement lean (sway) based on horizontal speed.
+    // Additional hit-based tilt is applied below using `hitTilt`.
     this->o.rotate(rightDir, leanAngle);
+
+    if (this->hitTilt > 0.01f)
+    {
+        // When hitTilt > 0 the enemy will lean/tilt in the opposite
+        // direction to visually indicate being struck. The multiplier
+        // controls how dramatic the effect is (degrees per unit hitTilt).
+        this->o.rotate(rightDir, -this->hitTilt * 40.0f);
+    }
 
     // 13. Final Update OBB
     this->o.UpdateOBB();
@@ -101,4 +128,29 @@ bool Enemy::damage(DamageResult &dResult)
 {
     this->health -= dResult.damage;
     return this->health > 0;
+}
+
+EntityCategory Enemy::category() const
+{
+    return ENTITY_ENEMY;
+}
+
+void Enemy::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift)
+{
+    this->velocity.x += pushVelocity.x;
+    this->velocity.z += pushVelocity.z;
+    if (lift > 0.0f)
+    {
+        this->velocity.y = fmaxf(this->velocity.y, lift);
+    }
+    this->grounded = false;
+    this->knockbackTimer = durationSeconds;
+    // Set hitTilt proportional to the horizontal knockback strength.
+    // Using the horizontal magnitude gives a consistent visual feel for
+    // pushes regardless of vertical lift. The divisor and clamp bound
+    // the tilt so a very strong push does not produce unrealistic rotation.
+    Vector3 horiz = {pushVelocity.x, 0.0f, pushVelocity.z};
+    float strength = Vector3Length(horiz);
+    // Map strength to a 0..1.5 range so strong hits feel dramatic but don't flip
+    this->hitTilt = Clamp(strength / 30.0f, 0.0f, 1.5f);
 }

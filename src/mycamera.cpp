@@ -1,7 +1,8 @@
 #include "mycamera.hpp"
 #include <raylib.h>
 #include <raymath.h>
-void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded)
+#include <cmath>
+void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded, float swingAmount)
 {
     float delta = GetFrameTime();
     this->headLerp = Lerp(this->headLerp, (crouching ? CROUCH_HEIGHT : STAND_HEIGHT), 20.0f * delta);
@@ -26,7 +27,24 @@ void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 
     lean.x = Lerp(lean.x, sideway * 0.02f, 10.0f * delta);
     lean.y = Lerp(lean.y, forward * 0.015f, 10.0f * delta);
 
+    this->swingLean = swingAmount * 0.08f;
+    this->swingRoll = swingAmount * 0.12f;
+    this->swingLift = swingAmount * 0.05f;
+
     UpdateCameraFPS();
+
+    if (this->shakeTimer > 0.0f)
+    {
+        this->shakeTimer = fmaxf(0.0f, this->shakeTimer - delta);
+        float normalized = (this->shakeDuration > 0.0f) ? (this->shakeTimer / this->shakeDuration) : 0.0f;
+        float strength = this->shakeMagnitude * normalized * normalized; // ease-out
+        float shakeX = ((float)GetRandomValue(-1000, 1000) / 1000.0f) * strength;
+        float shakeY = ((float)GetRandomValue(-1000, 1000) / 1000.0f) * strength * 0.7f;
+        float shakeZ = ((float)GetRandomValue(-1000, 1000) / 1000.0f) * strength;
+        Vector3 offset = {shakeX, shakeY, shakeZ};
+        this->camera.position = Vector3Add(this->camera.position, offset);
+        this->camera.target = Vector3Add(this->camera.target, offset);
+    }
 }
 
 void MyCamera::UpdateCameraFPS()
@@ -67,7 +85,7 @@ void MyCamera::UpdateCameraFPS()
     float headSin = sinf(headTimer * PI);
     float headCos = cosf(headTimer * PI);
     const float stepRotation = 0.01f;
-    this->camera.up = Vector3RotateByAxisAngle(up, pitch, headSin * stepRotation + lean.x);
+    this->camera.up = Vector3RotateByAxisAngle(up, pitch, headSin * stepRotation + lean.x + this->swingRoll);
 
     // Camera BOB
     const float bobSide = 0.1f;
@@ -76,5 +94,17 @@ void MyCamera::UpdateCameraFPS()
     bobbing.y = fabsf(headCos * bobUp);
 
     this->camera.position = Vector3Add(this->camera.position, Vector3Scale(bobbing, walkLerp));
+    Vector3 swingOffset = Vector3Scale(right, this->swingLean);
+    swingOffset.y += this->swingLift;
+    this->camera.position = Vector3Add(this->camera.position, swingOffset);
     this->camera.target = Vector3Add(this->camera.position, pitch);
+}
+
+void MyCamera::addShake(float magnitude, float durationSeconds)
+{
+    if (durationSeconds <= 0.0f || magnitude <= 0.0f)
+        return;
+    this->shakeDuration = durationSeconds;
+    this->shakeTimer = durationSeconds;
+    this->shakeMagnitude = fmaxf(this->shakeMagnitude, magnitude);
 }

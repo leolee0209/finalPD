@@ -8,6 +8,16 @@
 
 struct DamageResult;
 /**
+ * @brief Category used to classify entities for filtered queries.
+ */
+enum EntityCategory
+{
+    ENTITY_PLAYER,
+    ENTITY_ENEMY,
+    ENTITY_PROJECTILE,
+    ENTITY_ALL,
+};
+/**
  * @brief Base class for all entities in the game (player, enemies, projectiles).
  *
  * Stores the physical `Object` (`o`) used for collisions, plus kinematic
@@ -99,6 +109,12 @@ public:
      * @param uc Frame update context with scene and input snapshot.
      */
     virtual void UpdateBody(UpdateContext& uc) = 0;
+    /**
+     * @brief Category of this entity (enemy/player/projectile).
+     *
+     * Derived classes must override to allow filtered entity queries.
+     */
+    virtual EntityCategory category() const = 0;
 };
 
 // Class representing an enemy entity
@@ -117,6 +133,8 @@ private:
     float runTimer;
     float runLerp;
     Vector3 facingDirection; // Added for smooth turning
+    float knockbackTimer = 0.0f;
+    float hitTilt = 0.0f;
 
 public:
     // Default constructor initializes the enemy with default values
@@ -137,6 +155,9 @@ public:
     // Updates the enemy's body (movement, jumping, etc.)
     void UpdateBody(UpdateContext& uc) override;
     bool damage(DamageResult &dResult);
+    void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
+    // Identify this entity as an enemy for filtered queries
+    EntityCategory category() const override;
 };
 // Class representing the player character
 /**
@@ -151,6 +172,9 @@ class Me : public Entity
 private:
     int health;      // Player's health
     MyCamera camera; // Camera associated with the player
+    float meleeSwingTimer = 0.0f;
+    float meleeSwingDuration = 0.25f;
+    float meleeWindupTimer = 0.0f;
 
     // New: Struct to hold player input state
     
@@ -175,12 +199,21 @@ public:
 
     // Updates the player's camera based on movement and actions
     void UpdateCamera(UpdateContext& uc);
+    void triggerMeleeSwing(float durationSeconds);
+    float getMeleeSwingAmount() const;
+    void beginMeleeWindup(float durationSeconds);
+    bool isInMeleeWindup() const;
+    void addCameraShake(float magnitude, float durationSeconds);
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
+    const Camera &getCamera() const { return this->camera.getCamera(); }
 
     // Getter for the player's look rotation (used for aiming and movement direction)
     Vector2 &getLookRotation() { return this->camera.lookRotation; }
+    const Vector2 &getLookRotation() const { return this->camera.lookRotation; }
+    // Identify this entity as the player
+    EntityCategory category() const override;
 };
 
 
@@ -227,6 +260,8 @@ public:
 
     // Updates the projectile's body (movement, gravity, etc.)
     void UpdateBody(UpdateContext& uc) override;
+    // Identify this entity as a projectile
+    EntityCategory category() const override;
 };
 
 typedef struct DamageResult{

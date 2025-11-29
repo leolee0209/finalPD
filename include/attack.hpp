@@ -94,3 +94,83 @@ public:
         return ret;
     }
 };
+
+/**
+ * @brief Short-range melee push attack that applies knockback to enemies.
+ */
+class MeleePushAttack : public AttackController
+{
+public:
+    explicit MeleePushAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj() const;
+
+    void trigger(UpdateContext &uc);
+
+private:
+    struct EffectVolume
+    {
+        Object area;
+        float remainingLife;
+    };
+
+    struct TileIndicator
+    {
+        Object sprite;
+        bool active = false;
+        bool launched = false;
+        float opacity = 0.0f;
+        float travelProgress = 0.0f;
+        Vector3 startPos = {0.0f, 0.0f, 0.0f};
+        Vector3 targetPos = {0.0f, 0.0f, 0.0f};
+        Vector3 forward = {0.0f, 0.0f, 0.0f};
+    } tileIndicator;
+
+    float cooldownRemaining = 0.0f;
+    float windupRemaining = 0.0f;
+    bool pendingStrike = false;
+    static constexpr float cooldownDuration = 0.8f;
+    static constexpr float swingDuration = 0.25f;
+    static constexpr float windupDuration = 0.18f;
+    static constexpr float pushForce = 50.0f;
+    static constexpr float pushRange = 10.0f;
+    static constexpr float pushAngle = 70.0f * DEG2RAD;
+    static constexpr float knockbackDuration = 0.45f;
+    static constexpr float verticalLift = 2.5f;
+    static constexpr float effectLifetime = 0.2f;
+    static constexpr float effectHeight = 3.5f;
+    static constexpr float effectYOffset = 0.5f;
+    static constexpr float cameraShakeMagnitude = 0.6f;
+    static constexpr float cameraShakeDuration = 0.25f;
+
+    static constexpr float indicatorWidth = 0.6f;
+    static constexpr float indicatorHeight = 0.75f;
+    static constexpr float indicatorThickness = 0.15f;
+    static constexpr float indicatorHoldDistance = 0.8f;
+    static constexpr float indicatorYOffset = 1.4f;
+    static constexpr float indicatorTravelDuration = 0.12f;
+    static constexpr float indicatorStartOpacity = 0.15f;
+
+    std::vector<EffectVolume> effectVolumes;
+
+    Vector3 getForwardVector() const;
+    struct ViewBasis
+    {
+        Vector3 position;
+        Vector3 forward;
+    };
+    ViewBasis getIndicatorViewBasis() const;
+    void setIndicatorPose(const Vector3 &position, const Vector3 &forward);
+    bool pushEnemies(UpdateContext &uc, EffectVolume &volume);
+    EffectVolume buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const;
+    void performStrike(UpdateContext &uc);
+    void requestPlayerWindupLock();
+    void providePlayerFeedback(bool hit);
+
+    void initializeTileIndicator(UpdateContext &uc);
+    void updateTileIndicator(UpdateContext &uc, float deltaSeconds);
+    void launchTileIndicator(const ViewBasis &view);
+    void deactivateTileIndicator();
+};
