@@ -23,8 +23,10 @@ private:
 
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(Object &o) const;
+    void DrawSphereObject(Object &o) const;
     void DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color) const;                      // Draw cube textured
     void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position, float width, float height, float length, Color color) const; // Draw cube with a region of a texture
+    void DrawTexturedSphere(Texture2D &texture, const Rectangle &source, const Vector3 &position, float radius, Color tint) const;
 public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;

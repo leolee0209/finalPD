@@ -284,7 +284,7 @@ void UIManager::ensureSlotElements()
     // Lazily create the three UI widgets so we do not pay for them until the
     // pause menu opens. Each element is persistent because it keeps its own
     // animation state and allows UIManager to drive only the gameplay data.
-    static const char *keyLabels[slotCount] = {"RMB", "LMB", "E"};
+    static const char *keyLabels[slotCount] = {"Left Click", "Right Click", "E"};
     for (int i = 0; i < slotCount; ++i)
     {
         if (!slotElements[i])

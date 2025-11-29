@@ -41,6 +41,12 @@ void Me::applyPlayerMovement(UpdateContext &uc)
         this->velocity.z = Lerp(this->velocity.z, 0.0f, 30.0f * delta);
     }
 
+    bool airborne = !this->grounded;
+    if (airborne)
+    {
+        input = {0.0f, 0.0f};
+    }
+
     // Handle jumping (gravity & vertical motion handled by ApplyPhysics)
     if (this->grounded && uc.playerInput.jumpPressed)
     {
@@ -72,7 +78,7 @@ void Me::applyPlayerMovement(UpdateContext &uc)
     params.decelGround = FRICTION;
     params.decelAir = AIR_DRAG;
     params.maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
-    params.maxAccel = MAX_ACCEL;
+    params.maxAccel = airborne ? 0.0f : MAX_ACCEL;
     params.floorY = 0.0f;
     params.iterativeCollisionResolve = true;
     params.zeroThreshold = params.maxSpeed * 0.01f;

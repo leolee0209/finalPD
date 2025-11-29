@@ -119,7 +119,7 @@ void DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
         pos = Vector3Add(pos, Vector3Scale(planarForward, muzzleForwardOffset));
     }
 
-    Vector3 velocity = Vector3Add(Vector3Scale(forward, projectileSpeed), this->spawnedBy->vel());
+    Vector3 velocity = Vector3Scale(forward, projectileSpeed);
     velocity.y += projectileLift;
 
     Object body({projectileRadius * 2.0f, projectileHeight, projectileLength}, pos);
@@ -229,9 +229,8 @@ void DotBombAttack::update(UpdateContext &uc)
             float normalized = 1.0f - (bomb.explosionTimer / explosionLifetime);
             normalized = Clamp(normalized, 0.0f, 1.0f);
             float radius = explosionStartRadius + (explosionEndRadius - explosionStartRadius) * normalized;
-            bomb.explosionFx.size = {radius * 2.0f, explosionHeight, radius * 2.0f};
-            bomb.explosionFx.pos = {bomb.explosionOrigin.x, fmaxf(bomb.explosionOrigin.y, explosionHeight * 0.5f), bomb.explosionOrigin.z};
-            bomb.explosionFx.UpdateOBB();
+            bomb.explosionFx.pos = {bomb.explosionOrigin.x, fmaxf(bomb.explosionOrigin.y, 0.0f), bomb.explosionOrigin.z};
+            bomb.explosionFx.setAsSphere(radius);
 
             unsigned char alpha = (unsigned char)Clamp((1.0f - normalized) * 220.0f, 0.0f, 255.0f);
             bomb.explosionFx.tint = {255, 190, 90, alpha};
@@ -293,12 +292,12 @@ void DotBombAttack::startExplosion(Bomb &bomb, const Vector3 &origin, UpdateCont
     bomb.explosionOrigin = origin;
     bomb.projectile.obj().setVisible(false);
     bomb.fxActive = true;
-    Vector3 fxPos = {origin.x, fmaxf(origin.y, explosionHeight * 0.5f), origin.z};
-    bomb.explosionFx = Object({explosionStartRadius * 2.0f, explosionHeight, explosionStartRadius * 2.0f}, fxPos);
+    Vector3 fxPos = {origin.x, fmaxf(origin.y, 0.0f), origin.z};
+    bomb.explosionFx = Object({1.0f, 1.0f, 1.0f}, fxPos);
+    bomb.explosionFx.setAsSphere(explosionStartRadius);
     bomb.explosionFx.setVisible(true);
     bomb.explosionFx.useTexture = false;
     bomb.explosionFx.tint = {255, 190, 90, 220};
-    bomb.explosionFx.UpdateOBB();
     bomb.explosionSprite = Object({explosionSpriteStartSize, explosionSpriteStartSize, explosionSpriteDepth}, fxPos);
     bomb.explosionSprite.setVisible(true);
     bomb.explosionSprite.useTexture = explosionTextureLoaded;
@@ -393,7 +392,9 @@ void DotBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, floa
 
     float spriteSize = explosionSpriteStartSize + (explosionSpriteEndSize - explosionSpriteStartSize) * normalizedProgress;
     bomb.explosionSprite.size = {spriteSize, spriteSize, explosionSpriteDepth};
-    bomb.explosionSprite.pos = {bomb.explosionOrigin.x, fmaxf(bomb.explosionOrigin.y + 0.5f, explosionSpriteStartSize * 0.5f), bomb.explosionOrigin.z};
+    float currentRadius = explosionStartRadius + (explosionEndRadius - explosionStartRadius) * normalizedProgress;
+    float minY = fmaxf(bomb.explosionOrigin.y, 0.0f);
+    Vector3 spritePos = {bomb.explosionOrigin.x, fmaxf(minY + currentRadius + spriteSize * 0.25f, spriteSize * 0.5f), bomb.explosionOrigin.z};
 
     Vector3 faceDir = {0.0f, 0.0f, -1.0f};
     if (uc.player)
@@ -406,6 +407,8 @@ void DotBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, floa
     }
     faceDir = Vector3Normalize(faceDir);
     bomb.explosionSprite.setRotationFromForward(faceDir);
+    spritePos = Vector3Add(spritePos, Vector3Scale(faceDir, 0.1f));
+    bomb.explosionSprite.pos = spritePos;
     bomb.explosionSprite.UpdateOBB();
 
     unsigned char spriteAlpha = (unsigned char)Clamp((1.0f - normalizedProgress) * 255.0f, 0.0f, 255.0f);
@@ -977,15 +980,99 @@ Vector3 DashAttack::computeDashDirection(const UpdateContext &uc) const
     return Vector3Normalize(desired);
 }
 
-void DashAttack::applyDashImpulse(Me *player)
+Vector3 DashAttack::computeCollisionAdjustedVelocity(Me *player, UpdateContext &uc, float desiredSpeed)
+{
+    Vector3 defaultVel = Vector3Scale(this->dashDirection, desiredSpeed);
+    if (!player || !uc.scene || desiredSpeed <= 0.0f)
+        return defaultVel;
+
+    float delta = GetFrameTime();
+    if (delta <= 0.0f)
+        return defaultVel;
+
+    Object probe = player->obj();
+    Vector3 startPos = player->pos();
+    probe.pos = startPos;
+    probe.UpdateOBB();
+
+    float remainingDistance = desiredSpeed * delta;
+    float approxSize = fmaxf(fmaxf(probe.size.x, probe.size.y), probe.size.z);
+    float stepSize = fmaxf(0.2f, approxSize * 0.25f);
+    Vector3 currentDir = this->dashDirection;
+    int guard = 0;
+
+    while (remainingDistance > 0.0001f && Vector3LengthSqr(currentDir) > 1e-5f && guard < 256)
+    {
+        ++guard;
+        float step = fminf(stepSize, remainingDistance);
+        Vector3 move = Vector3Scale(currentDir, step);
+        probe.pos = Vector3Add(probe.pos, move);
+        probe.UpdateOBB();
+
+        auto hits = Object::collided(probe, uc.scene);
+        bool blocked = false;
+        Vector3 blockNormal = {0.0f, 0.0f, 0.0f};
+        for (const CollisionResult &hit : hits)
+        {
+            if (hit.collided && hit.with == nullptr)
+            {
+                blocked = true;
+                blockNormal = hit.normal;
+                break;
+            }
+        }
+
+        if (blocked)
+        {
+            probe.pos = Vector3Subtract(probe.pos, move);
+            probe.UpdateOBB();
+
+            float normalDot = Vector3DotProduct(currentDir, blockNormal);
+            Vector3 slideDir = Vector3Subtract(currentDir, Vector3Scale(blockNormal, normalDot));
+            if (Vector3LengthSqr(slideDir) < 1e-4f)
+            {
+                remainingDistance = 0.0f;
+                break;
+            }
+            currentDir = Vector3Normalize(slideDir);
+            continue;
+        }
+
+        remainingDistance -= step;
+    }
+
+    Vector3 displacement = Vector3Subtract(probe.pos, startPos);
+    float displacementLenSq = Vector3LengthSqr(displacement);
+    if (displacementLenSq > 1e-6f)
+    {
+        Vector3 newDir = Vector3Scale(displacement, 1.0f / sqrtf(displacementLenSq));
+        this->dashDirection = newDir;
+    }
+    else
+    {
+        this->dashDirection = {0.0f, 0.0f, 0.0f};
+    }
+
+    if (delta <= 0.0f || displacementLenSq < 1e-6f)
+        return Vector3Zero();
+
+    return Vector3Scale(displacement, 1.0f / delta);
+}
+
+void DashAttack::applyDashImpulse(Me *player, UpdateContext &uc)
 {
     if (!player)
         return;
+    Vector3 dashVelocity = this->computeCollisionAdjustedVelocity(player, uc, dashSpeed);
     Vector3 vel = player->vel();
-    vel.x = this->dashDirection.x * dashSpeed;
-    vel.z = this->dashDirection.z * dashSpeed;
+    vel.x = dashVelocity.x;
+    vel.z = dashVelocity.z;
     player->setVelocity(vel);
     player->setDirection(Vector3Zero());
+    if (Vector3LengthSqr(dashVelocity) < 0.01f)
+    {
+        this->activeRemaining = 0.0f;
+    }
 }
 
 void DashAttack::update(UpdateContext &uc)
@@ -1000,7 +1087,7 @@ void DashAttack::update(UpdateContext &uc)
         if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
         {
             Me *player = static_cast<Me *>(this->spawnedBy);
-            this->applyDashImpulse(player);
+            this->applyDashImpulse(player, uc);
         }
     }
 }
@@ -1021,6 +1108,6 @@ void DashAttack::trigger(UpdateContext &uc)
     this->dashDirection = dir;
     this->activeRemaining = dashDuration;
     this->cooldownRemaining = dashCooldown;
-    this->applyDashImpulse(player);
+    this->applyDashImpulse(player, uc);
     player->addCameraFovKick(dashFovKick, dashFovKickDuration);
 }

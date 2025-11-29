@@ -151,8 +151,8 @@ private:
     static constexpr float indicatorHoldDistance = 0.8f;
     static constexpr float indicatorYOffset = 1.4f;
     static constexpr float indicatorTravelDuration = 0.12f;
-    static constexpr float indicatorStartOpacity = 0.15f;
-    static constexpr float indicatorEndOpacity = 0.8f;
+    static constexpr float indicatorStartOpacity = 0.0f;
+    static constexpr float indicatorEndOpacity = 0.5f;
 
     std::vector<EffectVolume> effectVolumes;
 
@@ -201,7 +201,8 @@ private:
     static constexpr float dashFovKickDuration = 0.3f;
 
     Vector3 computeDashDirection(const UpdateContext &uc) const;
-    void applyDashImpulse(Me *player);
+    void applyDashImpulse(Me *player, UpdateContext &uc);
+    Vector3 computeCollisionAdjustedVelocity(Me *player, UpdateContext &uc, float desiredSpeed);
 };
 
 class DotBombAttack : public AttackController
@@ -231,7 +232,7 @@ private:
 
     std::vector<Bomb> bombs;
 
-    static constexpr float projectileSpeed = 41.0f;
+    static constexpr float projectileSpeed = 50.0f;
     static constexpr float projectileLift = 6.0f;
     static constexpr float projectileDrag = 0.99f;
     static constexpr float projectileFriction = 0.92f;
