@@ -67,6 +67,14 @@ int main(void)
                 melee->trigger(uc);
             }
         }
+
+        if (IsKeyPressed(KEY_E))
+        {
+            if (DashAttack *dash = scene.am.getDashAttack(&player))
+            {
+                dash->trigger(uc);
+            }
+        }
         //----------------------------------------------------------------------------------
 
         // Update Player---------------------------------------------------------------------------

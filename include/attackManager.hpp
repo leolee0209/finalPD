@@ -18,6 +18,7 @@ private:
     //std::vector<TripletAttack *> tripletAttack;
     std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<MeleePushAttack *> meleeAttacks;
+    std::vector<DashAttack *> dashAttacks;
     std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
@@ -45,6 +46,7 @@ public:
      * @brief Retrieve or create a melee push attack controller for `spawnedBy`.
      */
     MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
+    DashAttack *getDashAttack(Entity *spawnedBy);
 
     /**
      * @brief Get all entity pointers managed by attacks (projectiles).
