@@ -36,7 +36,7 @@ void Scene::DrawRectangle(Object &o) const
         // 3. Draw the cube at the local origin (0,0,0)
         // We pass {0,0,0} as the position because we have already moved
         // the drawing context to the object's location using rlTranslatef.
-        DrawCubeTextureRec(*o.texture, o.sourceRect, {0.0f, 0.0f, 0.0f}, o.size.x, o.size.y, o.size.z, WHITE);
+        DrawCubeTextureRec(*o.texture, o.sourceRect, {0.0f, 0.0f, 0.0f}, o.size.x, o.size.y, o.size.z, o.tint);
         rlPopMatrix();
     }
     else

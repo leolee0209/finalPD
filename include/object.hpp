@@ -23,6 +23,7 @@ public:
     Texture2D *texture = nullptr;
     Rectangle sourceRect;
     bool useTexture = false;
+    Color tint = WHITE; // Rendering tint for textured objects
     /**
      * @brief Whether this Object should be rendered by Scene drawing helpers.
      *

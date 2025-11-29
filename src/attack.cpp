@@ -2,7 +2,6 @@
 #include <raylib.h>
 #include "constant.hpp"
 #include <raymath.h>
-#include <iostream>
 #include "updateContext.hpp"
 #include <algorithm>
 #include "scene.hpp"
@@ -263,6 +262,8 @@ void MeleePushAttack::update(UpdateContext &uc)
         }
     }
 
+    this->updateTileIndicator(uc, delta);
+
     for (auto &volume : this->effectVolumes)
     {
         volume.remainingLife -= delta;
@@ -282,10 +283,14 @@ void MeleePushAttack::update(UpdateContext &uc)
 std::vector<Object *> MeleePushAttack::obj() const
 {
     std::vector<Object *> ret;
-    ret.reserve(this->effectVolumes.size());
+    ret.reserve(this->effectVolumes.size() + (this->tileIndicator.active ? 1U : 0U));
     for (const auto &volume : this->effectVolumes)
     {
         ret.push_back(const_cast<Object *>(&volume.area));
+    }
+    if (this->tileIndicator.active)
+    {
+        ret.push_back(const_cast<Object *>(&this->tileIndicator.sprite));
     }
     return ret;
 }
@@ -312,6 +317,37 @@ Vector3 MeleePushAttack::getForwardVector() const
         }
     }
     return {0.0f, 0.0f, 1.0f};
+}
+
+Vector3 MeleePushAttack::getPlayerCameraForward() const
+{
+    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        const Me *player = static_cast<const Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        Vector3 forward = Vector3Subtract(camera.target, camera.position);
+        if (Vector3LengthSqr(forward) >= 0.0001f)
+        {
+            return Vector3Normalize(forward);
+        }
+    }
+    return this->getForwardVector();
+}
+
+Vector3 MeleePushAttack::getPlayerCameraPosition() const
+{
+    if (this->spawnedBy)
+    {
+        if (this->spawnedBy->category() == ENTITY_PLAYER)
+        {
+            const Me *player = static_cast<const Me *>(this->spawnedBy);
+            return player->getCamera().position;
+        }
+        Vector3 pos = this->spawnedBy->pos();
+        pos.y += indicatorYOffset;
+        return pos;
+    }
+    return {0.0f, indicatorYOffset, 0.0f};
 }
 
 MeleePushAttack::EffectVolume MeleePushAttack::buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const
@@ -407,15 +443,18 @@ void MeleePushAttack::trigger(UpdateContext &uc)
     this->pendingStrike = true;
     this->windupRemaining = windupDuration;
     this->requestPlayerWindupLock();
+    this->initializeTileIndicator(uc);
 }
 
 void MeleePushAttack::performStrike(UpdateContext &uc)
 {
     Vector3 origin = this->spawnedBy->pos();
     Vector3 forward = this->getForwardVector();
+    Vector3 cameraForward = this->getPlayerCameraForward();
     EffectVolume volume = this->buildEffectVolume(origin, forward);
     bool hit = this->pushEnemies(uc, volume);
     this->effectVolumes.push_back(volume);
+    this->launchTileIndicator(this->getPlayerCameraPosition(), cameraForward);
 
     this->pendingStrike = false;
     this->cooldownRemaining = cooldownDuration;
@@ -445,4 +484,130 @@ void MeleePushAttack::providePlayerFeedback(bool hit)
         float shakeMag = cameraShakeMagnitude * (hit ? 1.0f : 0.5f);
         player->addCameraShake(shakeMag, cameraShakeDuration);
     }
+}
+
+void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
+{
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return;
+    if (!uc.uiManager)
+        return;
+
+    Texture2D &sheet = uc.uiManager->muim.getSpriteSheet();
+    MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+
+    this->tileIndicator.sprite.size = {indicatorWidth, indicatorHeight, indicatorThickness};
+    this->tileIndicator.sprite.useTexture = true;
+    this->tileIndicator.sprite.texture = &sheet;
+    this->tileIndicator.sprite.sourceRect = uc.uiManager->muim.getTile(tile);
+    this->tileIndicator.sprite.setVisible(true);
+
+    this->tileIndicator.active = true;
+    this->tileIndicator.launched = false;
+    this->tileIndicator.travelProgress = 0.0f;
+    this->tileIndicator.opacity = indicatorStartOpacity;
+
+    Vector3 forward = this->getPlayerCameraForward();
+    this->tileIndicator.forward = forward;
+    Vector3 cameraPos = this->getPlayerCameraPosition();
+    Vector3 holdPos = Vector3Add(cameraPos, Vector3Scale(forward, indicatorHoldDistance));
+    this->tileIndicator.startPos = holdPos;
+    this->tileIndicator.targetPos = holdPos;
+    this->tileIndicator.sprite.pos = holdPos;
+    Vector3 faceDir = Vector3Scale(forward, -1.0f);
+    this->tileIndicator.sprite.setRotationFromForward(faceDir);
+
+    float alphaF = Clamp(indicatorStartOpacity * 255.0f, 0.0f, 255.0f);
+    this->tileIndicator.sprite.tint = {255, 255, 255, (unsigned char)alphaF};
+    this->tileIndicator.sprite.UpdateOBB();
+}
+
+void MeleePushAttack::updateTileIndicator(UpdateContext &uc, float deltaSeconds)
+{
+    (void)uc;
+    if (!this->tileIndicator.active)
+        return;
+    if (!this->spawnedBy)
+    {
+        this->deactivateTileIndicator();
+        return;
+    }
+
+    Vector3 cameraPos = this->getPlayerCameraPosition();
+    Vector3 cameraForward = this->getPlayerCameraForward();
+
+    if (!this->tileIndicator.launched)
+    {
+        this->tileIndicator.forward = cameraForward;
+        Vector3 holdPos = Vector3Add(cameraPos, Vector3Scale(cameraForward, indicatorHoldDistance));
+        this->tileIndicator.startPos = holdPos;
+        this->tileIndicator.sprite.pos = holdPos;
+        Vector3 faceDir = Vector3Scale(cameraForward, -1.0f);
+        this->tileIndicator.sprite.setRotationFromForward(faceDir);
+        this->tileIndicator.sprite.UpdateOBB();
+
+        float progress = (windupDuration > 0.0f) ? 1.0f - (this->windupRemaining / windupDuration) : 1.0f;
+        progress = Clamp(progress, 0.0f, 1.0f);
+        float opacity = Lerp(indicatorStartOpacity, 1.0f, progress);
+        this->tileIndicator.opacity = opacity;
+        this->tileIndicator.sprite.tint.a = (unsigned char)Clamp(opacity * 255.0f, 0.0f, 255.0f);
+
+        if (!this->pendingStrike)
+        {
+            this->deactivateTileIndicator();
+        }
+    }
+    else
+    {
+        if (indicatorTravelDuration <= 0.0f)
+        {
+            this->tileIndicator.sprite.pos = this->tileIndicator.targetPos;
+            this->tileIndicator.sprite.UpdateOBB();
+            this->deactivateTileIndicator();
+            return;
+        }
+
+        this->tileIndicator.travelProgress += deltaSeconds / indicatorTravelDuration;
+        float t = Clamp(this->tileIndicator.travelProgress, 0.0f, 1.0f);
+        Vector3 pos = Vector3Lerp(this->tileIndicator.startPos, this->tileIndicator.targetPos, t);
+        this->tileIndicator.sprite.pos = pos;
+        Vector3 faceDir = Vector3Scale(cameraForward, -1.0f);
+        this->tileIndicator.sprite.setRotationFromForward(faceDir);
+        this->tileIndicator.sprite.UpdateOBB();
+        this->tileIndicator.sprite.tint.a = 255;
+
+        if (this->tileIndicator.travelProgress >= 1.0f)
+        {
+            this->deactivateTileIndicator();
+        }
+    }
+}
+
+void MeleePushAttack::launchTileIndicator(const Vector3 &origin, const Vector3 &forward)
+{
+    if (!this->tileIndicator.active)
+        return;
+
+    this->tileIndicator.launched = true;
+    this->tileIndicator.travelProgress = 0.0f;
+    this->tileIndicator.forward = forward;
+    this->tileIndicator.startPos = this->tileIndicator.sprite.pos;
+    Vector3 target = Vector3Add(origin, Vector3Scale(forward, pushRange));
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+    {
+        target.y = origin.y + indicatorYOffset;
+    }
+    this->tileIndicator.targetPos = target;
+    this->tileIndicator.sprite.tint.a = 255;
+    this->tileIndicator.sprite.setVisible(true);
+    Vector3 faceDir = Vector3Scale(this->getPlayerCameraForward(), -1.0f);
+    this->tileIndicator.sprite.setRotationFromForward(faceDir);
+    this->tileIndicator.sprite.UpdateOBB();
+}
+
+void MeleePushAttack::deactivateTileIndicator()
+{
+    this->tileIndicator.active = false;
+    this->tileIndicator.launched = false;
+    this->tileIndicator.sprite.setVisible(false);
 }

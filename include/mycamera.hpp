@@ -51,7 +51,7 @@ public:
 
         UpdateCameraFPS();
     }
-    const Camera &getCamera() { return this->camera; }
+    const Camera &getCamera() const { return this->camera; }
 
     /**
      * @brief Update internal camera transform from player state.

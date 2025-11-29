@@ -207,6 +207,7 @@ public:
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
+    const Camera &getCamera() const { return this->camera.getCamera(); }
 
     // Getter for the player's look rotation (used for aiming and movement direction)
     Vector2 &getLookRotation() { return this->camera.lookRotation; }

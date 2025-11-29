@@ -116,6 +116,18 @@ private:
         float remainingLife;
     };
 
+    struct TileIndicator
+    {
+        Object sprite;
+        bool active = false;
+        bool launched = false;
+        float opacity = 0.0f;
+        float travelProgress = 0.0f;
+        Vector3 startPos = {0.0f, 0.0f, 0.0f};
+        Vector3 targetPos = {0.0f, 0.0f, 0.0f};
+        Vector3 forward = {0.0f, 0.0f, 0.0f};
+    } tileIndicator;
+
     float cooldownRemaining = 0.0f;
     float windupRemaining = 0.0f;
     bool pendingStrike = false;
@@ -133,12 +145,27 @@ private:
     static constexpr float cameraShakeMagnitude = 0.6f;
     static constexpr float cameraShakeDuration = 0.25f;
 
+    static constexpr float indicatorWidth = 0.6f;
+    static constexpr float indicatorHeight = 0.75f;
+    static constexpr float indicatorThickness = 0.15f;
+    static constexpr float indicatorHoldDistance = 0.8f;
+    static constexpr float indicatorYOffset = 1.4f;
+    static constexpr float indicatorTravelDuration = 0.12f;
+    static constexpr float indicatorStartOpacity = 0.15f;
+
     std::vector<EffectVolume> effectVolumes;
 
     Vector3 getForwardVector() const;
+    Vector3 getPlayerCameraForward() const;
+    Vector3 getPlayerCameraPosition() const;
     bool pushEnemies(UpdateContext &uc, EffectVolume &volume);
     EffectVolume buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const;
     void performStrike(UpdateContext &uc);
     void requestPlayerWindupLock();
     void providePlayerFeedback(bool hit);
+
+    void initializeTileIndicator(UpdateContext &uc);
+    void updateTileIndicator(UpdateContext &uc, float deltaSeconds);
+    void launchTileIndicator(const Vector3 &origin, const Vector3 &forward);
+    void deactivateTileIndicator();
 };
