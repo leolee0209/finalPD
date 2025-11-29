@@ -547,7 +547,7 @@ void MeleePushAttack::updateTileIndicator(UpdateContext &uc, float deltaSeconds)
 
         float progress = (windupDuration > 0.0f) ? 1.0f - (this->windupRemaining / windupDuration) : 1.0f;
         progress = Clamp(progress, 0.0f, 1.0f);
-        float opacity = Lerp(indicatorStartOpacity, 1.0f, progress);
+        float opacity = Lerp(indicatorStartOpacity, indicatorEndOpacity, progress);
         this->tileIndicator.opacity = opacity;
         this->tileIndicator.sprite.tint.a = (unsigned char)Clamp(opacity * 255.0f, 0.0f, 255.0f);
 
@@ -588,7 +588,7 @@ void MeleePushAttack::launchTileIndicator(const ViewBasis &view)
     this->tileIndicator.forward = view.forward;
     this->tileIndicator.startPos = this->tileIndicator.sprite.pos;
     this->tileIndicator.targetPos = Vector3Add(view.position, Vector3Scale(view.forward, pushRange));
-    this->tileIndicator.sprite.tint.a = 255;
+    this->tileIndicator.sprite.tint.a = (unsigned char)Clamp(indicatorEndOpacity * 255.0f, 0.0f, 255.0f);
     this->tileIndicator.sprite.setVisible(true);
     this->setIndicatorPose(this->tileIndicator.sprite.pos, view.forward);
 }

@@ -152,6 +152,7 @@ private:
     static constexpr float indicatorYOffset = 1.4f;
     static constexpr float indicatorTravelDuration = 0.12f;
     static constexpr float indicatorStartOpacity = 0.15f;
+    static constexpr float indicatorEndOpacity = 0.8f;
 
     std::vector<EffectVolume> effectVolumes;
 
