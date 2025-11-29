@@ -1,6 +1,9 @@
 #include "uiManager.hpp"
 #include "attackSlotElement.hpp"
+#include <algorithm>
 #include <cmath>
+
+const char *UIManager::slotKeyLabels[slotCount] = {"Left Click", "Right Click", "E"};
 
 void UIManager::cleanup()
 {
@@ -22,6 +25,13 @@ void UIManager::cleanup()
 void UIManager::addElement(UIElement *element)
 {
     this->elements.push_back(element);
+}
+
+void UIManager::setSlotCooldownPercent(int slotIndex, float percent)
+{
+    if (!isValidSlotIndex(slotIndex))
+        return;
+    slotCooldowns[slotIndex] = std::clamp(percent, 0.0f, 1.0f);
 }
 
 void UIManager::setPauseMenuVisible(bool visible)
@@ -97,6 +107,80 @@ void UIManager::drawHud()
     {
         element->draw();
     }
+    drawSlotHudPreview();
+}
+
+void UIManager::drawSlotHudPreview()
+{
+    ensureSlotSetup();
+
+    const float slotWidth = 120.0f;
+    const float slotHeight = 80.0f;
+    const float spacing = 18.0f;
+    const float tilePadding = 8.0f;
+    const float tileSpacing = 10.0f;
+    float totalHeight = slotCount * slotHeight + (slotCount - 1) * spacing;
+    float startX = GetScreenWidth() - slotWidth - 28.0f;
+    float startY = (GetScreenHeight() - totalHeight) * 0.5f;
+
+    for (int i = 0; i < slotCount; ++i)
+    {
+        Rectangle slotRect{startX, startY + i * (slotHeight + spacing), slotWidth, slotHeight};
+        Color frame = Color{8, 10, 16, 160};
+        DrawRectangleRounded(slotRect, 0.26f, 6, frame);
+        DrawRectangleRoundedLines(slotRect, 0.26f, 6, Fade(RAYWHITE, 1.0f));
+
+        const char *label = slotKeyLabels[i];
+        if (label && *label)
+        {
+            const int labelFont = 16;
+            int textWidth = MeasureText(label, labelFont);
+            int textX = static_cast<int>(slotRect.x + slotRect.width / 2.0f - textWidth / 2.0f);
+            int textY = static_cast<int>(slotRect.y - labelFont - 2.0f);
+            DrawText(label, textX, textY, labelFont, Fade(RAYWHITE, 0.55f));
+        }
+
+        DrawRectangleRounded(slotRect, 0.26f, 6, Fade(BLACK, 0.1f));
+
+        const auto &slot = attackSlots[i];
+        const int tileCount = static_cast<int>(slot.size());
+
+        float usableWidth = slotRect.width - tilePadding * 2.0f;
+        float cellWidth = (usableWidth - tileSpacing * (slotCapacity - 1)) / slotCapacity;
+        float cellHeight = slotRect.height - tilePadding * 2.0f;
+        for (int tileIdx = 0; tileIdx < slotCapacity; ++tileIdx)
+        {
+            float tileX = slotRect.x + tilePadding + tileIdx * (cellWidth + tileSpacing);
+            float tileY = slotRect.y + tilePadding;
+            Rectangle tileRect{tileX, tileY, cellWidth, cellHeight};
+            DrawRectangleRounded(tileRect, 0.18f, 4, Fade(WHITE, 0.05f));
+            DrawRectangleRoundedLines(tileRect, 0.18f, 4, Fade(RAYWHITE, 0.15f));
+
+            if (tileIdx >= tileCount)
+                continue;
+
+            const SlotTileEntry &entry = slot[tileIdx];
+            if (!entry.isValid())
+                continue;
+
+            Rectangle source = muim.getTile(entry.tile);
+            float scale = fminf(tileRect.width / source.width, tileRect.height / source.height) * 0.9f;
+            Vector2 spriteSize{source.width * scale, source.height * scale};
+            Rectangle dest{tileRect.x + tileRect.width * 0.5f - spriteSize.x * 0.5f,
+                           tileRect.y + tileRect.height * 0.5f - spriteSize.y * 0.5f,
+                           spriteSize.x,
+                           spriteSize.y};
+            DrawTexturePro(muim.getSpriteSheet(), source, dest, {0.0f, 0.0f}, 0.0f, Fade(WHITE, 0.55f));
+        }
+
+        float cooldown = slotCooldowns[i];
+        if (cooldown > 0.001f)
+        {
+            Rectangle cooldownRect = slotRect;
+            cooldownRect.width = slotRect.width * std::clamp(cooldown, 0.0f, 1.0f);
+            DrawRectangleRounded(cooldownRect, 0.18f, 4, Color{120, 120, 120, 160});
+        }
+    }
 }
 
 void UIManager::updatePauseMenu()
@@ -104,7 +188,6 @@ void UIManager::updatePauseMenu()
     ensureSlotSetup();
     ensureSlotElements();
     this->muim.update();
-    refreshActiveSlotSelection();
     updateSlotElementLayout();
 
     Rectangle resumeRect = getSmallButtonRect(0);
@@ -153,19 +236,6 @@ void UIManager::updatePauseMenu()
                 }
             }
 
-            if (!grabbedSlotTile)
-            {
-                for (int i = 0; i < static_cast<int>(attackSlots.size()); ++i)
-                {
-                    AttackSlotElement *slotElement = getSlotElement(i);
-                    if (slotElement && slotElement->containsPoint(mousePos))
-                    {
-                        activeSlotIndex = i;
-                        refreshActiveSlotSelection();
-                        break;
-                    }
-                }
-            }
         }
     }
 
@@ -265,17 +335,6 @@ void UIManager::ensureSlotSetup()
         slot.reserve(slotCapacity);
     }
 
-    for (int i = 0; i < slotCount && i < static_cast<int>(hand.size()); ++i)
-    {
-        // Seed each slot with the first few hand tiles so players start with
-        // working attacks even before they customize the layout.
-        SlotTileEntry entry{hand[i], i};
-        attackSlots[i].push_back(entry);
-        muim.setTileUsed(entry.handIndex, true);
-    }
-
-    activeSlotIndex = 0;
-    refreshActiveSlotSelection();
     slotsInitialized = true;
 }
 
@@ -284,13 +343,12 @@ void UIManager::ensureSlotElements()
     // Lazily create the three UI widgets so we do not pay for them until the
     // pause menu opens. Each element is persistent because it keeps its own
     // animation state and allows UIManager to drive only the gameplay data.
-    static const char *keyLabels[slotCount] = {"Left Click", "Right Click", "E"};
     for (int i = 0; i < slotCount; ++i)
     {
         if (!slotElements[i])
         {
             slotElements[i] = new AttackSlotElement(i, slotCapacity, muim);
-            slotElements[i]->setKeyLabel(keyLabels[i]);
+            slotElements[i]->setKeyLabel(slotKeyLabels[i]);
         }
     }
 }
@@ -308,7 +366,7 @@ void UIManager::updateSlotElementLayout()
 
         slotElement->setBounds(getSlotRect(i));
         slotElement->setEntries(&attackSlots[i]);
-        slotElement->setActive(i == activeSlotIndex);
+        slotElement->setActive(false);
     }
 }
 
@@ -352,10 +410,6 @@ void UIManager::beginTileDragFromSlot(int slotIndex, int tileIndex, const Vector
     draggingFromSlot = slotIndex;
     draggingFromTileIndex = tileIndex;
 
-    if (slotIndex == activeSlotIndex && slot.empty())
-    {
-        refreshActiveSlotSelection();
-    }
 }
 
 void UIManager::endTileDrag(const Vector2 &mousePos)
@@ -386,10 +440,6 @@ void UIManager::endTileDrag(const Vector2 &mousePos)
     draggingFromSlot = -1;
     draggingFromTileIndex = -1;
 
-    if (removedFromSlot)
-    {
-        refreshActiveSlotSelection();
-    }
 }
 
 void UIManager::addTileToSlot(int slotIndex, const SlotTileEntry &entry)
@@ -403,11 +453,6 @@ void UIManager::addTileToSlot(int slotIndex, const SlotTileEntry &entry)
 
     slot.push_back(entry);
     muim.setTileUsed(entry.handIndex, true);
-
-    if (slotIndex == activeSlotIndex || getPrimaryTileForSlot(activeSlotIndex) == MahjongTileType::EMPTY)
-    {
-        refreshActiveSlotSelection();
-    }
 }
 
 bool UIManager::slotHasSpace(int slotIndex) const
@@ -430,49 +475,6 @@ bool UIManager::isValidSlotIndex(int slotIndex) const
     return slotIndex >= 0 && slotIndex < slotCount;
 }
 
-MahjongTileType UIManager::getPrimaryTileForSlot(int slotIndex) const
-{
-    if (!isValidSlotIndex(slotIndex))
-        return MahjongTileType::EMPTY;
-    const auto &slot = attackSlots[slotIndex];
-    if (slot.empty())
-        return MahjongTileType::EMPTY;
-    return slot.front().tile;
-}
-
-void UIManager::refreshActiveSlotSelection()
-{
-    // Keep MahjongUIManager's selection in sync with whichever slot currently
-    // holds focus so AttackManager can ask "selected tile" without knowing
-    // about slots.
-    if (!isValidSlotIndex(activeSlotIndex))
-    {
-        activeSlotIndex = 0;
-    }
-
-    SlotTileEntry primaryEntry;
-    if (!attackSlots[activeSlotIndex].empty())
-    {
-        primaryEntry = attackSlots[activeSlotIndex].front();
-    }
-    else
-    {
-        for (int i = 0; i < slotCount; ++i)
-        {
-            if (!attackSlots[i].empty())
-            {
-                activeSlotIndex = i;
-                primaryEntry = attackSlots[i].front();
-                break;
-            }
-        }
-    }
-
-    if (primaryEntry.isValid())
-    {
-        muim.selectTileByIndex(primaryEntry.handIndex);
-    }
-}
 
 Texture2D UIManager::loadTexture(const std::string &fileName)
 {

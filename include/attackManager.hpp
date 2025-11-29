@@ -14,6 +14,14 @@
 class AttackManager
 {
 private:
+    enum class SlotAttackKind
+    {
+        None,
+        DefaultThrow,
+        DotBomb,
+        Melee,
+        Dash
+    };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
     std::vector<ThousandTileAttack *> singleTileAttack;
@@ -24,6 +32,8 @@ private:
     AttackController *attackLockOwner = nullptr;
 
     void checkActivation(Entity *player);
+    SlotAttackKind classifySlotAttack(const std::vector<SlotTileEntry> &slotEntries) const;
+    float computeSlotCooldownPercent(int slotIndex, UpdateContext &uc);
 
 public:
     ~AttackManager(); // Destructor to clean up dynamically allocated attacks

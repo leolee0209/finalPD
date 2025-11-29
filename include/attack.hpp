@@ -108,6 +108,7 @@ public:
     std::vector<Object *> obj() const;
 
     void trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
 
 private:
     struct EffectVolume
@@ -187,6 +188,7 @@ public:
     void update(UpdateContext &uc) override;
     std::vector<Entity *> getEntities() override { return {}; }
     void trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
 
 private:
     float cooldownRemaining = 0.0f;

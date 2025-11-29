@@ -842,6 +842,13 @@ void MeleePushAttack::providePlayerFeedback(bool hit)
     }
 }
 
+float MeleePushAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 0.0f;
+    return Clamp(this->cooldownRemaining / cooldownDuration, 0.0f, 1.0f);
+}
+
 void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
 {
     if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
@@ -1110,4 +1117,11 @@ void DashAttack::trigger(UpdateContext &uc)
     this->cooldownRemaining = dashCooldown;
     this->applyDashImpulse(player, uc);
     player->addCameraFovKick(dashFovKick, dashFovKickDuration);
+}
+
+float DashAttack::getCooldownPercent() const
+{
+    if (dashCooldown <= 0.0f)
+        return 0.0f;
+    return Clamp(this->cooldownRemaining / dashCooldown, 0.0f, 1.0f);
 }

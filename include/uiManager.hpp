@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <array>
+#include <algorithm>
 #include "uiElement.hpp"
 #include "mahjongTypes.hpp"
 
@@ -94,6 +95,8 @@ private:
 class UIManager
 {
 public:
+    static constexpr int slotCapacity = 3;
+    static constexpr int slotCount = 3;
 
     UIManager(const char *mahjongSpritePath, int tilesPerRow, int tileWidth, int tileHeight)
         : muim(MahjongUIManager(mahjongSpritePath, tilesPerRow, tileWidth, tileHeight)) {}
@@ -103,6 +106,7 @@ public:
     void update();
     void draw();
     void addElement(UIElement *element);
+    void setSlotCooldownPercent(int slotIndex, float percent);
 
     void setPauseMenuVisible(bool visible);
     bool isPauseMenuVisible() const { return pauseMenuVisible; }
@@ -116,8 +120,9 @@ private:
     static Texture2D loadTexture(const std::string &fileName);
 
     void updateHud();
-    void updatePauseMenu();
     void drawHud();
+    void drawSlotHudPreview();
+    void updatePauseMenu();
     void drawPauseMenu();
 
     Rectangle getSmallButtonRect(int index) const;
@@ -137,18 +142,15 @@ private:
 
     bool slotHasSpace(int slotIndex) const;
     bool isValidSlotIndex(int slotIndex) const;
-    MahjongTileType getPrimaryTileForSlot(int slotIndex) const;
-    void refreshActiveSlotSelection();
 
     std::vector<UIElement *> elements;
     bool pauseMenuVisible = false;
     bool resumeRequested = false;
     bool quitRequested = false;
-    static constexpr int slotCapacity = 3;
-    static constexpr int slotCount = 3;
     std::array<std::vector<SlotTileEntry>, slotCount> attackSlots;
     std::array<AttackSlotElement *, slotCount> slotElements{}; // Owned UI wrappers for each slot
-    int activeSlotIndex = 0;
+    std::array<float, slotCount> slotCooldowns{};
+    static const char *slotKeyLabels[slotCount];
     bool slotsInitialized = false;
     bool isDraggingTile = false;
     bool draggingFromHand = false;
