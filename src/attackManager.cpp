@@ -8,6 +8,8 @@ AttackManager::~AttackManager()
         delete a;
     for (auto &m : this->meleeAttacks)
         delete m;
+    for (auto &d : this->dashAttacks)
+        delete d;
 }
 
 // Updates all ThousandAttack instances
@@ -17,6 +19,8 @@ void AttackManager::update(UpdateContext& uc)
         a->update(uc);
     for (auto &m : this->meleeAttacks)
         m->update(uc);
+    for (auto &d : this->dashAttacks)
+        d->update(uc);
 }
 
 void AttackManager::recordThrow(UpdateContext &uc)
@@ -106,6 +110,17 @@ MeleePushAttack *AttackManager::getMeleeAttack(Entity *spawnedBy)
     return this->meleeAttacks.back();
 }
 
+DashAttack *AttackManager::getDashAttack(Entity *spawnedBy)
+{
+    for (const auto &d : this->dashAttacks)
+    {
+        if (d->spawnedBy == spawnedBy)
+            return d;
+    }
+    this->dashAttacks.push_back(new DashAttack(spawnedBy));
+    return this->dashAttacks.back();
+}
+
 std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
 {
     std::vector<Entity *> ret;
@@ -135,6 +150,7 @@ std::vector<Object *> AttackManager::getObjects() const
         auto v = m->obj();
         ret.insert(ret.end(), v.begin(), v.end());
     }
+    // dash attack currently has no objects to render
     return ret;
 }
 

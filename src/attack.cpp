@@ -547,7 +547,7 @@ void MeleePushAttack::updateTileIndicator(UpdateContext &uc, float deltaSeconds)
 
         float progress = (windupDuration > 0.0f) ? 1.0f - (this->windupRemaining / windupDuration) : 1.0f;
         progress = Clamp(progress, 0.0f, 1.0f);
-        float opacity = Lerp(indicatorStartOpacity, 1.0f, progress);
+        float opacity = Lerp(indicatorStartOpacity, indicatorEndOpacity, progress);
         this->tileIndicator.opacity = opacity;
         this->tileIndicator.sprite.tint.a = (unsigned char)Clamp(opacity * 255.0f, 0.0f, 255.0f);
 
@@ -588,7 +588,7 @@ void MeleePushAttack::launchTileIndicator(const ViewBasis &view)
     this->tileIndicator.forward = view.forward;
     this->tileIndicator.startPos = this->tileIndicator.sprite.pos;
     this->tileIndicator.targetPos = Vector3Add(view.position, Vector3Scale(view.forward, pushRange));
-    this->tileIndicator.sprite.tint.a = 255;
+    this->tileIndicator.sprite.tint.a = (unsigned char)Clamp(indicatorEndOpacity * 255.0f, 0.0f, 255.0f);
     this->tileIndicator.sprite.setVisible(true);
     this->setIndicatorPose(this->tileIndicator.sprite.pos, view.forward);
 }
@@ -598,4 +598,82 @@ void MeleePushAttack::deactivateTileIndicator()
     this->tileIndicator.active = false;
     this->tileIndicator.launched = false;
     this->tileIndicator.sprite.setVisible(false);
+}
+
+// --- DashAttack ------------------------------------------------------------------
+Vector3 DashAttack::computeDashDirection(const UpdateContext &uc) const
+{
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return Vector3Zero();
+
+    const Me *player = static_cast<const Me *>(this->spawnedBy);
+    Vector2 rawInput = {(float)uc.playerInput.side, (float)-uc.playerInput.forward};
+    Vector2 inputDir;
+    if (fabsf(rawInput.x) < 0.01f && fabsf(rawInput.y) < 0.01f)
+    {
+        inputDir = {0.0f, -1.0f};
+    }
+    else
+    {
+        inputDir = Vector2Normalize(rawInput);
+    }
+    float yaw = player->getLookRotation().x;
+    Vector3 front = {sinf(yaw), 0.0f, cosf(yaw)};
+    Vector3 right = {cosf(-yaw), 0.0f, sinf(-yaw)};
+    Vector3 desired = {
+        inputDir.x * right.x + inputDir.y * front.x,
+        0.0f,
+        inputDir.x * right.z + inputDir.y * front.z};
+
+    if (Vector3LengthSqr(desired) < 0.0001f)
+        return Vector3Zero();
+    return Vector3Normalize(desired);
+}
+
+void DashAttack::applyDashImpulse(Me *player)
+{
+    if (!player)
+        return;
+    Vector3 vel = player->vel();
+    vel.x = this->dashDirection.x * dashSpeed;
+    vel.z = this->dashDirection.z * dashSpeed;
+    player->setVelocity(vel);
+    player->setDirection(Vector3Zero());
+}
+
+void DashAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    if (this->cooldownRemaining > 0.0f)
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+
+    if (this->activeRemaining > 0.0f)
+    {
+        this->activeRemaining = fmaxf(0.0f, this->activeRemaining - delta);
+        if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+        {
+            Me *player = static_cast<Me *>(this->spawnedBy);
+            this->applyDashImpulse(player);
+        }
+    }
+}
+
+void DashAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f || this->activeRemaining > 0.0f)
+        return;
+
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return;
+
+    Vector3 dir = this->computeDashDirection(uc);
+    if (Vector3LengthSqr(dir) < 0.0001f)
+        return;
+
+    Me *player = static_cast<Me *>(this->spawnedBy);
+    this->dashDirection = dir;
+    this->activeRemaining = dashDuration;
+    this->cooldownRemaining = dashCooldown;
+    this->applyDashImpulse(player);
+    player->addCameraFovKick(dashFovKick, dashFovKickDuration);
 }

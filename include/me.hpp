@@ -204,6 +204,7 @@ public:
     void beginMeleeWindup(float durationSeconds);
     bool isInMeleeWindup() const;
     void addCameraShake(float magnitude, float durationSeconds);
+    void addCameraFovKick(float magnitude, float durationSeconds);
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }

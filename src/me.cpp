@@ -118,6 +118,11 @@ void Me::addCameraShake(float magnitude, float duration)
     this->camera.addShake(magnitude, duration);
 }
 
+void Me::addCameraFovKick(float magnitude, float durationSeconds)
+{
+    this->camera.addFovKick(magnitude, durationSeconds);
+}
+
 EntityCategory Me::category() const
 {
     return ENTITY_PLAYER;

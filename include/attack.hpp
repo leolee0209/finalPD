@@ -152,6 +152,7 @@ private:
     static constexpr float indicatorYOffset = 1.4f;
     static constexpr float indicatorTravelDuration = 0.12f;
     static constexpr float indicatorStartOpacity = 0.15f;
+    static constexpr float indicatorEndOpacity = 0.8f;
 
     std::vector<EffectVolume> effectVolumes;
 
@@ -173,4 +174,32 @@ private:
     void updateTileIndicator(UpdateContext &uc, float deltaSeconds);
     void launchTileIndicator(const ViewBasis &view);
     void deactivateTileIndicator();
+};
+
+/**
+ * @brief Short, high-speed dash that moves the player along their input vector.
+ */
+class DashAttack : public AttackController
+{
+public:
+    explicit DashAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    void trigger(UpdateContext &uc);
+
+private:
+    float cooldownRemaining = 0.0f;
+    float activeRemaining = 0.0f;
+    Vector3 dashDirection = {0.0f, 0.0f, 0.0f};
+
+    static constexpr float dashSpeed = 70.0f;
+    static constexpr float dashDuration = 0.25f;
+    static constexpr float dashCooldown = 1.0f;
+
+    static constexpr float dashFovKick = 50.0f;
+    static constexpr float dashFovKickDuration = 0.3f;
+
+    Vector3 computeDashDirection(const UpdateContext &uc) const;
+    void applyDashImpulse(Me *player);
 };

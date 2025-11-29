@@ -12,17 +12,27 @@ void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 
         playerPos.z,
     };
 
+    float targetFov = 60.0f;
     if (isGrounded && ((forward != 0) || (sideway != 0)))
     {
         headTimer += delta * 3.0f;
         walkLerp = Lerp(walkLerp, 1.0f, 10.0f * delta);
-        this->camera.fovy = Lerp(this->camera.fovy, 55.0f, 5.0f * delta);
+        targetFov = 55.0f;
     }
     else
     {
         walkLerp = Lerp(walkLerp, 0.0f, 10.0f * delta);
-        this->camera.fovy = Lerp(this->camera.fovy, 60.0f, 5.0f * delta);
+        targetFov = 60.0f;
     }
+
+    if (this->fovKickTimer > 0.0f && this->fovKickDuration > 0.0f)
+    {
+        this->fovKickTimer = fmaxf(0.0f, this->fovKickTimer - delta);
+        float t = this->fovKickTimer / this->fovKickDuration;
+        targetFov += this->fovKickMagnitude * t;
+    }
+
+    this->camera.fovy = Lerp(this->camera.fovy, targetFov, 5.0f * delta);
 
     lean.x = Lerp(lean.x, sideway * 0.02f, 10.0f * delta);
     lean.y = Lerp(lean.y, forward * 0.015f, 10.0f * delta);
@@ -107,4 +117,13 @@ void MyCamera::addShake(float magnitude, float durationSeconds)
     this->shakeDuration = durationSeconds;
     this->shakeTimer = durationSeconds;
     this->shakeMagnitude = fmaxf(this->shakeMagnitude, magnitude);
+}
+
+void MyCamera::addFovKick(float magnitude, float durationSeconds)
+{
+    if (durationSeconds <= 0.0f || magnitude <= 0.0f)
+        return;
+    this->fovKickDuration = durationSeconds;
+    this->fovKickTimer = durationSeconds;
+    this->fovKickMagnitude = magnitude;
 }

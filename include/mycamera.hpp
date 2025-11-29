@@ -23,6 +23,9 @@ private:
     float shakeTimer = 0.0f;
     float shakeDuration = 0.0f;
     float shakeMagnitude = 0.0f;
+    float fovKickTimer = 0.0f;
+    float fovKickDuration = 0.0f;
+    float fovKickMagnitude = 0.0f;
 
     void UpdateCameraFPS();
 
@@ -69,4 +72,9 @@ public:
      * @brief Apply a short camera shake.
      */
     void addShake(float magnitude, float durationSeconds);
+
+    /**
+     * @brief Temporarily boosts FOV for speed effects.
+     */
+    void addFovKick(float magnitude, float durationSeconds);
 };
