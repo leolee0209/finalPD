@@ -203,3 +203,64 @@ private:
     Vector3 computeDashDirection(const UpdateContext &uc) const;
     void applyDashImpulse(Me *player);
 };
+
+class DotBombAttack : public AttackController
+{
+public:
+    explicit DotBombAttack(Entity *_spawnedBy);
+    ~DotBombAttack() override;
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override;
+    std::vector<Object *> obj();
+    void trigger(UpdateContext &uc, MahjongTileType tile);
+
+private:
+    struct Bomb
+    {
+        Projectile projectile;
+        bool exploded = false;
+        float flightTimeRemaining = 4.0f;
+        float explosionTimer = 0.0f;
+        Object explosionFx;
+        bool fxActive = false;
+        Vector3 explosionOrigin{0.0f, 0.0f, 0.0f};
+        Object explosionSprite;
+        bool spriteActive = false;
+    };
+
+    std::vector<Bomb> bombs;
+
+    static constexpr float projectileSpeed = 41.0f;
+    static constexpr float projectileLift = 6.0f;
+    static constexpr float projectileDrag = 0.99f;
+    static constexpr float projectileFriction = 0.92f;
+    static constexpr float muzzleHeight = 1.6f;
+    static constexpr float muzzleForwardOffset = 0.8f;
+    static constexpr float projectileRadius = 0.45f;
+    static constexpr float projectileHeight = 1.4f;
+    static constexpr float projectileLength = 3.5f;
+
+    static constexpr float explosionLifetime = 0.35f;
+    static constexpr float explosionStartRadius = 3.0f;
+    static constexpr float explosionEndRadius = 10.0f;
+    static constexpr float explosionHeight = 5.0f;
+    static constexpr float explosionDamage = 25.0f;
+    static constexpr float explosionKnockback = 55.0f;
+    static constexpr float explosionKnockbackDuration = 0.6f;
+    static constexpr float explosionLift = 30.0f;
+    static constexpr float explosionSpriteDepth = 0.15f;
+    static constexpr float explosionSpriteStartSize = 1.5f;
+    static constexpr float explosionSpriteEndSize = 6.5f;
+
+    void startExplosion(Bomb &bomb, const Vector3 &origin, UpdateContext &uc);
+    void applyExplosionEffects(const Vector3 &origin, UpdateContext &uc);
+    static void retainExplosionTexture();
+    static void releaseExplosionTexture();
+    void updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, float normalizedProgress);
+
+    static Texture2D explosionTexture;
+    static bool explosionTextureLoaded;
+    static int explosionTextureUsers;
+    static constexpr const char *explosionTexturePath = "wabbit_alpha.png";
+};

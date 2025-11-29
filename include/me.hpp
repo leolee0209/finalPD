@@ -175,6 +175,7 @@ private:
     float meleeSwingTimer = 0.0f;
     float meleeSwingDuration = 0.25f;
     float meleeWindupTimer = 0.0f;
+    float knockbackTimer = 0.0f;
 
     // New: Struct to hold player input state
     
@@ -205,6 +206,8 @@ public:
     bool isInMeleeWindup() const;
     void addCameraShake(float magnitude, float durationSeconds);
     void addCameraFovKick(float magnitude, float durationSeconds);
+    void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
+    bool damage(DamageResult &dResult);
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }

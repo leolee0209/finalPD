@@ -25,8 +25,8 @@ void MahjongUIManager::createPlayerHand(int screenWidth, int screenHeight)
     playerHand.push_back(MahjongTileType::BAMBOO_4);
     playerHand.push_back(MahjongTileType::BAMBOO_5);
     playerHand.push_back(MahjongTileType::BAMBOO_6);
-    playerHand.push_back(MahjongTileType::DOT_7);
-    playerHand.push_back(MahjongTileType::DOT_8);
+    playerHand.push_back(MahjongTileType::DOT_9);
+    playerHand.push_back(MahjongTileType::DOT_9);
     playerHand.push_back(MahjongTileType::DOT_9);
     playerHand.push_back(MahjongTileType::WIND_EAST);
     playerHand.push_back(MahjongTileType::WIND_WEST);

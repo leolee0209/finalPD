@@ -14,6 +14,11 @@ int getCharacterValue(MahjongTileType tile)
 {
     return static_cast<int>(tile) - static_cast<int>(MahjongTileType::CHARACTER_1) + 1;
 }
+
+bool isDotTile(MahjongTileType tile)
+{
+    return tile >= MahjongTileType::DOT_1 && tile <= MahjongTileType::DOT_9;
+}
 }
 
 // Destructor cleans up dynamically allocated ThousandAttack instances
@@ -25,6 +30,8 @@ AttackManager::~AttackManager()
         delete m;
     for (auto &d : this->dashAttacks)
         delete d;
+    for (auto &b : this->dotBombAttacks)
+        delete b;
 }
 
 // Updates all ThousandAttack instances
@@ -36,6 +43,8 @@ void AttackManager::update(UpdateContext& uc)
         m->update(uc);
     for (auto &d : this->dashAttacks)
         d->update(uc);
+    for (auto &b : this->dotBombAttacks)
+        b->update(uc);
 }
 
 void AttackManager::recordThrow(UpdateContext &uc)
@@ -62,7 +71,7 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
 
     const bool canCheckCombo = slotEntries.size() >= 3;
     std::array<int, 3> characterValues{};
-    bool allValidCharacters = true;
+    bool allValidCharacters = canCheckCombo;
     if (canCheckCombo)
     {
         for (int i = 0; i < 3; ++i)
@@ -74,6 +83,24 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
                 break;
             }
             characterValues[i] = getCharacterValue(entry.tile);
+        }
+    }
+
+    bool isDotTriple = false;
+    if (canCheckCombo)
+    {
+        const auto &first = slotEntries[0];
+        if (first.isValid() && isDotTile(first.tile))
+        {
+            isDotTriple = true;
+            for (int i = 1; i < 3; ++i)
+            {
+                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                {
+                    isDotTriple = false;
+                    break;
+                }
+            }
         }
     }
 
@@ -91,38 +118,46 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
         return false;
     };
 
-    if (!canCheckCombo || !allValidCharacters)
+    if (isDotTriple)
     {
-        return triggerDefaultThrow();
-    }
-
-    bool isMeleeCombo = (characterValues[0] == characterValues[1]) && (characterValues[1] == characterValues[2]);
-    bool isDashCombo = false;
-    if (!isMeleeCombo)
-    {
-        auto sortedValues = characterValues;
-        std::sort(sortedValues.begin(), sortedValues.end());
-        isDashCombo = (sortedValues[0] + 1 == sortedValues[1]) && (sortedValues[1] + 1 == sortedValues[2]);
-    }
-
-    if (isMeleeCombo)
-    {
-        if (MeleePushAttack *melee = getMeleeAttack(uc.player))
+        if (DotBombAttack *bomb = getDotBombAttack(uc.player))
         {
-            melee->trigger(uc);
+            bomb->trigger(uc, slotEntries[0].tile);
             return true;
         }
         return false;
     }
 
-    if (isDashCombo)
+    if (canCheckCombo && allValidCharacters)
     {
-        if (DashAttack *dash = getDashAttack(uc.player))
+        bool isMeleeCombo = (characterValues[0] == characterValues[1]) && (characterValues[1] == characterValues[2]);
+        bool isDashCombo = false;
+        if (!isMeleeCombo)
         {
-            dash->trigger(uc);
-            return true;
+            auto sortedValues = characterValues;
+            std::sort(sortedValues.begin(), sortedValues.end());
+            isDashCombo = (sortedValues[0] + 1 == sortedValues[1]) && (sortedValues[1] + 1 == sortedValues[2]);
         }
-        return false;
+
+        if (isMeleeCombo)
+        {
+            if (MeleePushAttack *melee = getMeleeAttack(uc.player))
+            {
+                melee->trigger(uc);
+                return true;
+            }
+            return false;
+        }
+
+        if (isDashCombo)
+        {
+            if (DashAttack *dash = getDashAttack(uc.player))
+            {
+                dash->trigger(uc);
+                return true;
+            }
+            return false;
+        }
     }
 
     return triggerDefaultThrow();
@@ -213,6 +248,17 @@ DashAttack *AttackManager::getDashAttack(Entity *spawnedBy)
     return this->dashAttacks.back();
 }
 
+DotBombAttack *AttackManager::getDotBombAttack(Entity *spawnedBy)
+{
+    for (const auto &b : this->dotBombAttacks)
+    {
+        if (b->spawnedBy == spawnedBy)
+            return b;
+    }
+    this->dotBombAttacks.push_back(new DotBombAttack(spawnedBy));
+    return this->dotBombAttacks.back();
+}
+
 std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
 {
     std::vector<Entity *> ret;
@@ -222,6 +268,11 @@ std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
         for (const auto &a : this->singleTileAttack)
         {
             auto v = a->getEntities();
+            ret.insert(ret.end(), v.begin(), v.end());
+        }
+        for (const auto &b : this->dotBombAttacks)
+        {
+            auto v = b->getEntities();
             ret.insert(ret.end(), v.begin(), v.end());
         }
     }
@@ -240,6 +291,11 @@ std::vector<Object *> AttackManager::getObjects() const
     for (const auto &m : this->meleeAttacks)
     {
         auto v = m->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &b : this->dotBombAttacks)
+    {
+        auto v = b->obj();
         ret.insert(ret.end(), v.begin(), v.end());
     }
     // dash attack currently has no objects to render
