@@ -45,6 +45,15 @@ void AttackManager::update(UpdateContext& uc)
         d->update(uc);
     for (auto &b : this->dotBombAttacks)
         b->update(uc);
+
+    if (uc.uiManager)
+    {
+        for (int slotIdx = 0; slotIdx < UIManager::slotCount; ++slotIdx)
+        {
+            float percent = computeSlotCooldownPercent(slotIdx, uc);
+            uc.uiManager->setSlotCooldownPercent(slotIdx, percent);
+        }
+    }
 }
 
 void AttackManager::recordThrow(UpdateContext &uc)
@@ -104,20 +113,6 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
         }
     }
 
-    if (slotEntries.front().isValid())
-    {
-        uc.uiManager->muim.selectTileByIndex(slotEntries.front().handIndex);
-    }
-
-    const auto triggerDefaultThrow = [&]() -> bool {
-        if (ThousandTileAttack *singleAttack = getSingleTileAttack(uc.player))
-        {
-            singleAttack->spawnProjectile(uc);
-            return true;
-        }
-        return false;
-    };
-
     if (isDotTriple)
     {
         if (DotBombAttack *bomb = getDotBombAttack(uc.player))
@@ -160,7 +155,7 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
         }
     }
 
-    return triggerDefaultThrow();
+    return false;
 }
 
 void AttackManager::checkActivation(Entity *player)
@@ -211,6 +206,93 @@ void AttackManager::checkActivation(Entity *player)
     if (combo_found)
     {
         thrownTiles.clear();
+    }
+}
+
+AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vector<SlotTileEntry> &slotEntries) const
+{
+    if (slotEntries.empty())
+        return SlotAttackKind::None;
+
+    bool canCheckCombo = slotEntries.size() >= 3;
+    std::array<int, 3> characterValues{};
+    bool allValidCharacters = canCheckCombo;
+    if (canCheckCombo)
+    {
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto &entry = slotEntries[i];
+            if (!entry.isValid() || !isCharacterTile(entry.tile))
+            {
+                allValidCharacters = false;
+                break;
+            }
+            characterValues[i] = getCharacterValue(entry.tile);
+        }
+    }
+
+    bool isDotTriple = false;
+    if (canCheckCombo)
+    {
+        const auto &first = slotEntries[0];
+        if (first.isValid() && isDotTile(first.tile))
+        {
+            isDotTriple = true;
+            for (int i = 1; i < 3; ++i)
+            {
+                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                {
+                    isDotTriple = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (isDotTriple)
+        return SlotAttackKind::DotBomb;
+
+    if (canCheckCombo && allValidCharacters)
+    {
+        bool isMeleeCombo = (characterValues[0] == characterValues[1]) && (characterValues[1] == characterValues[2]);
+
+        auto sortedValues = characterValues;
+        std::sort(sortedValues.begin(), sortedValues.end());
+        bool isDashCombo = (sortedValues[0] + 1 == sortedValues[1]) && (sortedValues[1] + 1 == sortedValues[2]);
+
+        if (isMeleeCombo)
+            return SlotAttackKind::Melee;
+        if (isDashCombo)
+            return SlotAttackKind::Dash;
+    }
+
+    if (slotEntries.front().isValid())
+        return SlotAttackKind::DefaultThrow;
+
+    return SlotAttackKind::None;
+}
+
+float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc)
+{
+    if (!uc.uiManager || !uc.player)
+        return 0.0f;
+
+    const auto &slotEntries = uc.uiManager->getSlotEntries(slotIndex);
+    SlotAttackKind kind = classifySlotAttack(slotEntries);
+    switch (kind)
+    {
+    case SlotAttackKind::Melee:
+    {
+        MeleePushAttack *melee = getMeleeAttack(uc.player);
+        return melee ? melee->getCooldownPercent() : 0.0f;
+    }
+    case SlotAttackKind::Dash:
+    {
+        DashAttack *dash = getDashAttack(uc.player);
+        return dash ? dash->getCooldownPercent() : 0.0f;
+    }
+    default:
+        return 0.0f;
     }
 }
 
