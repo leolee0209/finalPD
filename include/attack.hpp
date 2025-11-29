@@ -156,8 +156,13 @@ private:
     std::vector<EffectVolume> effectVolumes;
 
     Vector3 getForwardVector() const;
-    Vector3 getPlayerCameraForward() const;
-    Vector3 getPlayerCameraPosition() const;
+    struct ViewBasis
+    {
+        Vector3 position;
+        Vector3 forward;
+    };
+    ViewBasis getIndicatorViewBasis() const;
+    void setIndicatorPose(const Vector3 &position, const Vector3 &forward);
     bool pushEnemies(UpdateContext &uc, EffectVolume &volume);
     EffectVolume buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const;
     void performStrike(UpdateContext &uc);
@@ -166,6 +171,6 @@ private:
 
     void initializeTileIndicator(UpdateContext &uc);
     void updateTileIndicator(UpdateContext &uc, float deltaSeconds);
-    void launchTileIndicator(const Vector3 &origin, const Vector3 &forward);
+    void launchTileIndicator(const ViewBasis &view);
     void deactivateTileIndicator();
 };
