@@ -20,6 +20,9 @@ private:
     float swingRoll = 0.0f;
     float swingLean = 0.0f;
     float swingLift = 0.0f;
+    float shakeTimer = 0.0f;
+    float shakeDuration = 0.0f;
+    float shakeMagnitude = 0.0f;
 
     void UpdateCameraFPS();
 
@@ -61,4 +64,9 @@ public:
      * @param swingAmount normalized melee swing influence [0,1]
      */
     void UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded, float swingAmount = 0.0f);
+
+    /**
+     * @brief Apply a short camera shake.
+     */
+    void addShake(float magnitude, float durationSeconds);
 };

@@ -186,6 +186,12 @@ void ThousandTileAttack::update(UpdateContext &uc)
 }
 void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
 {
+    if (!uc.scene)
+        return;
+    AttackManager &am = uc.scene->am;
+    if (am.isAttackLockedByOther(this))
+        return;
+
     float yaw;
     float pitch;
 
@@ -241,12 +247,20 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
 // --- MeleePushAttack ------------------------------------------------------------------
 void MeleePushAttack::update(UpdateContext &uc)
 {
-    (void)uc;
     float delta = GetFrameTime();
 
     if (this->cooldownRemaining > 0.0f)
     {
         this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
+
+    if (this->pendingStrike)
+    {
+        this->windupRemaining = fmaxf(0.0f, this->windupRemaining - delta);
+        if (this->windupRemaining <= 0.0f)
+        {
+            this->performStrike(uc);
+        }
     }
 
     for (auto &volume : this->effectVolumes)
@@ -330,7 +344,7 @@ MeleePushAttack::EffectVolume MeleePushAttack::buildEffectVolume(const Vector3 &
 
     // Create the visual/physical Object representing the area and cache its OBB
     volume.area = Object(size, center);
-    volume.area.visible = false;
+    volume.area.setVisible(false);
     // Orient the box so its local +Z axis points along the forward direction
     volume.area.setRotationFromForward(forwardNorm);
     // Update the OBB used by collision helpers
@@ -381,28 +395,54 @@ bool MeleePushAttack::pushEnemies(UpdateContext &uc, EffectVolume &volume)
 
 void MeleePushAttack::trigger(UpdateContext &uc)
 {
-    if (this->cooldownRemaining > 0.0f)
+    if (this->cooldownRemaining > 0.0f || this->pendingStrike)
         return;
 
+    if (!uc.scene)
+        return;
+    AttackManager &am = uc.scene->am;
+    if (!am.tryLockAttack(this))
+        return;
+
+    this->pendingStrike = true;
+    this->windupRemaining = windupDuration;
+    this->requestPlayerWindupLock();
+}
+
+void MeleePushAttack::performStrike(UpdateContext &uc)
+{
     Vector3 origin = this->spawnedBy->pos();
     Vector3 forward = this->getForwardVector();
-    /*
-     * On trigger: build a short-lived effect volume, immediately test
-     * enemies against it (so knockback happens the same frame), and
-     * also keep the volume in `effectVolumes` so Scene can render the
-     * area for a brief visual cue.
-     */
     EffectVolume volume = this->buildEffectVolume(origin, forward);
     bool hit = this->pushEnemies(uc, volume);
-    // Store for a short time so the sweep is visible
     this->effectVolumes.push_back(volume);
-    (void)hit;
 
+    this->pendingStrike = false;
     this->cooldownRemaining = cooldownDuration;
+    this->providePlayerFeedback(hit);
+    if (uc.scene)
+    {
+        uc.scene->am.releaseAttackLock(this);
+    }
+}
 
-    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+void MeleePushAttack::requestPlayerWindupLock()
+{
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return;
+    Me *player = static_cast<Me *>(this->spawnedBy);
+    player->beginMeleeWindup(windupDuration);
+}
+
+void MeleePushAttack::providePlayerFeedback(bool hit)
+{
+    if (!this->spawnedBy)
+        return;
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
     {
         Me *player = static_cast<Me *>(this->spawnedBy);
         player->triggerMeleeSwing(swingDuration);
+        float shakeMag = cameraShakeMagnitude * (hit ? 1.0f : 0.5f);
+        player->addCameraShake(shakeMag, cameraShakeDuration);
     }
 }

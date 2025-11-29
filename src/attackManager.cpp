@@ -137,3 +137,26 @@ std::vector<Object *> AttackManager::getObjects() const
     }
     return ret;
 }
+
+bool AttackManager::isAttackLockedByOther(const AttackController *controller) const
+{
+    return this->attackLockOwner && this->attackLockOwner != controller;
+}
+
+bool AttackManager::tryLockAttack(AttackController *controller)
+{
+    if (!controller)
+        return false;
+    if (this->attackLockOwner && this->attackLockOwner != controller)
+        return false;
+    this->attackLockOwner = controller;
+    return true;
+}
+
+void AttackManager::releaseAttackLock(const AttackController *controller)
+{
+    if (this->attackLockOwner == controller)
+    {
+        this->attackLockOwner = nullptr;
+    }
+}

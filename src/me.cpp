@@ -17,11 +17,28 @@ void Me::applyPlayerMovement(UpdateContext &uc)
 
     float delta = GetFrameTime();
 
+    if (this->meleeWindupTimer > 0.0f)
+    {
+        this->meleeWindupTimer = fmaxf(0.0f, this->meleeWindupTimer - delta);
+    }
+
+    bool lockMovement = this->meleeWindupTimer > 0.0f;
+    if (lockMovement)
+    {
+        input = {0.0f, 0.0f};
+        this->direction = Vector3Zero();
+        this->velocity.x = Lerp(this->velocity.x, 0.0f, 30.0f * delta);
+        this->velocity.z = Lerp(this->velocity.z, 0.0f, 30.0f * delta);
+    }
+
     // Handle jumping (gravity & vertical motion handled by ApplyPhysics)
     if (this->grounded && uc.playerInput.jumpPressed)
     {
-        this->velocity.y = JUMP_FORCE;
-        this->grounded = false;
+        if (!lockMovement)
+        {
+            this->velocity.y = JUMP_FORCE;
+            this->grounded = false;
+        }
     }
 
     // Calculate the direction the player is facing
@@ -82,6 +99,23 @@ float Me::getMeleeSwingAmount() const
     if (this->meleeSwingDuration <= 0.0f)
         return 0.0f;
     return Clamp(this->meleeSwingTimer / this->meleeSwingDuration, 0.0f, 1.0f);
+}
+
+void Me::beginMeleeWindup(float durationSeconds)
+{
+    if (durationSeconds <= 0.0f)
+        return;
+    this->meleeWindupTimer = fmaxf(this->meleeWindupTimer, durationSeconds);
+}
+
+bool Me::isInMeleeWindup() const
+{
+    return this->meleeWindupTimer > 0.0f;
+}
+
+void Me::addCameraShake(float magnitude, float duration)
+{
+    this->camera.addShake(magnitude, duration);
 }
 
 EntityCategory Me::category() const

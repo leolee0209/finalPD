@@ -19,6 +19,7 @@ private:
     std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
+    AttackController *attackLockOwner = nullptr;
 
     void checkActivation(Entity *player);
 
@@ -54,4 +55,8 @@ public:
      * @brief Get objects representing all projectiles/connectors for rendering/collision.
      */
     std::vector< Object *> getObjects() const;
+
+    bool isAttackLockedByOther(const AttackController *controller) const;
+    bool tryLockAttack(AttackController *controller);
+    void releaseAttackLock(const AttackController *controller);
 };

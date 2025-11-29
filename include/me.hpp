@@ -174,6 +174,7 @@ private:
     MyCamera camera; // Camera associated with the player
     float meleeSwingTimer = 0.0f;
     float meleeSwingDuration = 0.25f;
+    float meleeWindupTimer = 0.0f;
 
     // New: Struct to hold player input state
     
@@ -200,6 +201,9 @@ public:
     void UpdateCamera(UpdateContext& uc);
     void triggerMeleeSwing(float durationSeconds);
     float getMeleeSwingAmount() const;
+    void beginMeleeWindup(float durationSeconds);
+    bool isInMeleeWindup() const;
+    void addCameraShake(float magnitude, float durationSeconds);
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }

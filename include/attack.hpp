@@ -117,8 +117,11 @@ private:
     };
 
     float cooldownRemaining = 0.0f;
+    float windupRemaining = 0.0f;
+    bool pendingStrike = false;
     static constexpr float cooldownDuration = 0.8f;
     static constexpr float swingDuration = 0.25f;
+    static constexpr float windupDuration = 0.18f;
     static constexpr float pushForce = 50.0f;
     static constexpr float pushRange = 10.0f;
     static constexpr float pushAngle = 70.0f * DEG2RAD;
@@ -127,10 +130,15 @@ private:
     static constexpr float effectLifetime = 0.2f;
     static constexpr float effectHeight = 3.5f;
     static constexpr float effectYOffset = 0.5f;
+    static constexpr float cameraShakeMagnitude = 0.6f;
+    static constexpr float cameraShakeDuration = 0.25f;
 
     std::vector<EffectVolume> effectVolumes;
 
     Vector3 getForwardVector() const;
     bool pushEnemies(UpdateContext &uc, EffectVolume &volume);
     EffectVolume buildEffectVolume(const Vector3 &origin, const Vector3 &forward) const;
+    void performStrike(UpdateContext &uc);
+    void requestPlayerWindupLock();
+    void providePlayerFeedback(bool hit);
 };

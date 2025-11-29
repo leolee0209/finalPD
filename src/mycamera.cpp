@@ -1,6 +1,7 @@
 #include "mycamera.hpp"
 #include <raylib.h>
 #include <raymath.h>
+#include <cmath>
 void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded, float swingAmount)
 {
     float delta = GetFrameTime();
@@ -31,6 +32,19 @@ void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 
     this->swingLift = swingAmount * 0.05f;
 
     UpdateCameraFPS();
+
+    if (this->shakeTimer > 0.0f)
+    {
+        this->shakeTimer = fmaxf(0.0f, this->shakeTimer - delta);
+        float normalized = (this->shakeDuration > 0.0f) ? (this->shakeTimer / this->shakeDuration) : 0.0f;
+        float strength = this->shakeMagnitude * normalized * normalized; // ease-out
+        float shakeX = ((float)GetRandomValue(-1000, 1000) / 1000.0f) * strength;
+        float shakeY = ((float)GetRandomValue(-1000, 1000) / 1000.0f) * strength * 0.7f;
+        float shakeZ = ((float)GetRandomValue(-1000, 1000) / 1000.0f) * strength;
+        Vector3 offset = {shakeX, shakeY, shakeZ};
+        this->camera.position = Vector3Add(this->camera.position, offset);
+        this->camera.target = Vector3Add(this->camera.target, offset);
+    }
 }
 
 void MyCamera::UpdateCameraFPS()
@@ -84,4 +98,13 @@ void MyCamera::UpdateCameraFPS()
     swingOffset.y += this->swingLift;
     this->camera.position = Vector3Add(this->camera.position, swingOffset);
     this->camera.target = Vector3Add(this->camera.position, pitch);
+}
+
+void MyCamera::addShake(float magnitude, float durationSeconds)
+{
+    if (durationSeconds <= 0.0f || magnitude <= 0.0f)
+        return;
+    this->shakeDuration = durationSeconds;
+    this->shakeTimer = durationSeconds;
+    this->shakeMagnitude = fmaxf(this->shakeMagnitude, magnitude);
 }
