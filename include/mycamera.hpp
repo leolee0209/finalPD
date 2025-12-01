@@ -32,7 +32,7 @@ private:
 public:
     Vector2 lookRotation;
     MyCamera() {};
-    MyCamera(Vector3 pos)
+    MyCamera(Vector3 playerCenter, float colliderHalfHeight)
     {
         headLerp = STAND_HEIGHT;
         lookRotation = {0};
@@ -46,10 +46,11 @@ public:
         this->camera = {0};
         this->camera.fovy = 60.0f;
         this->camera.projection = CAMERA_PERSPECTIVE;
+        float footY = playerCenter.y - colliderHalfHeight;
         this->camera.position = {
-            pos.x,
-            pos.y + (BOTTOM_HEIGHT + this->headLerp),
-            pos.z,
+            playerCenter.x,
+            footY + (BOTTOM_HEIGHT + this->headLerp),
+            playerCenter.z,
         };
 
         UpdateCameraFPS();
@@ -66,7 +67,7 @@ public:
      * @param isGrounded whether player is currently grounded
      * @param swingAmount normalized melee swing influence [0,1]
      */
-    void UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded, float swingAmount = 0.0f);
+    void UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerCenter, float colliderHalfHeight, bool isGrounded, float swingAmount = 0.0f);
 
     /**
      * @brief Apply a short camera shake.

@@ -1,9 +1,13 @@
 #pragma once
 #include <vector>
+#include <memory>
+#include <string>
+#include <unordered_map>
 #include <raylib.h>
 #include "attackManager.hpp"
 #include "updateContext.hpp"
 #include "enemyManager.hpp"
+#include "collidableModel.hpp"
 
 class Object;
 
@@ -20,13 +24,55 @@ class Scene
 private:
     std::vector<Object *> objects; // List of static objects in the scene (e.g., towers, obstacles)
     Object floor;                  // Represents the floor of the scene
+    Texture2D wallTexture{};       // Procedural room walls texture
+    Texture2D floorTexture{};      // Procedural room floor texture
+    Shader lightingShader{};       // Shared lighting shader
+    int ambientLoc = -1;
+    int viewPosLoc = -1;
+    Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
+    Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
+    Color skyColor = {12, 17, 32, 255};
+    Color shadowColor = {0, 0, 0, 80};
+    float shadowThickness = 0.05f;
+    float shadowInflation = 1.12f;
+    float shadowMinAlpha = 0.2f;
+
+    struct CachedModel
+    {
+        Model model;
+        int refCount = 0;
+    };
+
+    std::vector<std::unique_ptr<CollidableModel>> decorations;
+    std::unordered_map<std::string, CachedModel> decorationModelCache;
+    std::unique_ptr<btDefaultCollisionConfiguration> bulletConfig;
+    std::unique_ptr<btCollisionDispatcher> bulletDispatcher;
+    std::unique_ptr<btBroadphaseInterface> bulletBroadphase;
+    std::unique_ptr<btCollisionWorld> bulletWorld;
 
     // Helper function to draw a 3D rectangle (cube) for an object
-    void DrawRectangle(Object &o) const;
-    void DrawSphereObject(Object &o) const;
+    void DrawRectangle(const Object &o) const;
+    void DrawSphereObject(const Object &o) const;
     void DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color) const;                      // Draw cube textured
     void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position, float width, float height, float length, Color color) const; // Draw cube with a region of a texture
     void DrawTexturedSphere(Texture2D &texture, const Rectangle &source, const Vector3 &position, float radius, Color tint) const;
+    void ApplyFullTexture(Object &obj, Texture2D &texture);
+    void InitializeLighting();
+    void ShutdownLighting();
+    void CreatePointLight(Vector3 position, Color color, float intensity = 1.0f);
+    void DrawPlanarShadow(const Object &o, float floorY) const;
+    void DrawShadowCollection(const std::vector<Object *> &items, float floorY) const;
+    float GetFloorTop() const;
+    void AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg = 0.0f);
+    void DrawDecorations() const;
+    Model *AcquireDecorationModel(const std::string &relativePath);
+    void ReleaseDecorationModels();
+    void InitializeBulletWorld();
+    void ShutdownBulletWorld();
+    void RemoveDecorationColliders();
+    void AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const;
+    static btTransform BuildBtTransform(const Object &obj);
+    static btCollisionShape *CreateShapeFromObject(const Object &obj);
 public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
@@ -43,6 +89,7 @@ public:
      * Call while a 3D camera block is active.
      */
     void DrawScene() const;
+    void DrawEnemyHealthDialogs(const Camera &camera) const;
 
     /**
      * @brief Advance scene simulation: update enemies, attacks and other systems.
@@ -60,9 +107,14 @@ public:
      * @brief Return the vector of static objects placed in the scene.
      */
     std::vector<Object *> getStaticObjects() const;
+    void CollectDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const { this->AppendDecorationCollisions(obj, out); }
+    bool CheckDecorationCollision(const Object &obj) const;
+    bool CheckDecorationSweep(const Vector3 &start, const Vector3 &end, float radius) const;
 
     /**
      * @brief Return a list of entity pointers currently in the scene.
      */
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
+    void SetViewPosition(const Vector3 &viewPosition);
+    Color getSkyColor() const { return this->skyColor; }
 };

@@ -1,0 +1,341 @@
+{
+  "accessors": [
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 4598,
+      "max": [
+        0.07589803636074066,
+        0.0017077862285077572,
+        0.46388161182403564
+      ],
+      "min": [
+        -0.07589798420667648,
+        -0.4720313251018524,
+        -0.0003068609512411058
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "byteOffset": 55176,
+      "componentType": 5126,
+      "count": 4598,
+      "max": [
+        0.9999954104423523,
+        1.0,
+        1.0
+      ],
+      "min": [
+        -0.9999954700469971,
+        -1.0,
+        -1.0
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 4598,
+      "max": [
+        1.0,
+        1.0,
+        0.9999292492866516,
+        1.0
+      ],
+      "min": [
+        -1.0,
+        -1.0,
+        -0.9998763203620911,
+        -1.0
+      ],
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 4598,
+      "max": [
+        0.9897246360778809,
+        0.985163688659668
+      ],
+      "min": [
+        0.0003078422450926155,
+        0.0139797143638134
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 36784,
+      "componentType": 5126,
+      "count": 4598,
+      "max": [
+        0.9897246360778809,
+        0.985163688659668
+      ],
+      "min": [
+        0.0003078422450926155,
+        0.0139797143638134
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 73568,
+      "componentType": 5126,
+      "count": 4598,
+      "max": [
+        0.9897246360778809,
+        0.985163688659668
+      ],
+      "min": [
+        0.0003078422450926155,
+        0.0139797143638134
+      ],
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 0,
+      "componentType": 5125,
+      "count": 12606,
+      "type": "SCALAR"
+    }
+  ],
+  "asset": {
+    "extras": {
+      "author": "Matt LeMoine (https://sketchfab.com/Matt_LeMoine)",
+      "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "source": "https://sketchfab.com/3d-models/wall-lamp-f93be18847144f1fbd87930d2070cb71",
+      "title": "Wall-Lamp"
+    },
+    "generator": "Sketchfab-12.67.0",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 50424,
+      "name": "floatBufferViews",
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 110352,
+      "byteOffset": 50424,
+      "byteStride": 8,
+      "name": "floatBufferViews",
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 110352,
+      "byteOffset": 160776,
+      "byteStride": 12,
+      "name": "floatBufferViews",
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 73568,
+      "byteOffset": 271128,
+      "byteStride": 16,
+      "name": "floatBufferViews",
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 344696,
+      "uri": "scene.bin"
+    }
+  ],
+  "extensionsUsed": [
+    "KHR_materials_transmission"
+  ],
+  "images": [
+    {
+      "uri": "textures/RustyWallLamp_baseColor.png"
+    },
+    {
+      "uri": "textures/RustyWallLamp_metallicRoughness.png"
+    },
+    {
+      "uri": "textures/RustyWallLamp_normal.png"
+    },
+    {
+      "uri": "textures/RustyWallLamp_transmission.png"
+    }
+  ],
+  "materials": [
+    {
+      "alphaMode": "BLEND",
+      "doubleSided": true,
+      "extensions": {
+        "KHR_materials_transmission": {
+          "transmissionFactor": 1.0,
+          "transmissionTexture": {
+            "index": 3
+          }
+        }
+      },
+      "name": "RustyWallLamp",
+      "normalTexture": {
+        "index": 2
+      },
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.42808864491572235,
+          0.34450904290973833,
+          0.0021139505094938935,
+          1.0
+        ],
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicRoughnessTexture": {
+          "index": 1
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "RustyWallLamp_RustyWallLamp_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 1,
+            "POSITION": 0,
+            "TANGENT": 2,
+            "TEXCOORD_0": 3,
+            "TEXCOORD_1": 4,
+            "TEXCOORD_2": 5
+          },
+          "indices": 6,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "children": [
+        1
+      ],
+      "matrix": [
+        2.220446049250313e-16,
+        1.3877787807814457e-16,
+        -1.0,
+        0.0,
+        -1.0,
+        3.1103250993502886e-16,
+        -2.2204460492503123e-16,
+        0.0,
+        3.110325099350288e-16,
+        1.0,
+        1.3877787807814457e-16,
+        0.0,
+        -70.62309265136719,
+        -92.97801971435547,
+        -23.590770721435568,
+        1.0
+      ],
+      "name": "Sketchfab_model"
+    },
+    {
+      "children": [
+        2
+      ],
+      "matrix": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "f072261451064922ba5959dc3f7aaed3.fbx"
+    },
+    {
+      "children": [
+        3
+      ],
+      "name": "RootNode"
+    },
+    {
+      "children": [
+        4
+      ],
+      "matrix": [
+        100.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.629206793918314e-05,
+        -99.99999999999868,
+        0.0,
+        0.0,
+        99.99999999999868,
+        -1.629206793918314e-05,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "RustyWallLamp"
+    },
+    {
+      "mesh": 0,
+      "name": "RustyWallLamp_RustyWallLamp_0"
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987,
+      "wrapS": 10497,
+      "wrapT": 10497
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Sketchfab_Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    },
+    {
+      "sampler": 0,
+      "source": 3
+    }
+  ]
+}

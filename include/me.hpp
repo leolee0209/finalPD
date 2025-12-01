@@ -184,6 +184,19 @@ public:
     EntityCategory category() const override;
     Vector3 getFacingDirection() const { return this->facingDirection; }
     virtual void gatherObjects(std::vector<Object *> &out) const;
+    int getHealth() const { return this->health; }
+    int getMaxHealth() const { return MAX_HEALTH_ENEMY; }
+    float getHealthPercent() const
+    {
+        if (MAX_HEALTH_ENEMY <= 0)
+            return 0.0f;
+        float percent = static_cast<float>(this->health) / static_cast<float>(MAX_HEALTH_ENEMY);
+        if (percent < 0.0f)
+            percent = 0.0f;
+        if (percent > 1.0f)
+            percent = 1.0f;
+        return percent;
+    }
 };
 
 class ChargingEnemy : public Enemy
@@ -215,6 +228,9 @@ private:
     float poseFallAccelerationDegPerSec2 = 900.0f;
     float poseRiseAccelerationDegPerSec2 = 900.0f;
     float poseMaxAngularVelocityDegPerSec = 1440.0f;
+    float chargeDamage = 25.0f;
+    float chargeKnockbackForce = 18.0f;
+    bool appliedChargeDamage = false;
 
     bool updatePoseTowards(float targetAngleDeg, float deltaSeconds);
 
@@ -226,6 +242,18 @@ public:
 class ShooterEnemy : public Enemy
 {
 private:
+    enum class Phase
+    {
+        FindPosition,
+        Shooting
+    };
+
+    struct MovementCommand
+    {
+        Vector3 direction{0.0f, 0.0f, 0.0f};
+        float speed = 0.0f;
+    };
+
     struct Bullet
     {
         Vector3 position;
@@ -248,11 +276,25 @@ private:
     int maxActiveBullets = 6;
     int strafeDirection = 1;
     float losRepositionTimer = 0.0f;
+    float approachSpeed = 6.0f;
+    float retreatSpeed = 6.5f;
+    float strafeSpeed = 4.0f;
+    float strafeSwitchInterval = 1.2f;
+    Phase phase = Phase::FindPosition;
+    Vector3 losRepositionGoal = {0.0f, 0.0f, 0.0f};
+    bool hasRepositionGoal = false;
+    float repositionCooldown = 0.0f;
+    float repositionCooldownDuration = 0.7f;
 
     bool findShotDirection(UpdateContext &uc, Vector3 &outDir) const;
-    bool hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc) const;
+    bool hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc, float probeRadius) const;
     void spawnBullet(const Vector3 &origin, const Vector3 &dir);
     void updateBullets(UpdateContext &uc, float deltaSeconds);
+    MovementCommand FindMovement(UpdateContext &uc, const Vector3 &toPlayer, float distance, bool hasLineOfSight, float deltaSeconds);
+    bool isWithinPreferredRange(float distance) const;
+    void HandleShooting(float deltaSeconds, const Vector3 &muzzle, const Vector3 &aimDir, bool hasAim);
+    bool HasLineOfSightFromPosition(const Vector3 &origin, UpdateContext &uc) const;
+    bool SelectRepositionGoal(UpdateContext &uc, const Vector3 &planarToPlayer, float distanceToPlayer);
 
 public:
     ShooterEnemy();
@@ -276,24 +318,33 @@ private:
     float meleeSwingDuration = 0.25f;
     float meleeWindupTimer = 0.0f;
     float knockbackTimer = 0.0f;
+    float colliderWidth = 1.2f;
+    float colliderDepth = 1.2f;
+    float colliderHeight = 1.8f;
 
     // New: Struct to hold player input state
     
 
     // New: Private method for core player movement logic
     void applyPlayerMovement(UpdateContext& uc);
+    float getColliderHalfHeight() const { return this->colliderHeight * 0.5f; }
 
 public:
     // Default constructor initializes the player with default values
     Me()
     {
-        position = {0};
+        position = {0.0f, this->getColliderHalfHeight(), 0.0f};
         velocity = {0};
         direction = {0};
         grounded = true;
         health = MAX_HEALTH_ME;
 
-        camera = MyCamera(this->position); // Initialize the camera with the player's position
+        this->o.setAsBox({this->colliderWidth, this->colliderHeight, this->colliderDepth});
+        this->o.pos = this->position;
+        this->o.visible = false;
+        this->o.UpdateOBB();
+
+        camera = MyCamera(this->position, this->getColliderHalfHeight()); // Initialize the camera with the player's position
     }
     // Overrides Entity's UpdateBody
     void UpdateBody(UpdateContext& uc) override;

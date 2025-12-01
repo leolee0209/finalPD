@@ -2,14 +2,15 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <cmath>
-void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerPos, bool isGrounded, float swingAmount)
+void MyCamera::UpdateCamera(char sideway, char forward, bool crouching, Vector3 playerCenter, float colliderHalfHeight, bool isGrounded, float swingAmount)
 {
     float delta = GetFrameTime();
     this->headLerp = Lerp(this->headLerp, (crouching ? CROUCH_HEIGHT : STAND_HEIGHT), 20.0f * delta);
+    float footY = playerCenter.y - colliderHalfHeight;
     this->camera.position = {
-        playerPos.x,
-        playerPos.y + (BOTTOM_HEIGHT + this->headLerp),
-        playerPos.z,
+        playerCenter.x,
+        footY + (BOTTOM_HEIGHT + this->headLerp),
+        playerCenter.z,
     };
 
     float targetFov = 60.0f;

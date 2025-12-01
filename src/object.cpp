@@ -173,5 +173,6 @@ std::vector<CollisionResult> Object::collided(Object &thiso, Scene *scene)
         if (cr.collided)
             r.push_back(cr);
     }
+    scene->CollectDecorationCollisions(thiso, r);
     return r;
 }

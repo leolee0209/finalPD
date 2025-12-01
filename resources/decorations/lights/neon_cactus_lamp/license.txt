@@ -1,0 +1,11 @@
+Model Information:
+* title:	Neon Cactus Lamp
+* source:	https://sketchfab.com/3d-models/neon-cactus-lamp-bb8202ecfd7b4b3496bf280a50757449
+* author:	Elsie (https://sketchfab.com/octopodmadness)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Neon Cactus Lamp" (https://sketchfab.com/3d-models/neon-cactus-lamp-bb8202ecfd7b4b3496bf280a50757449) by Elsie (https://sketchfab.com/octopodmadness) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -53,7 +53,7 @@ void EnemyManager::damage(Enemy *enemy, DamageResult &dResult)
         this->RemoveEnemy(enemy);
 }
 
-std::vector<Entity *> EnemyManager::getEntities(EntityCategory cat)
+std::vector<Entity *> EnemyManager::getEntities(EntityCategory cat) const
 {
     std::vector<Entity *> r;
     if (cat == ENTITY_ENEMY || cat == ENTITY_ALL)

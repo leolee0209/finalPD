@@ -79,7 +79,7 @@ void Me::applyPlayerMovement(UpdateContext &uc)
     params.decelAir = AIR_DRAG;
     params.maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
     params.maxAccel = airborne ? 0.0f : MAX_ACCEL;
-    params.floorY = 0.0f;
+    params.floorY = this->getColliderHalfHeight();
     params.iterativeCollisionResolve = true;
     params.zeroThreshold = params.maxSpeed * 0.01f;
 
@@ -100,7 +100,7 @@ void Me::UpdateBody(UpdateContext &uc)
 // Updates the camera's position and orientation based on player movement
 void Me::UpdateCamera(UpdateContext &uc)
 {
-    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->grounded, this->getMeleeSwingAmount());
+    this->camera.UpdateCamera(uc.playerInput.side, uc.playerInput.forward, uc.playerInput.crouchHold, this->position, this->getColliderHalfHeight(), this->grounded, this->getMeleeSwingAmount());
 }
 
 void Me::triggerMeleeSwing(float durationSeconds)
