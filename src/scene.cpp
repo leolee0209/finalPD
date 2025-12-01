@@ -193,7 +193,25 @@ bool Scene::CheckDecorationSweep(const Vector3 &start, const Vector3 &end, float
     callback.m_collisionFilterGroup = btBroadphaseProxy::AllFilter;
     callback.m_collisionFilterMask = btBroadphaseProxy::AllFilter;
     this->bulletWorld->convexSweepTest(&sphere, from, to, callback);
-    return callback.hasHit();
+    if (!callback.hasHit())
+    {
+        return false;
+    }
+
+    float sweepLength = Vector3Distance(start, end);
+    if (sweepLength < 0.0001f)
+    {
+        return true;
+    }
+
+    float hitDistance = callback.m_closestHitFraction * sweepLength;
+    float tolerance = std::max(radius * 0.5f, 0.1f);
+    if (hitDistance <= tolerance)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 void Scene::ApplyFullTexture(Object &obj, Texture2D &texture)

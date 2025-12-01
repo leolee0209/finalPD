@@ -375,7 +375,7 @@ inline bool CheckCollisionSphereVsOBB(Vector3 sphereCenter, float radius, const 
     return distSq <= radius * radius;
 }
 
-inline bool CheckLineSegmentVsOBB(Vector3 start, Vector3 end, float radius, const OBB *obb)
+inline bool CheckLineSegmentVsOBB(Vector3 start, Vector3 end, float radius, const OBB *obb, float *outDistance = nullptr)
 {
     Vector3 seg = Vector3Subtract(end, start);
     float length = Vector3Length(seg);
@@ -392,5 +392,14 @@ inline bool CheckLineSegmentVsOBB(Vector3 start, Vector3 end, float radius, cons
     ray.position = start;
     ray.direction = dir;
     RayCollision hit = GetRayCollisionOBB(ray, &expanded);
-    return hit.hit && hit.distance <= length;
+    if (hit.hit && hit.distance <= length)
+    {
+        if (outDistance)
+        {
+            *outDistance = hit.distance;
+        }
+        return true;
+    }
+
+    return false;
 }

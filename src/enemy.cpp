@@ -286,6 +286,7 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
             {
                 this->chargeDirection = Vector3Normalize(toPlayer);
             }
+            this->appliedChargeDamage = false;
         }
     }
     else if (this->state == ChargeState::Charging)
@@ -360,6 +361,21 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
         this->snapToGroundWithRotation(finalRotation);
     }
     this->o.UpdateOBB();
+
+    if (this->state == ChargeState::Charging && !this->appliedChargeDamage)
+    {
+        CollisionResult playerHit = Object::collided(this->o, uc.player->obj());
+        if (playerHit.collided)
+        {
+            DamageResult damage(this->chargeDamage, playerHit);
+            uc.player->damage(damage);
+            Vector3 knockDir = Vector3Normalize(this->chargeDirection);
+            if (Vector3LengthSqr(knockDir) < 0.0001f)
+                knockDir = {0.0f, 0.0f, 1.0f};
+            uc.player->applyKnockback(Vector3Scale(knockDir, this->chargeKnockbackForce), 0.35f, 3.0f);
+            this->appliedChargeDamage = true;
+        }
+    }
 }
 
 bool ChargingEnemy::updatePoseTowards(float targetAngleDeg, float deltaSeconds)
@@ -442,68 +458,219 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
     toPlayer.y = 0.0f;
     float distance = Vector3Length(toPlayer);
 
-    Vector3 previewAimDir = {0};
-    bool hasLineOfSight = this->findShotDirection(uc, previewAimDir);
+    Vector3 aimDir = {0.0f, 0.0f, 0.0f};
+    bool hasLineOfSight = this->findShotDirection(uc, aimDir);
+    bool withinRange = this->isWithinPreferredRange(distance);
 
-    Vector3 desiredDirection = Vector3Zero();
-    float targetSpeed = 0.0f;
-
-    if (distance > this->maxFiringDistance)
+    MovementCommand command{};
+    if (this->phase == Phase::FindPosition)
     {
-        desiredDirection = toPlayer;
-        targetSpeed = 6.0f;
-        this->losRepositionTimer = 0.0f;
-    }
-    else if (distance < this->retreatDistance)
-    {
-        desiredDirection = Vector3Scale(toPlayer, -1.0f);
-        targetSpeed = 6.5f;
-        this->losRepositionTimer = 0.0f;
-    }
-    else if (!hasLineOfSight)
-    {
-        Vector3 lateral = Vector3CrossProduct({0.0f, 1.0f, 0.0f}, toPlayer);
-        if (Vector3LengthSqr(lateral) > 0.001f)
+        command = this->FindMovement(uc, toPlayer, distance, hasLineOfSight, delta);
+        if (withinRange && hasLineOfSight)
         {
-            lateral = Vector3Normalize(lateral);
-            desiredDirection = Vector3Scale(lateral, static_cast<float>(this->strafeDirection));
-            targetSpeed = 4.0f;
-        }
-
-        this->losRepositionTimer += delta;
-        if (this->losRepositionTimer >= 1.2f)
-        {
-            this->strafeDirection *= -1;
-            this->losRepositionTimer = 0.0f;
+            this->phase = Phase::Shooting;
         }
     }
     else
     {
-        this->losRepositionTimer = 0.0f;
+        if (!withinRange || !hasLineOfSight)
+        {
+            this->phase = Phase::FindPosition;
+            command = this->FindMovement(uc, toPlayer, distance, hasLineOfSight, delta);
+        }
     }
 
     MovementSettings settings;
-    settings.maxSpeed = targetSpeed;
+    settings.maxSpeed = command.speed;
     settings.facingHint = toPlayer;
     settings.lockToGround = true;
-    settings.enableLean = true;
-    settings.enableBobAndSway = targetSpeed > 0.1f;
+    settings.enableLean = command.speed > 0.1f;
+    settings.enableBobAndSway = command.speed > 0.1f;
 
-    this->UpdateCommonBehavior(uc, desiredDirection, delta, settings);
+    this->UpdateCommonBehavior(uc, command.direction, delta, settings);
 
-    this->fireCooldown -= delta;
-    Vector3 aimDir = {0};
-    bool canShoot = this->findShotDirection(uc, aimDir);
     Vector3 muzzle = this->position;
     muzzle.y += this->muzzleHeight;
 
-    if (this->fireCooldown <= 0.0f && canShoot && (int)this->bullets.size() < this->maxActiveBullets)
+    if (this->phase == Phase::Shooting)
     {
-        this->spawnBullet(muzzle, aimDir);
-        this->fireCooldown = this->fireInterval;
+        this->HandleShooting(delta, muzzle, aimDir, hasLineOfSight);
+    }
+    else
+    {
+        this->fireCooldown = fmaxf(this->fireCooldown - delta, 0.0f);
     }
 
     this->updateBullets(uc, delta);
+}
+
+ShooterEnemy::MovementCommand ShooterEnemy::FindMovement(UpdateContext &uc, const Vector3 &toPlayer, float distance, bool hasLineOfSight, float deltaSeconds)
+{
+    MovementCommand command{};
+
+    Vector3 planar = toPlayer;
+    float planarLenSq = Vector3LengthSqr(planar);
+    if (planarLenSq > 0.0001f)
+    {
+        planar = Vector3Normalize(planar);
+    }
+    else
+    {
+        planar = Vector3Zero();
+    }
+
+    if (distance > this->maxFiringDistance)
+    {
+        command.direction = planar;
+        command.speed = this->approachSpeed;
+        this->losRepositionTimer = 0.0f;
+        return command;
+    }
+
+    if (distance < this->retreatDistance)
+    {
+        command.direction = Vector3Scale(planar, -1.0f);
+        command.speed = this->retreatSpeed;
+        this->losRepositionTimer = 0.0f;
+        return command;
+    }
+
+    if (!hasLineOfSight)
+    {
+        this->losRepositionTimer += deltaSeconds;
+        if (!this->hasRepositionGoal || this->repositionCooldown <= 0.0f || this->losRepositionTimer >= this->strafeSwitchInterval)
+        {
+            if (this->SelectRepositionGoal(uc, planar, distance))
+            {
+                this->repositionCooldown = this->repositionCooldownDuration;
+                this->losRepositionTimer = 0.0f;
+            }
+        }
+        else
+        {
+            this->repositionCooldown -= deltaSeconds;
+        }
+
+        if (this->hasRepositionGoal)
+        {
+            Vector3 toGoal = Vector3Subtract(this->losRepositionGoal, this->position);
+            toGoal.y = 0.0f;
+            if (Vector3LengthSqr(toGoal) > 0.25f)
+            {
+                command.direction = Vector3Normalize(toGoal);
+                command.speed = this->approachSpeed;
+            }
+            else
+            {
+                this->hasRepositionGoal = false;
+            }
+        }
+
+        return command;
+    }
+
+    this->losRepositionTimer = 0.0f;
+    this->hasRepositionGoal = false;
+    this->repositionCooldown = 0.0f;
+    return command;
+}
+
+bool ShooterEnemy::isWithinPreferredRange(float distance) const
+{
+    return distance <= this->maxFiringDistance && distance >= this->retreatDistance;
+}
+
+void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosition, const Vector3 &aimDirection, bool hasLineOfSight)
+{
+    this->fireCooldown = fmaxf(this->fireCooldown - deltaSeconds, 0.0f);
+
+    if (!hasLineOfSight)
+    {
+        return;
+    }
+
+    if (this->fireCooldown > 0.0f)
+    {
+        return;
+    }
+
+    if ((int)this->bullets.size() >= this->maxActiveBullets)
+    {
+        return;
+    }
+
+    this->spawnBullet(muzzlePosition, aimDirection);
+    this->fireCooldown = this->fireInterval;
+}
+
+bool ShooterEnemy::HasLineOfSightFromPosition(const Vector3 &origin, UpdateContext &uc) const
+{
+    Vector3 muzzle = origin;
+    muzzle.y = origin.y + this->muzzleHeight;
+
+    Vector3 targetPoint = uc.player->getCamera().position;
+    Vector3 toTarget = Vector3Subtract(targetPoint, muzzle);
+    float distance = Vector3Length(toTarget);
+    if (distance < 0.5f)
+    {
+        return false;
+    }
+
+    Vector3 dir = Vector3Scale(toTarget, 1.0f / distance);
+    float probeRadius = fmaxf(this->bulletRadius * 0.4f, 0.08f);
+    Vector3 losStart = Vector3Add(muzzle, Vector3Scale(dir, probeRadius * 1.5f));
+    return this->hasLineOfFire(losStart, targetPoint, uc, probeRadius);
+}
+
+bool ShooterEnemy::SelectRepositionGoal(UpdateContext &uc, const Vector3 &planarToPlayer, float distanceToPlayer)
+{
+    Vector3 dir = planarToPlayer;
+    dir.y = 0.0f;
+    if (Vector3LengthSqr(dir) < 0.0001f)
+    {
+        dir = {0.0f, 0.0f, 1.0f};
+    }
+    else
+    {
+        dir = Vector3Normalize(dir);
+    }
+
+    static const float offsetAnglesDeg[] = {90.0f, -90.0f, 60.0f, -60.0f, 120.0f, -120.0f};
+    float desiredDistance = Clamp(distanceToPlayer, this->retreatDistance + 2.0f, this->maxFiringDistance - 4.0f);
+    Vector3 playerPos = uc.player->pos();
+    float baseY = this->position.y;
+
+    auto rotateY = [](Vector3 v, float degrees) {
+        float radians = degrees * DEG2RAD;
+        float cs = cosf(radians);
+        float sn = sinf(radians);
+        return Vector3{
+            v.x * cs - v.z * sn,
+            0.0f,
+            v.x * sn + v.z * cs};
+    };
+
+    for (float angle : offsetAnglesDeg)
+    {
+        Vector3 candidateDir = rotateY(dir, angle);
+        if (Vector3LengthSqr(candidateDir) < 0.0001f)
+        {
+            continue;
+        }
+        candidateDir = Vector3Normalize(candidateDir);
+        Vector3 desiredPos = Vector3Subtract(playerPos, Vector3Scale(candidateDir, desiredDistance));
+        desiredPos.y = baseY;
+
+        if (this->HasLineOfSightFromPosition(desiredPos, uc))
+        {
+            this->losRepositionGoal = desiredPos;
+            this->hasRepositionGoal = true;
+            return true;
+        }
+    }
+
+    this->hasRepositionGoal = false;
+    return false;
 }
 
 bool ShooterEnemy::findShotDirection(UpdateContext &uc, Vector3 &outDir) const
@@ -517,30 +684,39 @@ bool ShooterEnemy::findShotDirection(UpdateContext &uc, Vector3 &outDir) const
     if (distance < 0.001f)
         return false;
 
+    float losProbeRadius = fmaxf(this->bulletRadius * 0.4f, 0.08f);
     Vector3 dir = Vector3Scale(toPlayer, 1.0f / distance);
+    Vector3 losStart = Vector3Add(muzzle, Vector3Scale(dir, losProbeRadius * 1.5f));
     Vector3 endPoint = targetPoint;
 
-    if (!this->hasLineOfFire(muzzle, endPoint, uc))
+    if (!this->hasLineOfFire(losStart, endPoint, uc, losProbeRadius))
         return false;
 
     outDir = dir;
     return true;
 }
 
-bool ShooterEnemy::hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc) const
+bool ShooterEnemy::hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc, float probeRadius) const
 {
+    float losRadius = fmaxf(probeRadius, 0.05f);
+    float ignoreDistance = fmaxf(losRadius * 1.5f, 0.2f);
     auto staticObjects = uc.scene->getStaticObjects();
     for (auto *obj : staticObjects)
     {
         if (!obj)
             continue;
-        if (CheckLineSegmentVsOBB(start, end, this->bulletRadius, &obj->obb))
+        float hitDistance = 0.0f;
+        if (CheckLineSegmentVsOBB(start, end, losRadius, &obj->obb, &hitDistance))
         {
+            if (hitDistance <= ignoreDistance)
+            {
+                continue;
+            }
             return false;
         }
     }
 
-    if (uc.scene->CheckDecorationSweep(start, end, this->bulletRadius))
+    if (uc.scene->CheckDecorationSweep(start, end, losRadius))
     {
         return false;
     }
@@ -568,7 +744,6 @@ void ShooterEnemy::spawnBullet(const Vector3 &origin, const Vector3 &dir)
 
 void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
 {
-    auto staticObjects = uc.scene->getStaticObjects();
     for (auto &bullet : this->bullets)
     {
         bullet.remainingLife -= deltaSeconds;
@@ -583,8 +758,8 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
 
         if (CheckCollisionSphereVsOBB(bullet.position, bullet.radius, &uc.player->obj().obb))
         {
-            CollisionResult hitResult = {uc.player, true, 0.0f, Vector3Zero()};
-            DamageResult damage(this->bulletDamage, hitResult);
+            CollisionResult directHit = Object::collided(bullet.visual, uc.player->obj());
+            DamageResult damage(this->bulletDamage, directHit);
             uc.player->damage(damage);
             Vector3 knockDir = Vector3Normalize(bullet.velocity);
             if (Vector3LengthSqr(knockDir) < 0.0001f)
@@ -593,19 +768,24 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
             return true;
         }
 
-        for (auto *obj : staticObjects)
+        auto collisions = Object::collided(bullet.visual, uc.scene);
+        for (auto &hit : collisions)
         {
-            if (!obj)
+            if (hit.with == this)
                 continue;
-            if (CheckCollisionSphereVsOBB(bullet.position, bullet.radius, &obj->obb))
+
+            if (hit.with && hit.with->category() == ENTITY_PLAYER)
             {
+                DamageResult damage(this->bulletDamage, hit);
+                uc.player->damage(damage);
+                Vector3 knockDir = Vector3Normalize(bullet.velocity);
+                if (Vector3LengthSqr(knockDir) < 0.0001f)
+                    knockDir = {0.0f, 0.0f, 1.0f};
+                uc.player->applyKnockback(Vector3Scale(knockDir, 5.0f), 0.2f, 0.0f);
                 return true;
             }
-        }
 
-        if (uc.scene->CheckDecorationCollision(bullet.visual))
-        {
-            return true;
+            return true; // hit environment or other entity
         }
 
         return false;
