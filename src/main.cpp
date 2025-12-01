@@ -6,6 +6,7 @@
 #include "uiManager.hpp"
 #include "resource_dir.hpp"
 #include "updateContext.hpp"
+#include "uiHealthBar.hpp"
 int main(void)
 {
     Vector2 sensitivity = {0.001f, 0.001f};
@@ -20,6 +21,7 @@ int main(void)
 
     uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
+    uiManager.addElement(new UIHealthBar(&player));
 
     { // Create a charging enemy (mahjong tile)
         Enemy *enemy = new ChargingEnemy;
@@ -37,7 +39,7 @@ int main(void)
 
     { // Create a shooter enemy (mahjong tile)
         Enemy *enemy = new ShooterEnemy;
-        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.055f);
+        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
         enemy->obj().pos = {25.0f, 1.0f, -15.0f};
 
         Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();

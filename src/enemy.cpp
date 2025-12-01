@@ -442,6 +442,9 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
     toPlayer.y = 0.0f;
     float distance = Vector3Length(toPlayer);
 
+    Vector3 previewAimDir = {0};
+    bool hasLineOfSight = this->findShotDirection(uc, previewAimDir);
+
     Vector3 desiredDirection = Vector3Zero();
     float targetSpeed = 0.0f;
 
@@ -449,11 +452,34 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
     {
         desiredDirection = toPlayer;
         targetSpeed = 6.0f;
+        this->losRepositionTimer = 0.0f;
     }
     else if (distance < this->retreatDistance)
     {
         desiredDirection = Vector3Scale(toPlayer, -1.0f);
         targetSpeed = 6.5f;
+        this->losRepositionTimer = 0.0f;
+    }
+    else if (!hasLineOfSight)
+    {
+        Vector3 lateral = Vector3CrossProduct({0.0f, 1.0f, 0.0f}, toPlayer);
+        if (Vector3LengthSqr(lateral) > 0.001f)
+        {
+            lateral = Vector3Normalize(lateral);
+            desiredDirection = Vector3Scale(lateral, static_cast<float>(this->strafeDirection));
+            targetSpeed = 4.0f;
+        }
+
+        this->losRepositionTimer += delta;
+        if (this->losRepositionTimer >= 1.2f)
+        {
+            this->strafeDirection *= -1;
+            this->losRepositionTimer = 0.0f;
+        }
+    }
+    else
+    {
+        this->losRepositionTimer = 0.0f;
     }
 
     MovementSettings settings;
@@ -467,16 +493,14 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
 
     this->fireCooldown -= delta;
     Vector3 aimDir = {0};
+    bool canShoot = this->findShotDirection(uc, aimDir);
     Vector3 muzzle = this->position;
     muzzle.y += this->muzzleHeight;
 
-    if (this->fireCooldown <= 0.0f && (int)this->bullets.size() < this->maxActiveBullets)
+    if (this->fireCooldown <= 0.0f && canShoot && (int)this->bullets.size() < this->maxActiveBullets)
     {
-        if (this->findShotDirection(uc, aimDir))
-        {
-            this->spawnBullet(muzzle, aimDir);
-            this->fireCooldown = this->fireInterval;
-        }
+        this->spawnBullet(muzzle, aimDir);
+        this->fireCooldown = this->fireInterval;
     }
 
     this->updateBullets(uc, delta);

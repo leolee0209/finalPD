@@ -246,6 +246,8 @@ private:
     float maxFiringDistance = 45.0f;
     float retreatDistance = 20.0f;
     int maxActiveBullets = 6;
+    int strafeDirection = 1;
+    float losRepositionTimer = 0.0f;
 
     bool findShotDirection(UpdateContext &uc, Vector3 &outDir) const;
     bool hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc) const;
@@ -306,6 +308,7 @@ public:
     void addCameraFovKick(float magnitude, float durationSeconds);
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
     bool damage(DamageResult &dResult);
+    int getHealth() const { return this->health; }
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
