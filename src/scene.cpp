@@ -103,11 +103,15 @@ void Scene::DrawScene() const
             DrawRectangle(*o);
     }
 
-    // Draw all entities in the EnemyManager
-    for (const auto &e : this->em.getObjects())
+    auto enemyObjects = this->em.getObjects();
+    int debugBulletCount = 0;
+    for (auto *obj : enemyObjects)
     {
-        if (e && e->isVisible())
-            DrawRectangle(*e);
+        if (!obj || !obj->isVisible())
+            continue;
+        if (obj->isSphere())
+            debugBulletCount++;
+        DrawRectangle(*obj);
     }
 
     // Draw all projectiles managed by the AttackManager

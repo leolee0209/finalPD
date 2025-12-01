@@ -21,9 +21,9 @@ int main(void)
     uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
 
-    { // Create an enemy (mahjong tile)
-        Enemy *enemy = new Enemy;
-        enemy->obj().size = Vector3Scale({44, 60, 40}, 0.06); // Example size for a mahjong tile
+    { // Create a charging enemy (mahjong tile)
+        Enemy *enemy = new ChargingEnemy;
+        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06); // Example size for a mahjong tile
         enemy->obj().pos = {0.0f, 1.0f, 0.0f};                // Example starting position
 
         // Get the mahjong texture from the UIManager
@@ -33,6 +33,19 @@ int main(void)
         enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_1); // Use entire texture
 
         scene.em.addEnemy(enemy); // Add the enemy to the scene
+    }
+
+    { // Create a shooter enemy (mahjong tile)
+        Enemy *enemy = new ShooterEnemy;
+        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.055f);
+        enemy->obj().pos = {25.0f, 1.0f, -15.0f};
+
+        Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
+        enemy->obj().texture = &mahjongTexture;
+        enemy->obj().useTexture = true;
+        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_2);
+
+        scene.em.addEnemy(enemy);
     }
 
     DisableCursor();  // Limit cursor to relative movement inside the window
