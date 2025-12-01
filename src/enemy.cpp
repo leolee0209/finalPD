@@ -540,6 +540,11 @@ bool ShooterEnemy::hasLineOfFire(const Vector3 &start, const Vector3 &end, Updat
         }
     }
 
+    if (uc.scene->CheckDecorationSweep(start, end, this->bulletRadius))
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -596,6 +601,11 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
             {
                 return true;
             }
+        }
+
+        if (uc.scene->CheckDecorationCollision(bullet.visual))
+        {
+            return true;
         }
 
         return false;

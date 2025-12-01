@@ -45,6 +45,10 @@ private:
 
     std::vector<std::unique_ptr<CollidableModel>> decorations;
     std::unordered_map<std::string, CachedModel> decorationModelCache;
+    std::unique_ptr<btDefaultCollisionConfiguration> bulletConfig;
+    std::unique_ptr<btCollisionDispatcher> bulletDispatcher;
+    std::unique_ptr<btBroadphaseInterface> bulletBroadphase;
+    std::unique_ptr<btCollisionWorld> bulletWorld;
 
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
@@ -63,6 +67,12 @@ private:
     void DrawDecorations() const;
     Model *AcquireDecorationModel(const std::string &relativePath);
     void ReleaseDecorationModels();
+    void InitializeBulletWorld();
+    void ShutdownBulletWorld();
+    void RemoveDecorationColliders();
+    void AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const;
+    static btTransform BuildBtTransform(const Object &obj);
+    static btCollisionShape *CreateShapeFromObject(const Object &obj);
 public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
@@ -96,6 +106,9 @@ public:
      * @brief Return the vector of static objects placed in the scene.
      */
     std::vector<Object *> getStaticObjects() const;
+    void CollectDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const { this->AppendDecorationCollisions(obj, out); }
+    bool CheckDecorationCollision(const Object &obj) const;
+    bool CheckDecorationSweep(const Vector3 &start, const Vector3 &end, float radius) const;
 
     /**
      * @brief Return a list of entity pointers currently in the scene.

@@ -7,9 +7,24 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+
+namespace
+{
+btVector3 ToBtVector(const Vector3 &v)
+{
+    return btVector3(v.x, v.y, v.z);
+}
+
+btQuaternion ToBtQuaternion(const Quaternion &q)
+{
+    return btQuaternion(q.x, q.y, q.z, q.w);
+}
+}
 // Destructor: unload shared model resources
 Scene::~Scene()
 {
+    this->RemoveDecorationColliders();
+    this->decorations.clear();
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
@@ -23,11 +38,162 @@ Scene::~Scene()
             UnloadTexture(this->floorTexture);
             this->floorTexture.id = 0;
         }
-        this->decorations.clear();
         this->ReleaseDecorationModels();
         this->ShutdownLighting();
         UnloadModel(this->cubeModel);
     }
+    this->ShutdownBulletWorld();
+}
+
+void Scene::InitializeBulletWorld()
+{
+    if (this->bulletWorld)
+    {
+        return;
+    }
+    this->bulletConfig = std::make_unique<btDefaultCollisionConfiguration>();
+    this->bulletDispatcher = std::make_unique<btCollisionDispatcher>(this->bulletConfig.get());
+    this->bulletBroadphase = std::make_unique<btDbvtBroadphase>();
+    this->bulletWorld = std::make_unique<btCollisionWorld>(this->bulletDispatcher.get(), this->bulletBroadphase.get(), this->bulletConfig.get());
+}
+
+void Scene::ShutdownBulletWorld()
+{
+    if (!this->bulletWorld)
+    {
+        return;
+    }
+    this->RemoveDecorationColliders();
+    this->bulletWorld.reset();
+    this->bulletBroadphase.reset();
+    this->bulletDispatcher.reset();
+    this->bulletConfig.reset();
+}
+
+void Scene::RemoveDecorationColliders()
+{
+    if (!this->bulletWorld)
+    {
+        return;
+    }
+    for (const auto &decoration : this->decorations)
+    {
+        if (!decoration)
+        {
+            continue;
+        }
+        if (auto *collisionObject = decoration->GetBulletObject())
+        {
+            this->bulletWorld->removeCollisionObject(collisionObject);
+        }
+    }
+}
+
+btTransform Scene::BuildBtTransform(const Object &obj)
+{
+    btTransform transform;
+    transform.setIdentity();
+    transform.setOrigin(ToBtVector(obj.getPos()));
+    transform.setRotation(ToBtQuaternion(obj.getRotation()));
+    return transform;
+}
+
+btCollisionShape *Scene::CreateShapeFromObject(const Object &obj)
+{
+    if (obj.isSphere())
+    {
+        return new btSphereShape(obj.getSphereRadius());
+    }
+    Vector3 halfSize = Vector3Scale(obj.getSize(), 0.5f);
+    return new btBoxShape(btVector3(halfSize.x, halfSize.y, halfSize.z));
+}
+
+namespace
+{
+struct DecorationContactCallback : public btCollisionWorld::ContactResultCallback
+{
+    explicit DecorationContactCallback(std::vector<CollisionResult> &results) : hits(results)
+    {
+        this->m_closestDistanceThreshold = 0.0f;
+    }
+
+    btScalar addSingleResult(btManifoldPoint &cp,
+                             const btCollisionObjectWrapper *, int, int,
+                             const btCollisionObjectWrapper *, int, int) override
+    {
+        if (cp.getDistance() > 0.0f)
+        {
+            return 0.0f;
+        }
+
+        CollisionResult result{};
+        result.with = nullptr;
+        result.collided = true;
+        result.penetration = -cp.getDistance();
+        btVector3 normal = cp.m_normalWorldOnB;
+        Vector3 raylibNormal = {normal.x(), normal.y(), normal.z()};
+        if (Vector3Length(raylibNormal) > 0.0f)
+        {
+            raylibNormal = Vector3Normalize(raylibNormal);
+        }
+        result.normal = raylibNormal;
+        this->hits.push_back(result);
+        return 0.0f;
+    }
+
+    std::vector<CollisionResult> &hits;
+};
+}
+
+void Scene::AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const
+{
+    if (!this->bulletWorld)
+    {
+        return;
+    }
+
+    std::unique_ptr<btCollisionShape> tempShape(Scene::CreateShapeFromObject(obj));
+    if (!tempShape)
+    {
+        return;
+    }
+
+    btCollisionObject tempObject;
+    tempObject.setCollisionShape(tempShape.get());
+    tempObject.setWorldTransform(Scene::BuildBtTransform(obj));
+
+    DecorationContactCallback callback(out);
+    this->bulletWorld->contactTest(&tempObject, callback);
+}
+
+bool Scene::CheckDecorationCollision(const Object &obj) const
+{
+    std::vector<CollisionResult> hits;
+    hits.reserve(4);
+    this->AppendDecorationCollisions(obj, hits);
+    return !hits.empty();
+}
+
+bool Scene::CheckDecorationSweep(const Vector3 &start, const Vector3 &end, float radius) const
+{
+    if (!this->bulletWorld)
+    {
+        return false;
+    }
+
+    btSphereShape sphere(radius);
+    btTransform from;
+    from.setIdentity();
+    from.setOrigin(btVector3(start.x, start.y, start.z));
+    btTransform to;
+    to.setIdentity();
+    to.setOrigin(btVector3(end.x, end.y, end.z));
+
+    btCollisionWorld::ClosestConvexResultCallback callback(from.getOrigin(), to.getOrigin());
+    callback.m_collisionFilterGroup = btBroadphaseProxy::AllFilter;
+    callback.m_collisionFilterMask = btBroadphaseProxy::AllFilter;
+    this->bulletWorld->convexSweepTest(&sphere, from, to, callback);
+    return callback.hasHit();
 }
 
 void Scene::ApplyFullTexture(Object &obj, Texture2D &texture)
@@ -160,10 +326,16 @@ void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float 
     float floorY = this->GetFloorTop();
     desiredPosition.y = floorY - (box.min.y * uniformScale);
 
-    auto decoration = CollidableModel::Create(model, box, desiredPosition, scale, {0.0f, 1.0f, 0.0f}, rotationYDeg);
+    auto decoration = CollidableModel::Create(model, desiredPosition, scale, {0.0f, 1.0f, 0.0f}, rotationYDeg);
     if (!decoration)
     {
         return;
+    }
+
+    auto *bulletObject = decoration->GetBulletObject();
+    if (this->bulletWorld && bulletObject)
+    {
+        this->bulletWorld->addCollisionObject(bulletObject);
     }
 
     this->decorations.push_back(std::move(decoration));
@@ -374,6 +546,7 @@ void Scene::Update(UpdateContext &uc)
 // Constructor initializes the scene with default objects
 Scene::Scene()
 {
+    this->InitializeBulletWorld();
     // const Vector3 towerSize = {16.0f, 32.0f, 16.0f}; // Size of the towers
     // const Color towerColor = {150, 200, 200, 255};   // Color of the towers
 
@@ -442,19 +615,7 @@ Scene::Scene()
 // Getter for the list of objects in the scene
 std::vector<Object *> Scene::getStaticObjects() const
 {
-    std::vector<Object *> result = this->objects;
-    for (const auto &decoration : this->decorations)
-    {
-        if (!decoration)
-        {
-            continue;
-        }
-        if (auto *collider = decoration->GetCollider())
-        {
-            result.push_back(collider);
-        }
-    }
-    return result;
+    return this->objects;
 }
 
 std::vector<Entity *> Scene::getEntities(EntityCategory cat)
