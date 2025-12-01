@@ -20,13 +20,32 @@ class Scene
 private:
     std::vector<Object *> objects; // List of static objects in the scene (e.g., towers, obstacles)
     Object floor;                  // Represents the floor of the scene
+    Texture2D wallTexture{};       // Procedural room walls texture
+    Texture2D floorTexture{};      // Procedural room floor texture
+    Shader lightingShader{};       // Shared lighting shader
+    int ambientLoc = -1;
+    int viewPosLoc = -1;
+    Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
+    Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
+    Color skyColor = {12, 17, 32, 255};
+    Color shadowColor = {0, 0, 0, 110};
+    float shadowThickness = 0.05f;
+    float shadowInflation = 1.12f;
+    float shadowMinAlpha = 0.2f;
 
     // Helper function to draw a 3D rectangle (cube) for an object
-    void DrawRectangle(Object &o) const;
-    void DrawSphereObject(Object &o) const;
+    void DrawRectangle(const Object &o) const;
+    void DrawSphereObject(const Object &o) const;
     void DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color) const;                      // Draw cube textured
     void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position, float width, float height, float length, Color color) const; // Draw cube with a region of a texture
     void DrawTexturedSphere(Texture2D &texture, const Rectangle &source, const Vector3 &position, float radius, Color tint) const;
+    void ApplyFullTexture(Object &obj, Texture2D &texture);
+    void InitializeLighting();
+    void ShutdownLighting();
+    void CreatePointLight(Vector3 position, Color color, float intensity = 1.0f);
+    void DrawPlanarShadow(const Object &o, float floorY) const;
+    void DrawShadowCollection(const std::vector<Object *> &items, float floorY) const;
+    float GetFloorTop() const;
 public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
@@ -65,4 +84,6 @@ public:
      * @brief Return a list of entity pointers currently in the scene.
      */
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
+    void SetViewPosition(const Vector3 &viewPosition);
+    Color getSkyColor() const { return this->skyColor; }
 };

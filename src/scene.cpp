@@ -3,20 +3,161 @@
 #include "constant.hpp"
 #include <rlgl.h>
 #include "enemyManager.hpp"
+#include "rlights.hpp"
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 // Destructor: unload shared model resources
 Scene::~Scene()
 {
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
+        if (this->wallTexture.id != 0)
+        {
+            UnloadTexture(this->wallTexture);
+            this->wallTexture.id = 0;
+        }
+        if (this->floorTexture.id != 0)
+        {
+            UnloadTexture(this->floorTexture);
+            this->floorTexture.id = 0;
+        }
+        this->ShutdownLighting();
         UnloadModel(this->cubeModel);
     }
 }
 
+void Scene::ApplyFullTexture(Object &obj, Texture2D &texture)
+{
+    if (texture.id == 0)
+    {
+        return;
+    }
+
+    obj.useTexture = true;
+    obj.texture = &texture;
+    obj.sourceRect = {0.0f, 0.0f, (float)texture.width, (float)texture.height};
+    obj.tint = WHITE;
+}
+
+float Scene::GetFloorTop() const
+{
+    const Vector3 &floorPos = this->floor.getPos();
+    const Vector3 &floorSize = this->floor.getSize();
+    return floorPos.y + floorSize.y * 0.5f;
+}
+
+void Scene::DrawPlanarShadow(const Object &o, float floorY) const
+{
+    if (!o.isVisible())
+    {
+        return;
+    }
+
+    const Vector3 &objPos = o.getPos();
+    if (objPos.y < floorY - 0.05f)
+    {
+        return;
+    }
+
+    float heightAboveFloor = std::max(0.0f, objPos.y - floorY);
+    float fade = std::clamp(1.0f - heightAboveFloor * 0.05f, this->shadowMinAlpha, 1.0f);
+    float baseAlpha = static_cast<float>(this->shadowColor.a) / 255.0f;
+    float finalAlpha = std::clamp(baseAlpha * fade, this->shadowMinAlpha, 1.0f);
+    Color finalColor = this->shadowColor;
+    finalColor.a = static_cast<unsigned char>(finalAlpha * 255.0f);
+
+    Vector3 shadowPos = {objPos.x, floorY - (this->shadowThickness * 0.5f) - 0.005f, objPos.z};
+
+    if (o.isSphere())
+    {
+        float radius = o.getSphereRadius() * this->shadowInflation;
+        DrawCylinder(shadowPos, radius, radius, this->shadowThickness, 16, finalColor);
+    }
+    else
+    {
+        Vector3 size = o.getSize();
+        float width = std::max(0.1f, size.x * this->shadowInflation);
+        float length = std::max(0.1f, size.z * this->shadowInflation);
+        DrawCube(shadowPos, width, this->shadowThickness, length, finalColor);
+    }
+}
+
+void Scene::DrawShadowCollection(const std::vector<Object *> &items, float floorY) const
+{
+    for (auto *obj : items)
+    {
+        if (obj)
+        {
+            this->DrawPlanarShadow(*obj, floorY);
+        }
+    }
+}
+
+void Scene::InitializeLighting()
+{
+    this->lightingShader = LoadShader("shaders/lighting.vs", "shaders/lighting.fs");
+    if (this->lightingShader.id == 0)
+    {
+        this->ambientLoc = -1;
+        this->viewPosLoc = -1;
+        return;
+    }
+
+    this->lightingShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(this->lightingShader, "mvp");
+    this->lightingShader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(this->lightingShader, "matModel");
+    this->lightingShader.locs[SHADER_LOC_MATRIX_NORMAL] = GetShaderLocation(this->lightingShader, "matNormal");
+    this->viewPosLoc = GetShaderLocation(this->lightingShader, "viewPos");
+    this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
+
+    if (this->cubeModel.materialCount > 0)
+    {
+        this->cubeModel.materials[0].shader = this->lightingShader;
+    }
+
+    if (this->ambientLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->ambientLoc, &this->ambientColor.x, SHADER_UNIFORM_VEC4);
+    }
+    if (this->viewPosLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
+}
+
+void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
+{
+    if (this->lightingShader.id == 0)
+    {
+        return;
+    }
+
+    float clamped = std::clamp(intensity, 0.0f, 4.0f);
+    auto scaleComponent = [clamped](unsigned char channel)
+    {
+        float scaled = static_cast<float>(channel) * clamped;
+        scaled = std::clamp(scaled, 0.0f, 255.0f);
+        return static_cast<unsigned char>(scaled);
+    };
+
+    Color scaledColor = {scaleComponent(color.r), scaleComponent(color.g), scaleComponent(color.b), color.a};
+    CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
+}
+
+void Scene::ShutdownLighting()
+{
+    if (this->lightingShader.id != 0)
+    {
+        UnloadShader(this->lightingShader);
+        this->lightingShader.id = 0;
+    }
+    this->ambientLoc = -1;
+    this->viewPosLoc = -1;
+}
+
 // Draws a 3D rectangle (cube) for the given object
-void Scene::DrawRectangle(Object &o) const
+void Scene::DrawRectangle(const Object &o) const
 {
     if (o.isSphere())
     {
@@ -59,7 +200,7 @@ void Scene::DrawRectangle(Object &o) const
     }
 }
 
-void Scene::DrawSphereObject(Object &o) const
+void Scene::DrawSphereObject(const Object &o) const
 {
     float radius = o.getSphereRadius();
     if (o.useTexture && o.texture != nullptr)
@@ -76,24 +217,28 @@ void Scene::DrawSphereObject(Object &o) const
 // Draws the entire scene, including the floor, objects, entities, and attacks
 void Scene::DrawScene() const
 {
-    const int floorExtent = 25;                    // Extent of the floor in both x and z directions
-    const float tileSize = 5.0f;                   // Size of each floor tile
-    const Color tileColor1 = {150, 200, 200, 255}; // Primary tile color
+    const float floorTop = this->GetFloorTop();
+    auto enemyObjects = this->em.getObjects();
+    auto projectileObjects = this->am.getObjects();
 
-    // Draw the floor as a grid of tiles
-    for (int y = -floorExtent; y < floorExtent; y++)
+    if (this->lightingShader.id != 0)
     {
-        for (int x = -floorExtent; x < floorExtent; x++)
-        {
-            if ((y & 1) && (x & 1)) // Alternate tile pattern
-            {
-                DrawPlane({x * tileSize, 0.0f, y * tileSize}, {tileSize, tileSize}, tileColor1);
-            }
-            else if (!(y & 1) && !(x & 1))
-            {
-                DrawPlane({x * tileSize, 0.0f, y * tileSize}, {tileSize, tileSize}, LIGHTGRAY);
-            }
-        }
+        BeginShaderMode(this->lightingShader);
+        DrawRectangle(this->floor);
+        EndShaderMode();
+    }
+    else
+    {
+        DrawRectangle(this->floor);
+    }
+
+    this->DrawShadowCollection(this->objects, floorTop);
+    this->DrawShadowCollection(enemyObjects, floorTop);
+    this->DrawShadowCollection(projectileObjects, floorTop);
+
+    if (this->lightingShader.id != 0)
+    {
+        BeginShaderMode(this->lightingShader);
     }
 
     // Draw all static objects in the scene
@@ -103,7 +248,6 @@ void Scene::DrawScene() const
             DrawRectangle(*o);
     }
 
-    auto enemyObjects = this->em.getObjects();
     int debugBulletCount = 0;
     for (auto *obj : enemyObjects)
     {
@@ -115,10 +259,15 @@ void Scene::DrawScene() const
     }
 
     // Draw all projectiles managed by the AttackManager
-    for (const auto &o : this->am.getObjects())
+    for (const auto &o : projectileObjects)
     {
         if (o && o->isVisible())
             DrawRectangle(*o);
+    }
+
+    if (this->lightingShader.id != 0)
+    {
+        EndShaderMode();
     }
 
     // Draw a red sun in the sky
@@ -138,23 +287,64 @@ void Scene::Update(UpdateContext &uc)
 // Constructor initializes the scene with default objects
 Scene::Scene()
 {
-    const Vector3 towerSize = {16.0f, 32.0f, 16.0f}; // Size of the towers
-    const Color towerColor = {150, 200, 200, 255};   // Color of the towers
+    // const Vector3 towerSize = {16.0f, 32.0f, 16.0f}; // Size of the towers
+    // const Color towerColor = {150, 200, 200, 255};   // Color of the towers
 
-    Vector3 towerPos = {16.0f, 16.0f, 16.0f}; // Initial position of the first tower
+    // Vector3 towerPos = {16.0f, 16.0f, 16.0f}; // Initial position of the first tower
 
-    // Add four towers to the scene in a symmetrical pattern
-    this->objects.push_back(new Object(towerSize, towerPos));
-    towerPos.x *= -1;
-    this->objects.push_back(new Object(towerSize, towerPos));
-    towerPos.z *= -1;
-    this->objects.push_back(new Object(towerSize, towerPos));
-    towerPos.x *= -1;
-    this->objects.push_back(new Object(towerSize, towerPos));
+    // // Add four towers to the scene in a symmetrical pattern
+    // this->objects.push_back(new Object(towerSize, towerPos));
+    // towerPos.x *= -1;
+    // this->objects.push_back(new Object(towerSize, towerPos));
+    // towerPos.z *= -1;
+    // this->objects.push_back(new Object(towerSize, towerPos));
+    // towerPos.x *= -1;
+    // this->objects.push_back(new Object(towerSize, towerPos));
+
+    this->wallTexture = LoadTexture("rough_pine_door_4k.blend/textures/rough_pine_door_diff_4k.jpg");
+    this->floorTexture = LoadTexture("wood_cabinet_worn_long_4k.blend/textures/wood_cabinet_worn_long_diff_4k.jpg");
+
+    const float roomWidth = 120.0f;
+    const float roomLength = 100.0f;
+    const float wallThickness = 1.0f;
+    const float wallHeight = 30.0f;
+    const float floorThickness = 0.5f;
+
+    auto createWall = [&](Vector3 size, Vector3 pos)
+    {
+        Object *wall = new Object(size, pos);
+        if (this->wallTexture.id != 0)
+        {
+            this->ApplyFullTexture(*wall, this->wallTexture);
+        }
+        this->objects.push_back(wall);
+    };
+
+    createWall({roomWidth, wallHeight, wallThickness}, {0.0f, wallHeight / 2.0f, roomLength / 2.0f - wallThickness / 2.0f});
+    createWall({roomWidth, wallHeight, wallThickness}, {0.0f, wallHeight / 2.0f, -roomLength / 2.0f + wallThickness / 2.0f});
+    createWall({wallThickness, wallHeight, roomLength}, {roomWidth / 2.0f - wallThickness / 2.0f, wallHeight / 2.0f, 0.0f});
+    createWall({wallThickness, wallHeight, roomLength}, {-roomWidth / 2.0f + wallThickness / 2.0f, wallHeight / 2.0f, 0.0f});
+
+    this->floor = Object({roomWidth - wallThickness, floorThickness, roomLength - wallThickness},
+                         {0.0f, -floorThickness / 2.0f, 0.0f});
+    if (this->floorTexture.id != 0)
+    {
+        this->ApplyFullTexture(this->floor, this->floorTexture);
+    }
 
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     this->cubeModel = LoadModelFromMesh(cubeMesh);
+
+    this->InitializeLighting();
+
+    if (this->lightingShader.id != 0)
+    {
+        this->CreatePointLight({0.0f, 3, 0.0f}, {255, 214, 170, 255}, 0.35f);
+        // this->CreatePointLight({0.0f, wallHeight - 2.0f, 0.0f}, {255, 214, 170, 255}, 0.35f);
+        // this->CreatePointLight({roomWidth / 2.5f, wallHeight * 0.8f, roomLength / 2.5f}, {255, 190, 140, 255}, 0.3f);
+        // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
+    }
 }
 
 // Getter for the list of objects in the scene
@@ -174,6 +364,15 @@ std::vector<Entity *> Scene::getEntities(EntityCategory cat)
     r.insert(r.end(), emEntities.begin(), emEntities.end());
 
     return r;
+}
+
+void Scene::SetViewPosition(const Vector3 &viewPosition)
+{
+    this->shaderViewPos = viewPosition;
+    if (this->lightingShader.id != 0 && this->viewPosLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
 }
 
 void Scene::DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color) const

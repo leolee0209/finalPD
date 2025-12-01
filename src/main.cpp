@@ -152,9 +152,11 @@ int main(void)
         // Draw-----------------------------------------------------------------------------
         BeginDrawing();
 
-        ClearBackground(RAYWHITE);
+        ClearBackground(scene.getSkyColor());
 
-        BeginMode3D(player.getCamera());
+        Camera camera = player.getCamera();
+        scene.SetViewPosition(camera.position);
+        BeginMode3D(camera);
         scene.DrawScene();
         EndMode3D();
 
