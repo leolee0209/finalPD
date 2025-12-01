@@ -184,6 +184,19 @@ public:
     EntityCategory category() const override;
     Vector3 getFacingDirection() const { return this->facingDirection; }
     virtual void gatherObjects(std::vector<Object *> &out) const;
+    int getHealth() const { return this->health; }
+    int getMaxHealth() const { return MAX_HEALTH_ENEMY; }
+    float getHealthPercent() const
+    {
+        if (MAX_HEALTH_ENEMY <= 0)
+            return 0.0f;
+        float percent = static_cast<float>(this->health) / static_cast<float>(MAX_HEALTH_ENEMY);
+        if (percent < 0.0f)
+            percent = 0.0f;
+        if (percent > 1.0f)
+            percent = 1.0f;
+        return percent;
+    }
 };
 
 class ChargingEnemy : public Enemy

@@ -160,6 +160,8 @@ int main(void)
         scene.DrawScene();
         EndMode3D();
 
+        scene.DrawEnemyHealthDialogs(camera);
+
         uiManager.draw();
 
         EndDrawing();

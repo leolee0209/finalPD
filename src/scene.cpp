@@ -551,6 +551,123 @@ void Scene::DrawScene() const
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
 }
 
+void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
+{
+    const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    if (enemies.empty())
+        return;
+
+    Vector3 camForward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+    if (Vector3LengthSqr(camForward) < 0.0001f)
+    {
+        camForward = {0.0f, 0.0f, -1.0f};
+    }
+    Vector3 camRight = Vector3CrossProduct(camForward, {0.0f, 1.0f, 0.0f});
+    if (Vector3LengthSqr(camRight) < 0.0001f)
+    {
+        camRight = {1.0f, 0.0f, 0.0f};
+    }
+    else
+    {
+        camRight = Vector3Normalize(camRight);
+    }
+    Vector3 camUp = Vector3CrossProduct(camRight, camForward);
+    if (Vector3LengthSqr(camUp) < 0.0001f)
+    {
+        camUp = {0.0f, 1.0f, 0.0f};
+    }
+    else
+    {
+        camUp = Vector3Normalize(camUp);
+    }
+
+    const float worldBarWidth = 1.7f;
+    const float worldBarHeight = 0.32f;
+    const float barVisibleDistance = 55.0f;
+    const float numbersVisibleDistance = 32.0f;
+    const float verticalOffset = 1.4f;
+    const Color barOutline{0, 0, 0, 220};
+    const Color barBackground{30, 30, 36, 220};
+    const Color barFill{230, 41, 55, 255};
+
+    for (Entity *entity : enemies)
+    {
+        if (!entity || entity->category() != ENTITY_ENEMY)
+            continue;
+
+        Enemy *enemy = static_cast<Enemy *>(entity);
+        if (!enemy)
+            continue;
+
+        const int currentHealth = enemy->getHealth();
+        const int maxHealth = enemy->getMaxHealth();
+        if (maxHealth <= 0 || currentHealth <= 0)
+            continue;
+
+        Vector3 headPos = enemy->obj().getPos();
+        headPos.y += enemy->obj().getSize().y * 0.5f + verticalOffset;
+
+        Vector3 toEnemy = Vector3Subtract(headPos, camera.position);
+        float distSq = Vector3LengthSqr(toEnemy);
+        if (distSq < 0.0001f)
+            continue;
+        float dist = sqrtf(distSq);
+        if (dist > barVisibleDistance)
+            continue;
+        Vector3 toEnemyDir = Vector3Scale(toEnemy, 1.0f / sqrtf(distSq));
+        if (Vector3DotProduct(camForward, toEnemyDir) <= 0.0f)
+            continue;
+
+        Vector2 screenPos = GetWorldToScreen(headPos, camera);
+        if (screenPos.x < 0.0f || screenPos.x > static_cast<float>(GetScreenWidth()) ||
+            screenPos.y < 0.0f || screenPos.y > static_cast<float>(GetScreenHeight()))
+        {
+            continue;
+        }
+
+        Vector3 barCenter = headPos;
+        Vector3 halfRight = Vector3Scale(camRight, worldBarWidth * 0.5f);
+        Vector3 halfUp = Vector3Scale(camUp, worldBarHeight * 0.5f);
+
+        Vector2 screenLeft = GetWorldToScreen(Vector3Subtract(barCenter, halfRight), camera);
+        Vector2 screenRight = GetWorldToScreen(Vector3Add(barCenter, halfRight), camera);
+        Vector2 screenTop = GetWorldToScreen(Vector3Add(barCenter, halfUp), camera);
+        Vector2 screenBottom = GetWorldToScreen(Vector3Subtract(barCenter, halfUp), camera);
+
+        float pixelWidth = Vector2Distance(screenLeft, screenRight);
+        float pixelHeight = fabsf(screenTop.y - screenBottom.y);
+        if (pixelWidth < 4.0f || pixelHeight < 2.0f)
+            continue;
+
+        Rectangle barBack{screenPos.x - pixelWidth * 0.5f,
+                          screenPos.y - pixelHeight,
+                          pixelWidth,
+                          pixelHeight};
+        DrawRectangleRounded(barBack, 0.45f, 6, barBackground);
+        DrawRectangleRoundedLines(barBack, 0.45f, 6, barOutline);
+
+        float fillPercent = enemy->getHealthPercent();
+        if (fillPercent > 0.0f)
+        {
+            Rectangle barFillRect = barBack;
+            barFillRect.width = barBack.width * fillPercent;
+            DrawRectangleRounded(barFillRect, 0.4f, 6, barFill);
+        }
+
+        if (dist <= numbersVisibleDistance)
+        {
+            const char *healthText = TextFormat("%d / %d", currentHealth, maxHealth);
+            int fontSize = static_cast<int>(Clamp(pixelHeight * 0.75f, 10.0f, 30.0f));
+            if (fontSize < 10)
+                fontSize = 10;
+            int textWidth = MeasureText(healthText, fontSize);
+            float textX = barBack.x + barBack.width * 0.5f - textWidth * 0.5f;
+            float textY = barBack.y + barBack.height * 0.5f - fontSize * 0.5f;
+            DrawText(healthText, static_cast<int>(textX), static_cast<int>(textY), fontSize, RAYWHITE);
+        }
+    }
+}
+
 // Updates all entities and attacks in the scene
 void Scene::Update(UpdateContext &uc)
 {

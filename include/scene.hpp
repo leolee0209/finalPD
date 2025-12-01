@@ -89,6 +89,7 @@ public:
      * Call while a 3D camera block is active.
      */
     void DrawScene() const;
+    void DrawEnemyHealthDialogs(const Camera &camera) const;
 
     /**
      * @brief Advance scene simulation: update enemies, attacks and other systems.
