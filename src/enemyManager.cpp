@@ -39,7 +39,11 @@ std::vector<Object *> EnemyManager::getObjects() const
 {
     std::vector<Object *> os;
     for (auto &e : this->enemies)
-        os.push_back(&e->obj());
+    {
+        if (!e)
+            continue;
+        e->gatherObjects(os);
+    }
     return os;
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include <raylib.h>
 #include <constant.hpp>
+#include <vector>
 #include "object.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
@@ -136,6 +137,29 @@ private:
     float knockbackTimer = 0.0f;
     float hitTilt = 0.0f;
 
+protected:
+    struct MovementSettings
+    {
+        float maxSpeed = 3.0f;
+        Vector3 facingHint = {0.0f, 0.0f, 0.0f};
+        bool lockToGround = false;
+        float leanScale = 2.0f;
+        float maxLeanAngle = 35.0f;
+        bool enableLean = true;
+        bool enableBobAndSway = true;
+        float maxAccel = MAX_ACCEL;
+        float decelGround = FRICTION;
+        float decelAir = AIR_DRAG;
+        float zeroThreshold = -1.0f;
+        bool overrideHorizontalVelocity = false;
+        Vector3 forcedHorizontalVelocity = {0.0f, 0.0f, 0.0f};
+    };
+
+    void UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirection, float deltaSeconds, const MovementSettings &settings);
+    bool isKnockbackActive() const { return this->knockbackTimer > 0.0f; }
+    float computeSupportHeightForRotation(const Quaternion &rotation) const;
+    void snapToGroundWithRotation(const Quaternion &rotation);
+
 public:
     // Default constructor initializes the enemy with default values
     Enemy()
@@ -158,6 +182,82 @@ public:
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
     // Identify this entity as an enemy for filtered queries
     EntityCategory category() const override;
+    Vector3 getFacingDirection() const { return this->facingDirection; }
+    virtual void gatherObjects(std::vector<Object *> &out) const;
+};
+
+class ChargingEnemy : public Enemy
+{
+private:
+    enum class ChargeState
+    {
+        Approaching,
+        Windup,
+        Charging,
+        Recover
+    };
+
+    ChargeState state = ChargeState::Approaching;
+    float stateTimer = 0.0f;
+    Vector3 chargeDirection = {0.0f, 0.0f, 1.0f};
+
+    float stopDistance = 25.0f;
+    float windupDuration = 1.2f;
+    float chargeDuration = 0.7f;
+    float recoverDuration = 2.5f;
+    float approachSpeed = 4.0f;
+    float chargeSpeed = 45.0f;
+    float chargeSpinMinDegPerSec = 240.0f;
+    float chargeSpinMaxDegPerSec = 1200.0f;
+    float chargeSpinAngleDeg = 0.0f;
+    float chargePoseAngleDeg = 0.0f;
+    float poseAngularVelocityDegPerSec = 0.0f;
+    float poseFallAccelerationDegPerSec2 = 900.0f;
+    float poseRiseAccelerationDegPerSec2 = 900.0f;
+    float poseMaxAngularVelocityDegPerSec = 1440.0f;
+
+    bool updatePoseTowards(float targetAngleDeg, float deltaSeconds);
+
+public:
+    ChargingEnemy() = default;
+    void UpdateBody(UpdateContext &uc) override;
+};
+
+class ShooterEnemy : public Enemy
+{
+private:
+    struct Bullet
+    {
+        Vector3 position;
+        Vector3 velocity;
+        float radius;
+        float remainingLife;
+        Object visual;
+    };
+
+    std::vector<Bullet> bullets;
+    float fireCooldown = 0.0f;
+    float fireInterval = 2.0f;
+    float bulletSpeed = 25.0f;
+    float bulletRadius = 0.3f;
+    float bulletLifetime = 6.0f;
+    float bulletDamage = 8.0f;
+    float muzzleHeight = 3.0f;
+    float maxFiringDistance = 45.0f;
+    float retreatDistance = 20.0f;
+    int maxActiveBullets = 6;
+    int strafeDirection = 1;
+    float losRepositionTimer = 0.0f;
+
+    bool findShotDirection(UpdateContext &uc, Vector3 &outDir) const;
+    bool hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc) const;
+    void spawnBullet(const Vector3 &origin, const Vector3 &dir);
+    void updateBullets(UpdateContext &uc, float deltaSeconds);
+
+public:
+    ShooterEnemy();
+    void UpdateBody(UpdateContext &uc) override;
+    void gatherObjects(std::vector<Object *> &out) const override;
 };
 // Class representing the player character
 /**
@@ -208,6 +308,7 @@ public:
     void addCameraFovKick(float magnitude, float durationSeconds);
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
     bool damage(DamageResult &dResult);
+    int getHealth() const { return this->health; }
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
