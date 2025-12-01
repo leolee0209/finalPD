@@ -86,10 +86,13 @@ DotBombAttack::~DotBombAttack()
     releaseExplosionTexture();
 }
 
-void DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
+bool DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
 {
     if (!uc.scene || !this->spawnedBy)
-        return;
+        return false;
+
+    if (this->cooldownRemaining > 0.0f)
+        return false;
 
     Vector3 forward = {0.0f, 0.0f, -1.0f};
     if (this->spawnedBy->category() == ENTITY_PLAYER)
@@ -145,6 +148,8 @@ void DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
         tile);
     bomb.flightTimeRemaining = 4.0f;
     bombs.push_back(bomb);
+    this->cooldownRemaining = cooldownDuration;
+    return true;
 }
 
 void DotBombAttack::retainExplosionTexture()
@@ -178,6 +183,7 @@ void DotBombAttack::releaseExplosionTexture()
 void DotBombAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
     for (auto &bomb : bombs)
     {
         if (!bomb.exploded)
@@ -247,6 +253,13 @@ void DotBombAttack::update(UpdateContext &uc)
                 return bomb.exploded && bomb.explosionTimer <= 0.0f;
             }),
         bombs.end());
+}
+
+float DotBombAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 0.0f;
+    return Clamp(this->cooldownRemaining / cooldownDuration, 0.0f, 1.0f);
 }
 
 std::vector<Entity *> DotBombAttack::getEntities()
@@ -780,6 +793,9 @@ bool MeleePushAttack::pushEnemies(UpdateContext &uc, EffectVolume &volume)
 
         Vector3 push = Vector3Scale(dirNorm, pushForce);
         enemy->applyKnockback(push, knockbackDuration, verticalLift);
+
+        DamageResult damage(pushDamage, collision);
+        uc.scene->em.damage(enemy, damage);
         hit = true;
     }
     return hit;

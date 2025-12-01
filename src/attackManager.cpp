@@ -117,8 +117,8 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
     {
         if (DotBombAttack *bomb = getDotBombAttack(uc.player))
         {
-            bomb->trigger(uc, slotEntries[0].tile);
-            return true;
+            if (bomb->trigger(uc, slotEntries[0].tile))
+                return true;
         }
         return false;
     }
@@ -281,6 +281,11 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
     SlotAttackKind kind = classifySlotAttack(slotEntries);
     switch (kind)
     {
+    case SlotAttackKind::DotBomb:
+    {
+        DotBombAttack *bomb = getDotBombAttack(uc.player);
+        return bomb ? bomb->getCooldownPercent() : 0.0f;
+    }
     case SlotAttackKind::Melee:
     {
         MeleePushAttack *melee = getMeleeAttack(uc.player);

@@ -140,6 +140,7 @@ private:
     static constexpr float pushAngle = 70.0f * DEG2RAD;
     static constexpr float knockbackDuration = 0.45f;
     static constexpr float verticalLift = 2.5f;
+    static constexpr float pushDamage = 14.0f;
     static constexpr float effectLifetime = 0.2f;
     static constexpr float effectHeight = 3.5f;
     static constexpr float effectYOffset = 0.5f;
@@ -216,7 +217,8 @@ public:
     void update(UpdateContext &uc) override;
     std::vector<Entity *> getEntities() override;
     std::vector<Object *> obj();
-    void trigger(UpdateContext &uc, MahjongTileType tile);
+    bool trigger(UpdateContext &uc, MahjongTileType tile);
+    float getCooldownPercent() const;
 
 private:
     struct Bomb
@@ -255,6 +257,8 @@ private:
     static constexpr float explosionSpriteDepth = 0.15f;
     static constexpr float explosionSpriteStartSize = 1.5f;
     static constexpr float explosionSpriteEndSize = 6.5f;
+    static constexpr float cooldownDuration = 2.0f;
+    float cooldownRemaining = 0.0f;
 
     void startExplosion(Bomb &bomb, const Vector3 &origin, UpdateContext &uc);
     void applyExplosionEffects(const Vector3 &origin, UpdateContext &uc);
