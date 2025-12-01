@@ -1,0 +1,11 @@
+Model Information:
+* title:	Table
+* source:	https://sketchfab.com/3d-models/table-d56481de55aa48f182a2c8c3105df5fb
+* author:	RedHorn (https://sketchfab.com/redhorn)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Table" (https://sketchfab.com/3d-models/table-d56481de55aa48f182a2c8c3105df5fb) by RedHorn (https://sketchfab.com/redhorn) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
