@@ -1,9 +1,13 @@
 #pragma once
 #include <vector>
+#include <memory>
+#include <string>
+#include <unordered_map>
 #include <raylib.h>
 #include "attackManager.hpp"
 #include "updateContext.hpp"
 #include "enemyManager.hpp"
+#include "collidableModel.hpp"
 
 class Object;
 
@@ -33,6 +37,15 @@ private:
     float shadowInflation = 1.12f;
     float shadowMinAlpha = 0.2f;
 
+    struct CachedModel
+    {
+        Model model;
+        int refCount = 0;
+    };
+
+    std::vector<std::unique_ptr<CollidableModel>> decorations;
+    std::unordered_map<std::string, CachedModel> decorationModelCache;
+
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
     void DrawSphereObject(const Object &o) const;
@@ -46,6 +59,10 @@ private:
     void DrawPlanarShadow(const Object &o, float floorY) const;
     void DrawShadowCollection(const std::vector<Object *> &items, float floorY) const;
     float GetFloorTop() const;
+    void AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg = 0.0f);
+    void DrawDecorations() const;
+    Model *AcquireDecorationModel(const std::string &relativePath);
+    void ReleaseDecorationModels();
 public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;

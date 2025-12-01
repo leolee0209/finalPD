@@ -23,6 +23,8 @@ Scene::~Scene()
             UnloadTexture(this->floorTexture);
             this->floorTexture.id = 0;
         }
+        this->decorations.clear();
+        this->ReleaseDecorationModels();
         this->ShutdownLighting();
         UnloadModel(this->cubeModel);
     }
@@ -92,6 +94,90 @@ void Scene::DrawShadowCollection(const std::vector<Object *> &items, float floor
         {
             this->DrawPlanarShadow(*obj, floorY);
         }
+    }
+}
+
+Model *Scene::AcquireDecorationModel(const std::string &relativePath)
+{
+    auto found = this->decorationModelCache.find(relativePath);
+    if (found != this->decorationModelCache.end())
+    {
+        found->second.refCount++;
+        if (this->lightingShader.id != 0)
+        {
+            for (int i = 0; i < found->second.model.materialCount; ++i)
+            {
+                found->second.model.materials[i].shader = this->lightingShader;
+            }
+        }
+        return &found->second.model;
+    }
+
+    CachedModel cacheEntry{};
+    cacheEntry.model = LoadModel(relativePath.c_str());
+    if (cacheEntry.model.meshCount == 0)
+    {
+        TraceLog(LOG_WARNING, "Failed to load decoration model: %s", relativePath.c_str());
+        UnloadModel(cacheEntry.model);
+        return nullptr;
+    }
+
+    if (this->lightingShader.id != 0)
+    {
+        for (int i = 0; i < cacheEntry.model.materialCount; ++i)
+        {
+            cacheEntry.model.materials[i].shader = this->lightingShader;
+        }
+    }
+
+    cacheEntry.refCount = 1;
+    auto [iter, inserted] = this->decorationModelCache.emplace(relativePath, std::move(cacheEntry));
+    return &iter->second.model;
+}
+
+void Scene::ReleaseDecorationModels()
+{
+    for (auto &entry : this->decorationModelCache)
+    {
+        UnloadModel(entry.second.model);
+    }
+    this->decorationModelCache.clear();
+}
+
+void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
+{
+    Model *model = this->AcquireDecorationModel(modelPath);
+    if (model == nullptr)
+    {
+        return;
+    }
+
+    BoundingBox box = GetModelBoundingBox(*model);
+    float currentHeight = box.max.y - box.min.y;
+    float uniformScale = (currentHeight > 0.001f) ? targetHeight / currentHeight : 1.0f;
+    Vector3 scale = {uniformScale, uniformScale, uniformScale};
+
+    float floorY = this->GetFloorTop();
+    desiredPosition.y = floorY - (box.min.y * uniformScale);
+
+    auto decoration = CollidableModel::Create(model, box, desiredPosition, scale, {0.0f, 1.0f, 0.0f}, rotationYDeg);
+    if (!decoration)
+    {
+        return;
+    }
+
+    this->decorations.push_back(std::move(decoration));
+}
+
+void Scene::DrawDecorations() const
+{
+    for (const auto &decoration : this->decorations)
+    {
+        if (!decoration)
+            continue;
+        if (!decoration->GetModel())
+            continue;
+        DrawModelEx(*decoration->GetModel(), decoration->GetPosition(), decoration->GetRotationAxis(), decoration->GetRotationAngleDeg(), decoration->GetScale(), WHITE);
     }
 }
 
@@ -247,6 +333,8 @@ void Scene::DrawScene() const
             DrawRectangle(*o);
     }
 
+    this->DrawDecorations();
+
     int debugBulletCount = 0;
     for (auto *obj : enemyObjects)
     {
@@ -344,12 +432,29 @@ Scene::Scene()
         // this->CreatePointLight({roomWidth / 2.5f, wallHeight * 0.8f, roomLength / 2.5f}, {255, 190, 140, 255}, 0.3f);
         // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
     }
+
+    this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
+    this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
+    this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
+    this->AddDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
 }
 
 // Getter for the list of objects in the scene
 std::vector<Object *> Scene::getStaticObjects() const
 {
-    return this->objects;
+    std::vector<Object *> result = this->objects;
+    for (const auto &decoration : this->decorations)
+    {
+        if (!decoration)
+        {
+            continue;
+        }
+        if (auto *collider = decoration->GetCollider())
+        {
+            result.push_back(collider);
+        }
+    }
+    return result;
 }
 
 std::vector<Entity *> Scene::getEntities(EntityCategory cat)
