@@ -28,7 +28,7 @@ private:
     Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
     Color skyColor = {12, 17, 32, 255};
-    Color shadowColor = {0, 0, 0, 110};
+    Color shadowColor = {0, 0, 0, 80};
     float shadowThickness = 0.05f;
     float shadowInflation = 1.12f;
     float shadowMinAlpha = 0.2f;

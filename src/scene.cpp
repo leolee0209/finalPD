@@ -232,7 +232,6 @@ void Scene::DrawScene() const
         DrawRectangle(this->floor);
     }
 
-    this->DrawShadowCollection(this->objects, floorTop);
     this->DrawShadowCollection(enemyObjects, floorTop);
     this->DrawShadowCollection(projectileObjects, floorTop);
 
@@ -340,7 +339,7 @@ Scene::Scene()
 
     if (this->lightingShader.id != 0)
     {
-        this->CreatePointLight({0.0f, 3, 0.0f}, {255, 214, 170, 255}, 0.35f);
+        this->CreatePointLight({0.0f, 3, 0.0f}, {255, 214, 170, 255}, 0.2f);
         // this->CreatePointLight({0.0f, wallHeight - 2.0f, 0.0f}, {255, 214, 170, 255}, 0.35f);
         // this->CreatePointLight({roomWidth / 2.5f, wallHeight * 0.8f, roomLength / 2.5f}, {255, 190, 140, 255}, 0.3f);
         // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
