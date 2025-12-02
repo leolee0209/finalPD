@@ -78,6 +78,8 @@ public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
     Model cubeModel; // Shared cube model used to render rotated cubes
+    Model sphereModel; // Shared sphere model used to render spheres
+    Texture2D glowTexture{}; // Texture for the glow effect on bullets
 
     /**
      * @brief Destructor will release GPU resources (model) and deallocate owned data.
@@ -89,7 +91,7 @@ public:
      *
      * Call while a 3D camera block is active.
      */
-    void DrawScene() const;
+    void DrawScene(Camera camera) const;
     void DrawEnemyHealthDialogs(const Camera &camera) const;
 
     /**

@@ -189,7 +189,7 @@ int main(void)
         Camera camera = player.getCamera();
         scene.SetViewPosition(camera.position);
         BeginMode3D(camera);
-        scene.DrawScene();
+        scene.DrawScene(camera);
         EndMode3D();
 
         scene.DrawEnemyHealthDialogs(camera);

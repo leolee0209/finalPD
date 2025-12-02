@@ -77,6 +77,12 @@ Scene::~Scene()
         this->ReleaseDecorationModels();
         this->ShutdownLighting();
         UnloadModel(this->cubeModel);
+        UnloadModel(this->sphereModel);
+        if (this->glowTexture.id != 0)
+        {
+            UnloadTexture(this->glowTexture);
+            this->glowTexture.id = 0;
+        }
     }
     this->ShutdownBulletWorld();
 }
@@ -435,6 +441,10 @@ void Scene::InitializeLighting()
     {
         this->cubeModel.materials[0].shader = this->lightingShader;
     }
+    if (this->sphereModel.materialCount > 0)
+    {
+        this->sphereModel.materials[0].shader = this->lightingShader;
+    }
 
     if (this->ambientLoc >= 0)
     {
@@ -531,73 +541,30 @@ void Scene::DrawRectangle(const Object &o) const
 void Scene::DrawSphereObject(const Object &o) const
 {
     float radius = o.getSphereRadius();
+    // Draw textured or solid sphere using the sphere model
+    Vector3 scale = {radius * 2.0f, radius * 2.0f, radius * 2.0f};
+    
     if (o.useTexture && o.texture != nullptr)
     {
-        this->DrawTexturedSphere(*o.texture, o.sourceRect, o.pos, radius, o.tint);
+        // Create a temporary material with the texture for this draw call
+        Material tempMat = this->sphereModel.materials[0];
+        tempMat.maps[MATERIAL_MAP_DIFFUSE].texture = *o.texture;
+        
+        // Temporarily replace material, draw, then restore
+        Material originalMat = this->sphereModel.materials[0];
+        const_cast<Scene*>(this)->sphereModel.materials[0] = tempMat;
+        DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
+        const_cast<Scene*>(this)->sphereModel.materials[0] = originalMat;
     }
     else
     {
-        // DrawSphereEx internally may interfere with shader state
-        // Use rlgl immediate mode instead for better shader compatibility
-        rlPushMatrix();
-        rlTranslatef(o.pos.x, o.pos.y, o.pos.z);
-        rlScalef(radius, radius, radius);
-        
-        // Draw using immediate mode triangles
-        const int rings = 16;
-        const int slices = 16;
-        
-        rlBegin(RL_TRIANGLES);
-        rlColor4ub(o.tint.r, o.tint.g, o.tint.b, o.tint.a);
-        
-        for (int i = 0; i < rings; i++)
-        {
-            for (int j = 0; j < slices; j++)
-            {
-                float lat0 = PI * (-0.5f + (float)i / rings);
-                float lat1 = PI * (-0.5f + (float)(i + 1) / rings);
-                float lon0 = 2.0f * PI * (float)j / slices;
-                float lon1 = 2.0f * PI * (float)(j + 1) / slices;
-                
-                float x0 = cosf(lat0) * sinf(lon0);
-                float y0 = sinf(lat0);
-                float z0 = cosf(lat0) * cosf(lon0);
-                
-                float x1 = cosf(lat1) * sinf(lon0);
-                float y1 = sinf(lat1);
-                float z1 = cosf(lat1) * cosf(lon0);
-                
-                float x2 = cosf(lat1) * sinf(lon1);
-                float y2 = sinf(lat1);
-                float z2 = cosf(lat1) * cosf(lon1);
-                
-                float x3 = cosf(lat0) * sinf(lon1);
-                float y3 = sinf(lat0);
-                float z3 = cosf(lat0) * cosf(lon1);
-                
-                rlNormal3f(x0, y0, z0);
-                rlVertex3f(x0, y0, z0);
-                rlNormal3f(x1, y1, z1);
-                rlVertex3f(x1, y1, z1);
-                rlNormal3f(x2, y2, z2);
-                rlVertex3f(x2, y2, z2);
-                
-                rlNormal3f(x0, y0, z0);
-                rlVertex3f(x0, y0, z0);
-                rlNormal3f(x2, y2, z2);
-                rlVertex3f(x2, y2, z2);
-                rlNormal3f(x3, y3, z3);
-                rlVertex3f(x3, y3, z3);
-            }
-        }
-        
-        rlEnd();
-        rlPopMatrix();
+        // Use the shared sphere model with the lighting shader
+        DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
     }
 }
 
 // Draws the entire scene, including the floor, objects, entities, and attacks
-void Scene::DrawScene() const
+void Scene::DrawScene(Camera camera) const
 {
     const float floorTop = this->GetFloorTop();
     auto enemyObjects = this->em.getObjects();
@@ -635,7 +602,7 @@ void Scene::DrawScene() const
         DrawRectangle(*obj);
     }
 
-    // Draw all projectiles managed by the AttackManager
+    // Draw all projectiles managed by the AttackManager (solid core)
     for (const auto &o : projectileObjects)
     {
         if (o && o->isVisible())
@@ -646,6 +613,29 @@ void Scene::DrawScene() const
     if (this->lightingShader.id != 0)
     {
         EndShaderMode();
+    }
+
+    // Draw glow billboards for bullets using additive blending
+    if (this->glowTexture.id != 0)
+    {
+        BeginBlendMode(BLEND_ADDITIVE);
+        for (const auto &o : projectileObjects)
+        {
+            if (o && o->isVisible() && o->isSphere())
+            {
+                // Draw a billboard slightly larger than the projectile
+                DrawBillboard(camera, this->glowTexture, o->getPos(), 1.2f, Color{255, 150, 100, 200});
+            }
+        }
+        // Also draw glow for enemy bullets
+        for (auto *obj : enemyObjects)
+        {
+            if (obj && obj->isVisible() && obj->isSphere())
+            {
+                DrawBillboard(camera, this->glowTexture, obj->getPos(),1.2f, Color{255, 150, 100, 200});
+            }
+        }
+        EndBlendMode();
     }
 
     // Draw a red sun in the sky
@@ -819,6 +809,16 @@ Scene::Scene()
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     this->cubeModel = LoadModelFromMesh(cubeMesh);
+
+    // Create a shared unit sphere model (unit diameter) for rendering spheres
+    Mesh sphereMesh = GenMeshSphere(0.5f, 16, 16);
+    this->sphereModel = LoadModelFromMesh(sphereMesh);
+
+    // Generate a soft radial gradient texture for the glow effect
+    // Center is White (Hot), Edge is Black (Transparent in Additive Mode)
+    Image glowImg = GenImageGradientRadial(64, 64, 0.0f, WHITE, BLACK);
+    this->glowTexture = LoadTextureFromImage(glowImg);
+    UnloadImage(glowImg);
 
     this->InitializeLighting();
 

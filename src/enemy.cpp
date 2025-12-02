@@ -454,6 +454,13 @@ ShooterEnemy::ShooterEnemy()
     // Set default bullet pattern (single bullet)
     this->bulletPattern.bulletCount = 1;
     this->bulletPattern.arcDegrees = 0.0f;
+    
+    // Load sun texture for bullets
+    this->sunTexture = LoadTexture("sun.png");
+    if (this->sunTexture.id == 0)
+    {
+        TraceLog(LOG_WARNING, "ShooterEnemy: Failed to load sun.png");
+    }
 }
 
 void ShooterEnemy::UpdateBody(UpdateContext &uc)
@@ -780,8 +787,17 @@ void ShooterEnemy::spawnBullet(const Vector3 &origin, const Vector3 &dir)
     bullet.visual = Object();
     bullet.visual.setAsSphere(bullet.radius);
     bullet.visual.pos = origin;
-    bullet.visual.tint = {255, 120, 60, 255};
+    bullet.visual.tint = {255, 255, 255, 255};
     bullet.visual.visible = true;
+    
+    // Apply sun texture if available
+    if (this->sunTexture.id != 0)
+    {
+        bullet.visual.useTexture = true;
+        bullet.visual.texture = &this->sunTexture;
+        bullet.visual.sourceRect = {0.0f, 0.0f, (float)this->sunTexture.width, (float)this->sunTexture.height};
+    }
+    
     bullet.visual.UpdateOBB();
 
     this->bullets.push_back(bullet);
@@ -838,6 +854,15 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
     });
 
     this->bullets.erase(removeIt, this->bullets.end());
+}
+
+ShooterEnemy::~ShooterEnemy()
+{
+    if (this->sunTexture.id != 0)
+    {
+        UnloadTexture(this->sunTexture);
+        this->sunTexture.id = 0;
+    }
 }
 
 void ShooterEnemy::gatherObjects(std::vector<Object *> &out) const

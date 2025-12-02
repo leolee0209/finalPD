@@ -277,6 +277,7 @@ private:
 
     std::vector<Bullet> bullets;
     BulletPattern bulletPattern;  // Current bullet pattern configuration
+    Texture2D sunTexture{};       // Texture for bullets
     float fireCooldown = 0.0f;
     float fireInterval = 2.0f;
     float bulletSpeed = 25.0f;
@@ -311,6 +312,7 @@ private:
 
 public:
     ShooterEnemy();
+    ~ShooterEnemy();
     void UpdateBody(UpdateContext &uc) override;
     void gatherObjects(std::vector<Object *> &out) const override;
     void setBulletPattern(int bulletCount, float arcDegrees)
