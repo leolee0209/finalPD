@@ -35,7 +35,7 @@ void MahjongUIManager::createPlayerHand(int screenWidth, int screenHeight)
     playerHand.push_back(MahjongTileType::CHARACTER_9);
     playerHand.push_back(MahjongTileType::CHARACTER_9);
     playerHand.push_back(MahjongTileType::CHARACTER_9);
-    playerHand.push_back(MahjongTileType::BAMBOO_1);
+    //playerHand.push_back(MahjongTileType::BAMBOO_1);
 
     const int handSize = playerHand.size();
     const float totalHandWidth = handSize * this->tileWidth;

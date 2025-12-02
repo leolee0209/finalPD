@@ -1,5 +1,6 @@
 #include "scene.hpp"
 #include <raylib.h>
+#include <raymath.h>
 #include "constant.hpp"
 #include <rlgl.h>
 #include "enemyManager.hpp"
@@ -10,15 +11,20 @@
 
 namespace
 {
-btVector3 ToBtVector(const Vector3 &v)
-{
-    return btVector3(v.x, v.y, v.z);
-}
+    constexpr char doorModelPath[] = "decorations/door.glb";
+    constexpr float doorOpenAngleDeg = 95.0f;
+    constexpr float doorOpenDuration = 1.35f;
+    constexpr float boundingAxisEpsilon = 0.0001f;
 
-btQuaternion ToBtQuaternion(const Quaternion &q)
-{
-    return btQuaternion(q.x, q.y, q.z, q.w);
-}
+    btVector3 ToBtVector(const Vector3 &v)
+    {
+        return btVector3(v.x, v.y, v.z);
+    }
+
+    btQuaternion ToBtQuaternion(const Quaternion &q)
+    {
+        return btQuaternion(q.x, q.y, q.z, q.w);
+    }
 }
 
 RenderTexture2D Scene::CreateHealthBarTexture(int currentHealth, int maxHealth, float fillPercent)
@@ -61,6 +67,7 @@ Scene::~Scene()
 {
     this->RemoveDecorationColliders();
     this->decorations.clear();
+    this->ShutdownDoorVisuals();
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
@@ -83,8 +90,8 @@ Scene::~Scene()
             UnloadTexture(this->glowTexture);
             this->glowTexture.id = 0;
         }
-    }
-    this->ShutdownBulletWorld();
+        }
+        this->ShutdownBulletWorld();
 }
 
 void Scene::InitializeBulletWorld()
@@ -152,39 +159,39 @@ btCollisionShape *Scene::CreateShapeFromObject(const Object &obj)
 
 namespace
 {
-struct DecorationContactCallback : public btCollisionWorld::ContactResultCallback
-{
-    explicit DecorationContactCallback(std::vector<CollisionResult> &results) : hits(results)
+    struct DecorationContactCallback : public btCollisionWorld::ContactResultCallback
     {
-        this->m_closestDistanceThreshold = 0.0f;
-    }
-
-    btScalar addSingleResult(btManifoldPoint &cp,
-                             const btCollisionObjectWrapper *, int, int,
-                             const btCollisionObjectWrapper *, int, int) override
-    {
-        if (cp.getDistance() > 0.0f)
+        explicit DecorationContactCallback(std::vector<CollisionResult> &results) : hits(results)
         {
+            this->m_closestDistanceThreshold = 0.0f;
+        }
+
+        btScalar addSingleResult(btManifoldPoint &cp,
+                                 const btCollisionObjectWrapper *, int, int,
+                                 const btCollisionObjectWrapper *, int, int) override
+        {
+            if (cp.getDistance() > 0.0f)
+            {
+                return 0.0f;
+            }
+
+            CollisionResult result{};
+            result.with = nullptr;
+            result.collided = true;
+            result.penetration = -cp.getDistance();
+            btVector3 normal = cp.m_normalWorldOnB;
+            Vector3 raylibNormal = {normal.x(), normal.y(), normal.z()};
+            if (Vector3Length(raylibNormal) > 0.0f)
+            {
+                raylibNormal = Vector3Normalize(raylibNormal);
+            }
+            result.normal = raylibNormal;
+            this->hits.push_back(result);
             return 0.0f;
         }
 
-        CollisionResult result{};
-        result.with = nullptr;
-        result.collided = true;
-        result.penetration = -cp.getDistance();
-        btVector3 normal = cp.m_normalWorldOnB;
-        Vector3 raylibNormal = {normal.x(), normal.y(), normal.z()};
-        if (Vector3Length(raylibNormal) > 0.0f)
-        {
-            raylibNormal = Vector3Normalize(raylibNormal);
-        }
-        result.normal = raylibNormal;
-        this->hits.push_back(result);
-        return 0.0f;
-    }
-
-    std::vector<CollisionResult> &hits;
-};
+        std::vector<CollisionResult> &hits;
+    };
 }
 
 void Scene::AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const
@@ -370,12 +377,12 @@ void Scene::ReleaseDecorationModels()
     this->decorationModelCache.clear();
 }
 
-void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
+CollidableModel *Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg, bool addCollision)
 {
     Model *model = this->AcquireDecorationModel(modelPath);
     if (model == nullptr)
     {
-        return;
+        return nullptr;
     }
 
     BoundingBox box = GetModelBoundingBox(*model);
@@ -389,16 +396,345 @@ void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float 
     auto decoration = CollidableModel::Create(model, desiredPosition, scale, {0.0f, 1.0f, 0.0f}, rotationYDeg);
     if (!decoration)
     {
+        return nullptr;
+    }
+
+    if (addCollision)
+    {
+        auto *bulletObject = decoration->GetBulletObject();
+        if (this->bulletWorld && bulletObject)
+        {
+            this->bulletWorld->addCollisionObject(bulletObject);
+        }
+    }
+
+    auto *decorationPtr = decoration.get();
+    this->decorations.push_back(std::move(decoration));
+    return decorationPtr;
+}
+
+std::unique_ptr<CollidableModel> Scene::DetachDecoration(CollidableModel *target)
+{
+    if (!target)
+    {
+        return nullptr;
+    }
+
+    for (auto iter = this->decorations.begin(); iter != this->decorations.end(); ++iter)
+    {
+        if (iter->get() == target)
+        {
+            std::unique_ptr<CollidableModel> owned = std::move(*iter);
+            this->decorations.erase(iter);
+            return owned;
+        }
+    }
+    return nullptr;
+}
+
+void Scene::ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredPosition)
+{
+    if (!door)
+        return;
+
+    Model *doorModel = door->GetModel();
+    if (!doorModel)
+        return;
+
+    BoundingBox bounds = GetModelBoundingBox(*doorModel);
+    Vector3 scale = door->GetScale();
+    Vector3 pos = desiredPosition;
+    float floorY = this->GetFloorTop();
+
+    float scaledHeight = (bounds.max.y - bounds.min.y) * scale.y;
+    float heightCenter = ((bounds.min.y + bounds.max.y) * 0.5f) * scale.y;
+    pos.y = floorY - heightCenter + scaledHeight * 0.5f;
+
+    float widthCenter = ((bounds.min.x + bounds.max.x) * 0.5f) * scale.x;
+    pos.x -= widthCenter;
+
+    float depthCenter = ((bounds.min.z + bounds.max.z) * 0.5f) * scale.z;
+    pos.z -= depthCenter;
+
+    door->SetPosition(pos);
+}
+
+void Scene::InitializeRooms(float roomWidth, float roomLength, float wallHeight,
+                            const Vector3 &firstCenter, const Vector3 &secondCenter)
+{
+    this->rooms.clear();
+    this->rooms.reserve(2);
+
+    Room first{};
+    first.name = "Entry Hall";
+    first.bounds.min = {firstCenter.x - roomWidth * 0.5f, 0.0f, firstCenter.z - roomLength * 0.5f};
+    first.bounds.max = {firstCenter.x + roomWidth * 0.5f, wallHeight, firstCenter.z + roomLength * 0.5f};
+    this->rooms.push_back(first);
+
+    Room second{};
+    second.name = "Back Room";
+    second.bounds.min = {secondCenter.x - roomWidth * 0.5f, 0.0f, secondCenter.z - roomLength * 0.5f};
+    second.bounds.max = {secondCenter.x + roomWidth * 0.5f, wallHeight, secondCenter.z + roomLength * 0.5f};
+    this->rooms.push_back(second);
+}
+
+void Scene::UpdateRooms()
+{
+    if (this->rooms.empty())
+    {
         return;
     }
 
-    auto *bulletObject = decoration->GetBulletObject();
-    if (this->bulletWorld && bulletObject)
+    const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    for (int roomIndex = 0; roomIndex < static_cast<int>(this->rooms.size()); ++roomIndex)
     {
-        this->bulletWorld->addCollisionObject(bulletObject);
+        Room &room = this->rooms[roomIndex];
+        bool hasEnemy = false;
+        for (Entity *entity : enemies)
+        {
+            Enemy *enemy = dynamic_cast<Enemy *>(entity);
+            if (!enemy)
+            {
+                continue;
+            }
+
+            const Vector3 pos = enemy->obj().getPos();
+            if (pos.x >= room.bounds.min.x && pos.x <= room.bounds.max.x &&
+                pos.y >= room.bounds.min.y && pos.y <= room.bounds.max.y &&
+                pos.z >= room.bounds.min.z && pos.z <= room.bounds.max.z)
+            {
+                hasEnemy = true;
+                room.hadEnemies = true;
+                break;
+            }
+        }
+
+        if (!hasEnemy && room.hadEnemies && !room.completed)
+        {
+            room.completed = true;
+            this->OnRoomCompleted(roomIndex);
+        }
+    }
+}
+
+void Scene::OnRoomCompleted(int roomIndex)
+{
+    if (roomIndex < 0 || roomIndex >= static_cast<int>(this->rooms.size()))
+    {
+        return;
     }
 
-    this->decorations.push_back(std::move(decoration));
+    const Room &room = this->rooms[roomIndex];
+    for (int doorIndex : room.connectedDoors)
+    {
+        this->OpenDoor(doorIndex);
+    }
+}
+
+void Scene::OpenDoor(int doorIndex)
+{
+    if (doorIndex < 0 || doorIndex >= static_cast<int>(this->doors.size()))
+    {
+        return;
+    }
+
+    DoorInstance &door = this->doors[doorIndex];
+    if (door.openComplete)
+    {
+        return;
+    }
+
+    door.opening = true;
+}
+
+void Scene::UpdateDoorAnimations(float deltaSeconds)
+{
+    if (deltaSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    for (auto &door : this->doors)
+    {
+        if (!door.opening || door.openComplete)
+        {
+            continue;
+        }
+
+        if (door.openDuration <= 0.0f)
+        {
+            door.openProgress = 1.0f;
+        }
+        else
+        {
+            door.openProgress = std::clamp(door.openProgress + deltaSeconds / door.openDuration, 0.0f, 1.0f);
+        }
+
+        float eased = door.openProgress * door.openProgress * (3.0f - 2.0f * door.openProgress); // smoothstep
+        if (door.leftLeaf.valid)
+        {
+            door.leftLeaf.currentAngleDeg = door.leftLeaf.targetAngleDeg * eased;
+        }
+        if (door.rightLeaf.valid)
+        {
+            door.rightLeaf.currentAngleDeg = door.rightLeaf.targetAngleDeg * eased;
+        }
+
+        if (door.openProgress >= 1.0f)
+        {
+            door.openComplete = true;
+            if (door.collisionEnabled && this->bulletWorld && door.collider)
+            {
+                if (btCollisionObject *collisionObject = door.collider->GetBulletObject())
+                {
+                    this->bulletWorld->removeCollisionObject(collisionObject);
+                }
+                door.collisionEnabled = false;
+            }
+        }
+    }
+}
+
+bool Scene::InitializeDoorVisuals(DoorInstance &door)
+{
+    if (!door.collider)
+    {
+        return false;
+    }
+
+    door.visualModel = door.collider->GetModel();
+    if (!door.visualModel)
+    {
+        return false;
+    }
+
+    if (door.visualModel->meshCount < 2)
+    {
+        TraceLog(LOG_WARNING, "Door model missing expected meshes");
+        door.visualModel = nullptr;
+        return false;
+    }
+
+    auto setupLeaf = [&](DoorLeafVisual &leaf, int meshIndex, float openSign)
+    {
+        if (!door.visualModel || meshIndex < 0 || meshIndex >= door.visualModel->meshCount)
+        {
+            return;
+        }
+
+        leaf.meshIndex = meshIndex;
+        leaf.bounds = GetMeshBoundingBox(door.visualModel->meshes[meshIndex]);
+        float hingeX = (openSign < 0.0f) ? leaf.bounds.min.x : leaf.bounds.max.x;
+        float centerZ = (leaf.bounds.min.z + leaf.bounds.max.z) * 0.5f;
+        leaf.hingeLocal = {hingeX, leaf.bounds.min.y, centerZ};
+        leaf.targetAngleDeg = doorOpenAngleDeg * openSign;
+        leaf.currentAngleDeg = 0.0f;
+        leaf.valid = true;
+    };
+
+    setupLeaf(door.leftLeaf, 0, -1.0f);
+    setupLeaf(door.rightLeaf, 1, 1.0f);
+
+    if (!door.leftLeaf.valid || !door.rightLeaf.valid)
+    {
+        door.visualModel = nullptr;
+        return false;
+    }
+
+    if (this->lightingShader.id != 0)
+    {
+        this->ApplyLightingToDoor(door);
+    }
+
+    return true;
+}
+
+void Scene::ApplyLightingToDoor(DoorInstance &door)
+{
+    if (this->lightingShader.id == 0 || !door.visualModel)
+    {
+        return;
+    }
+
+    for (int i = 0; i < door.visualModel->materialCount; ++i)
+    {
+        door.visualModel->materials[i].shader = this->lightingShader;
+    }
+}
+
+Vector3 Scene::TransformDoorPoint(const DoorInstance &door, const Vector3 &localPoint) const
+{
+    Vector3 scaled = {localPoint.x * door.scale.x, localPoint.y * door.scale.y, localPoint.z * door.scale.z};
+    if (door.rotationAngleDeg != 0.0f)
+    {
+        scaled = Vector3RotateByQuaternion(scaled, door.rotation);
+    }
+    return Vector3Add(door.basePosition, scaled);
+}
+
+void Scene::DrawDoorLeaf(const DoorInstance &door, const DoorLeafVisual &leaf) const
+{
+    if (!leaf.valid || !door.visualModel)
+    {
+        return;
+    }
+
+    if (leaf.meshIndex < 0 || leaf.meshIndex >= door.visualModel->meshCount)
+    {
+        return;
+    }
+
+    int materialIndex = 0;
+    if (door.visualModel->meshMaterial)
+    {
+        int candidate = door.visualModel->meshMaterial[leaf.meshIndex];
+        if (candidate >= 0 && candidate < door.visualModel->materialCount)
+        {
+            materialIndex = candidate;
+        }
+    }
+
+    Vector3 hingeWorld = this->TransformDoorPoint(door, leaf.hingeLocal);
+
+    rlPushMatrix();
+    rlTranslatef(hingeWorld.x, hingeWorld.y, hingeWorld.z);
+    if (door.rotationAngleDeg != 0.0f)
+    {
+        rlRotatef(door.rotationAngleDeg, door.rotationAxis.x, door.rotationAxis.y, door.rotationAxis.z);
+    }
+    rlScalef(door.scale.x, door.scale.y, door.scale.z);
+    rlRotatef(leaf.currentAngleDeg, 0.0f, 1.0f, 0.0f);
+    rlTranslatef(-leaf.hingeLocal.x, -leaf.hingeLocal.y, -leaf.hingeLocal.z);
+    DrawMesh(door.visualModel->meshes[leaf.meshIndex], door.visualModel->materials[materialIndex], MatrixIdentity());
+    rlPopMatrix();
+}
+
+void Scene::DrawDoors() const
+{
+    for (const auto &door : this->doors)
+    {
+        this->DrawDoorLeaf(door, door.leftLeaf);
+        this->DrawDoorLeaf(door, door.rightLeaf);
+    }
+}
+
+void Scene::ShutdownDoorVisuals()
+{
+    for (auto &door : this->doors)
+    {
+        if (door.collider && this->bulletWorld)
+        {
+            if (btCollisionObject *collisionObject = door.collider->GetBulletObject())
+            {
+                this->bulletWorld->removeCollisionObject(collisionObject);
+            }
+        }
+
+        door.leftLeaf.valid = false;
+        door.rightLeaf.valid = false;
+        door.visualModel = nullptr;
+    }
+    this->doors.clear();
 }
 
 void Scene::DrawDecorations() const
@@ -417,17 +753,14 @@ void Scene::InitializeLighting()
 {
     // Reset the global light counter before creating new lights
     ResetLights();
-    TraceLog(LOG_INFO, "InitializeLighting: Light counter reset");
-    
+
     this->lightingShader = LoadShader("shaders/lighting.vs", "shaders/lighting.fs");
     if (this->lightingShader.id == 0)
     {
-        TraceLog(LOG_ERROR, "InitializeLighting: Failed to load lighting shader");
         this->ambientLoc = -1;
         this->viewPosLoc = -1;
         return;
     }
-    TraceLog(LOG_INFO, "InitializeLighting: Shader loaded with ID: %d", this->lightingShader.id);
 
     this->lightingShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(this->lightingShader, "mvp");
     this->lightingShader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(this->lightingShader, "matModel");
@@ -449,14 +782,15 @@ void Scene::InitializeLighting()
     if (this->ambientLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->ambientLoc, &this->ambientColor.x, SHADER_UNIFORM_VEC4);
-        TraceLog(LOG_INFO, "Ambient color set: (%.2f, %.2f, %.2f, %.2f)", 
-                 this->ambientColor.x, this->ambientColor.y, this->ambientColor.z, this->ambientColor.w);
     }
     if (this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
-        TraceLog(LOG_INFO, "Initial view position set: (%.2f, %.2f, %.2f)", 
-                 this->shaderViewPos.x, this->shaderViewPos.y, this->shaderViewPos.z);
+    }
+
+    for (auto &door : this->doors)
+    {
+        this->ApplyLightingToDoor(door);
     }
 }
 
@@ -464,7 +798,6 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
 {
     if (this->lightingShader.id == 0)
     {
-        TraceLog(LOG_WARNING, "CreatePointLight: Shader not initialized");
         return;
     }
 
@@ -477,10 +810,7 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
     };
 
     Color scaledColor = {scaleComponent(color.r), scaleComponent(color.g), scaleComponent(color.b), color.a};
-    TraceLog(LOG_INFO, "Creating light at position: (%.2f, %.2f, %.2f), intensity: %.2f, color: (%d, %d, %d)", 
-             position.x, position.y, position.z, intensity, scaledColor.r, scaledColor.g, scaledColor.b);
     Light light = CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
-    TraceLog(LOG_INFO, "Light created with type: %d, enabled: %d", light.type, light.enabled);
 }
 
 void Scene::ShutdownLighting()
@@ -543,18 +873,18 @@ void Scene::DrawSphereObject(const Object &o) const
     float radius = o.getSphereRadius();
     // Draw textured or solid sphere using the sphere model
     Vector3 scale = {radius * 2.0f, radius * 2.0f, radius * 2.0f};
-    
+
     if (o.useTexture && o.texture != nullptr)
     {
         // Create a temporary material with the texture for this draw call
         Material tempMat = this->sphereModel.materials[0];
         tempMat.maps[MATERIAL_MAP_DIFFUSE].texture = *o.texture;
-        
+
         // Temporarily replace material, draw, then restore
         Material originalMat = this->sphereModel.materials[0];
-        const_cast<Scene*>(this)->sphereModel.materials[0] = tempMat;
+        const_cast<Scene *>(this)->sphereModel.materials[0] = tempMat;
         DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
-        const_cast<Scene*>(this)->sphereModel.materials[0] = originalMat;
+        const_cast<Scene *>(this)->sphereModel.materials[0] = originalMat;
     }
     else
     {
@@ -591,6 +921,7 @@ void Scene::DrawScene(Camera camera) const
     }
 
     this->DrawDecorations();
+    this->DrawDoors();
 
     int debugBulletCount = 0;
     for (auto *obj : enemyObjects)
@@ -632,7 +963,7 @@ void Scene::DrawScene(Camera camera) const
         {
             if (obj && obj->isVisible() && obj->isSphere())
             {
-                DrawBillboard(camera, this->glowTexture, obj->getPos(),1.2f, Color{255, 150, 100, 200});
+                DrawBillboard(camera, this->glowTexture, obj->getPos(), 1.2f, Color{255, 150, 100, 200});
             }
         }
         EndBlendMode();
@@ -750,8 +1081,16 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
 // Updates all entities and attacks in the scene
 void Scene::Update(UpdateContext &uc)
 {
+    const float deltaSeconds = GetFrameTime();
+
     // Update all entities in the scene
     this->em.update(uc);
+
+    // Monitor room completion after enemies update so door logic is in sync
+    this->UpdateRooms();
+
+    // Advance any active door animations
+    this->UpdateDoorAnimations(deltaSeconds);
 
     // Update all attacks managed by the AttackManager
     this->am.update(uc);
@@ -783,6 +1122,34 @@ Scene::Scene()
     const float wallThickness = 1.0f;
     const float wallHeight = 30.0f;
     const float floorThickness = 0.5f;
+    const float doorHeight = 18.0f;
+    float doorWidth = 12.0f;
+
+    if (Model *doorSample = this->AcquireDecorationModel(doorModelPath))
+    {
+        BoundingBox sourceBounds = GetModelBoundingBox(*doorSample);
+        float sourceHeight = sourceBounds.max.y - sourceBounds.min.y;
+        if (sourceHeight > boundingAxisEpsilon)
+        {
+            float uniformScale = doorHeight / sourceHeight;
+            doorWidth = (sourceBounds.max.x - sourceBounds.min.x) * uniformScale;
+        }
+    }
+
+    Vector3 firstRoomCenter{0.0f, 0.0f, 0.0f};
+    Vector3 secondRoomCenter{0.0f, 0.0f, roomLength - wallThickness};
+
+    float minRoomZ = firstRoomCenter.z - roomLength * 0.5f;
+    float maxRoomZ = secondRoomCenter.z + roomLength * 0.5f;
+    float combinedLength = maxRoomZ - minRoomZ;
+    float floorCenterZ = minRoomZ + combinedLength * 0.5f;
+
+    this->floor = Object({roomWidth - wallThickness, floorThickness, combinedLength - wallThickness},
+                         {0.0f, -floorThickness / 2.0f, floorCenterZ});
+    if (this->floorTexture.id != 0)
+    {
+        this->ApplyFullTexture(this->floor, this->floorTexture);
+    }
 
     auto createWall = [&](Vector3 size, Vector3 pos)
     {
@@ -794,17 +1161,52 @@ Scene::Scene()
         this->objects.push_back(wall);
     };
 
-    createWall({roomWidth, wallHeight, wallThickness}, {0.0f, wallHeight / 2.0f, roomLength / 2.0f - wallThickness / 2.0f});
-    createWall({roomWidth, wallHeight, wallThickness}, {0.0f, wallHeight / 2.0f, -roomLength / 2.0f + wallThickness / 2.0f});
-    createWall({wallThickness, wallHeight, roomLength}, {roomWidth / 2.0f - wallThickness / 2.0f, wallHeight / 2.0f, 0.0f});
-    createWall({wallThickness, wallHeight, roomLength}, {-roomWidth / 2.0f + wallThickness / 2.0f, wallHeight / 2.0f, 0.0f});
-
-    this->floor = Object({roomWidth - wallThickness, floorThickness, roomLength - wallThickness},
-                         {0.0f, -floorThickness / 2.0f, 0.0f});
-    if (this->floorTexture.id != 0)
+    auto buildRoom = [&](const Vector3 &center, bool doorNorth, bool doorSouth)
     {
-        this->ApplyFullTexture(this->floor, this->floorTexture);
-    }
+        float halfWidth = roomWidth * 0.5f;
+        float halfLength = roomLength * 0.5f;
+        float wallY = wallHeight / 2.0f;
+
+        auto addWallStrip = [&](float zPos, bool hasDoor)
+        {
+            bool canAddDoor = (doorWidth < roomWidth - 1.0f);
+            if (hasDoor && canAddDoor)
+            {
+                float sideWidth = (roomWidth - doorWidth) * 0.5f;
+                float doorHalf = doorWidth * 0.5f;
+                float segmentHalf = sideWidth * 0.5f;
+                if (sideWidth > 0.1f)
+                {
+                    createWall({sideWidth, wallHeight, wallThickness},
+                               {center.x - (doorHalf + segmentHalf), wallY, zPos});
+                    createWall({sideWidth, wallHeight, wallThickness},
+                               {center.x + (doorHalf + segmentHalf), wallY, zPos});
+                }
+            }
+            else
+            {
+                createWall({roomWidth, wallHeight, wallThickness}, {center.x, wallY, zPos});
+            }
+        };
+
+        addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorNorth);
+        addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorSouth);
+
+        float eastX = center.x + halfWidth - wallThickness / 2.0f;
+        float westX = center.x - halfWidth + wallThickness / 2.0f;
+        createWall({wallThickness, wallHeight, roomLength}, {eastX, wallY, center.z});
+        createWall({wallThickness, wallHeight, roomLength}, {westX, wallY, center.z});
+    };
+
+    buildRoom(firstRoomCenter, true, false);
+    buildRoom(secondRoomCenter, false, true);
+
+    this->InitializeRooms(roomWidth, roomLength, wallHeight, firstRoomCenter, secondRoomCenter);
+    this->doors.clear();
+
+    const Vector3 doorwayPosition = {firstRoomCenter.x,
+                                     10.0f,
+                                     firstRoomCenter.z + roomLength * 0.5f - wallThickness * 0.5f};
 
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
@@ -837,10 +1239,49 @@ Scene::Scene()
 
     if (this->lightingShader.id != 0)
     {
-        this->CreatePointLight({0.0f, 3, 0.0f}, {255, 214, 170, 255}, 0.2f);
-        // this->CreatePointLight({0.0f, wallHeight - 2.0f, 0.0f}, {255, 214, 170, 255}, 0.35f);
-        // this->CreatePointLight({roomWidth / 2.5f, wallHeight * 0.8f, roomLength / 2.5f}, {255, 190, 140, 255}, 0.3f);
-        // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
+        this->CreatePointLight({firstRoomCenter.x, 3.0f, firstRoomCenter.z}, {255, 214, 170, 255}, 0.25f);
+        this->CreatePointLight({secondRoomCenter.x, 3.0f, secondRoomCenter.z}, {255, 214, 190, 255}, 0.22f);
+        // Additional lights can be added per room as needed.
+    }
+
+    // Add a door between the two rooms that starts closed with collision enabled
+    if (CollidableModel *doorDecoration = this->AddDecoration(doorModelPath, doorwayPosition, doorHeight, 0.0f, true))
+    {
+        auto owned = this->DetachDecoration(doorDecoration);
+        if (owned)
+        {
+            this->ConfigureDoorPlacement(owned.get(), doorwayPosition);
+
+            DoorInstance instance{};
+            instance.collider = std::move(owned);
+            instance.collisionEnabled = true;
+            instance.openDuration = doorOpenDuration;
+            instance.basePosition = instance.collider->GetPosition();
+            instance.scale = instance.collider->GetScale();
+            instance.rotationAxis = instance.collider->GetRotationAxis();
+            instance.rotationAngleDeg = instance.collider->GetRotationAngleDeg();
+            Vector3 axis = instance.rotationAxis;
+            if (Vector3Length(axis) < 0.0001f)
+            {
+                axis = {0.0f, 1.0f, 0.0f};
+            }
+            axis = Vector3Normalize(axis);
+            instance.rotation = QuaternionFromAxisAngle(axis, instance.rotationAngleDeg * DEG2RAD);
+
+            if (this->InitializeDoorVisuals(instance))
+            {
+                int doorIndex = static_cast<int>(this->doors.size());
+                this->doors.push_back(std::move(instance));
+                if (!this->rooms.empty())
+                {
+                    this->rooms[0].connectedDoors.push_back(doorIndex);
+                    if (this->rooms.size() > 1)
+                    {
+                        this->rooms[1].connectedDoors.push_back(doorIndex);
+                    }
+                }
+            }
+        }
     }
 
     // Load decorations directly
@@ -871,18 +1312,10 @@ std::vector<Entity *> Scene::getEntities(EntityCategory cat)
 
 void Scene::SetViewPosition(const Vector3 &viewPosition)
 {
-    static int frameCount = 0;
     this->shaderViewPos = viewPosition;
     if (this->lightingShader.id != 0 && this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
-        // Log every 60 frames to avoid spam
-        if (frameCount % 60 == 0)
-        {
-            TraceLog(LOG_INFO, "SetViewPosition called: (%.2f, %.2f, %.2f)", 
-                     viewPosition.x, viewPosition.y, viewPosition.z);
-        }
-        frameCount++;
     }
 }
 

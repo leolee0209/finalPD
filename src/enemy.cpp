@@ -801,7 +801,6 @@ void ShooterEnemy::spawnBullet(const Vector3 &origin, const Vector3 &dir)
     bullet.visual.UpdateOBB();
 
     this->bullets.push_back(bullet);
-    TraceLog(LOG_INFO, "ShooterEnemy spawned bullet, active=%zu", this->bullets.size());
 }
 
 void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)

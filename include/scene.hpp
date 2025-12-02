@@ -50,6 +50,46 @@ private:
     std::unique_ptr<btBroadphaseInterface> bulletBroadphase;
     std::unique_ptr<btCollisionWorld> bulletWorld;
 
+    struct DoorLeafVisual
+    {
+        BoundingBox bounds{};
+        Vector3 hingeLocal{};
+        float targetAngleDeg = 90.0f;
+        float currentAngleDeg = 0.0f;
+        int meshIndex = -1;
+        bool valid = false;
+    };
+
+    struct DoorInstance
+    {
+        std::unique_ptr<CollidableModel> collider;
+        bool collisionEnabled = false;
+        bool opening = false;
+        bool openComplete = false;
+        float openProgress = 0.0f;
+        float openDuration = 1.2f;
+        Vector3 basePosition{};
+        Vector3 scale{1.0f, 1.0f, 1.0f};
+        Vector3 rotationAxis{0.0f, 1.0f, 0.0f};
+        float rotationAngleDeg = 0.0f;
+        Quaternion rotation{0.0f, 0.0f, 0.0f, 1.0f};
+        Model *visualModel = nullptr; // Non-owning: model owned by decoration cache
+        DoorLeafVisual leftLeaf;
+        DoorLeafVisual rightLeaf;
+    };
+
+    struct Room
+    {
+        std::string name;
+        BoundingBox bounds{};
+        std::vector<int> connectedDoors;
+        bool hadEnemies = false;
+        bool completed = false;
+    };
+
+    std::vector<Room> rooms;
+    std::vector<DoorInstance> doors;
+
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
     void DrawSphereObject(const Object &o) const;
@@ -63,7 +103,14 @@ private:
     void DrawPlanarShadow(const Object &o, float floorY) const;
     void DrawShadowCollection(const std::vector<Object *> &items, float floorY) const;
     float GetFloorTop() const;
-    void AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg = 0.0f);
+    CollidableModel *AddDecoration(const char *modelPath,
+                                   Vector3 desiredPosition,
+                                   float targetHeight,
+                                   float rotationYDeg = 0.0f,
+                                   bool addCollision = false);
+    void ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredPosition);
+    void InitializeRooms(float roomWidth, float roomLength, float wallHeight,
+                         const Vector3 &firstCenter, const Vector3 &secondCenter);
     void DrawDecorations() const;
     Model *AcquireDecorationModel(const std::string &relativePath);
     void ReleaseDecorationModels();
@@ -74,6 +121,17 @@ private:
     static btTransform BuildBtTransform(const Object &obj);
     static btCollisionShape *CreateShapeFromObject(const Object &obj);
     static RenderTexture2D CreateHealthBarTexture(int currentHealth, int maxHealth, float fillPercent);
+    void UpdateRooms();
+    void OnRoomCompleted(int roomIndex);
+    void OpenDoor(int doorIndex);
+    void UpdateDoorAnimations(float deltaSeconds);
+    void DrawDoors() const;
+    bool InitializeDoorVisuals(DoorInstance &door);
+    void ApplyLightingToDoor(DoorInstance &door);
+    Vector3 TransformDoorPoint(const DoorInstance &door, const Vector3 &localPoint) const;
+    void DrawDoorLeaf(const DoorInstance &door, const DoorLeafVisual &leaf) const;
+    void ShutdownDoorVisuals();
+    std::unique_ptr<CollidableModel> DetachDecoration(CollidableModel *target);
 public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
