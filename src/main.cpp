@@ -6,7 +6,7 @@
 #include "uiManager.hpp"
 #include "resource_dir.hpp"
 #include "updateContext.hpp"
-#include "uiHealthBar.hpp"
+
 int main(void)
 {
     Vector2 sensitivity = {0.001f, 0.001f};

@@ -19,6 +19,11 @@ bool isDotTile(MahjongTileType tile)
 {
     return tile >= MahjongTileType::DOT_1 && tile <= MahjongTileType::DOT_9;
 }
+
+bool isBambooTile(MahjongTileType tile)
+{
+    return tile >= MahjongTileType::BAMBOO_1 && tile <= MahjongTileType::BAMBOO_9;
+}
 }
 
 // Destructor cleans up dynamically allocated ThousandAttack instances
@@ -33,6 +38,8 @@ AttackManager::~AttackManager()
     for (auto &d : this->dashAttacks)
         delete d;
     for (auto &b : this->dotBombAttacks)
+        delete b;
+    for (auto &b : this->bambooTripleAttacks)
         delete b;
 }
 
@@ -49,6 +56,33 @@ void AttackManager::update(UpdateContext& uc)
         d->update(uc);
     for (auto &b : this->dotBombAttacks)
         b->update(uc);
+    for (auto &b : this->bambooTripleAttacks)
+        b->update(uc);
+
+    // Update BasicTileAttack cooldown modifiers based on BambooTripleAttack state
+    for (auto &basic : this->basicTileAttacks)
+    {
+        // Find associated bamboo triple attack (same spawner)
+        BambooTripleAttack *bamboo = nullptr;
+        for (auto &b : this->bambooTripleAttacks)
+        {
+            if (b->spawnedBy == basic->spawnedBy)
+            {
+                bamboo = b;
+                break;
+            }
+        }
+        
+        // Update cooldown modifier based on effect state
+        if (bamboo && bamboo->isActive())
+        {
+            basic->setCooldownModifier(0.4f); // 40% = faster shooting
+        }
+        else
+        {
+            basic->resetCooldownModifier(); // Back to normal
+        }
+    }
 
     if (uc.uiManager)
     {
@@ -117,12 +151,45 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
         }
     }
 
+    bool isBambooTriple = false;
+    if (canCheckCombo && !isDotTriple)
+    {
+        const auto &first = slotEntries[0];
+        if (first.isValid() && isBambooTile(first.tile))
+        {
+            isBambooTriple = true;
+            for (int i = 1; i < 3; ++i)
+            {
+                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                {
+                    isBambooTriple = false;
+                    break;
+                }
+            }
+        }
+    }
+
     if (isDotTriple)
     {
         if (DotBombAttack *bomb = getDotBombAttack(uc.player))
         {
             if (bomb->trigger(uc, slotEntries[0].tile))
                 return true;
+        }
+        return false;
+    }
+
+    if (isBambooTriple)
+    {
+        if (BambooTripleAttack *bamboo = getBambooTripleAttack(uc.player))
+        {
+            bamboo->trigger(uc);
+            // Activate the rapid-fire effect on the BasicTileAttack
+            if (BasicTileAttack *basic = getBasicTileAttack(uc.player))
+            {
+                basic->setCooldownModifier(0.4f); // 40% of normal cooldown = faster shooting
+            }
+            return true;
         }
         return false;
     }
@@ -253,8 +320,29 @@ AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vecto
         }
     }
 
+    bool isBambooTriple = false;
+    if (canCheckCombo && !isDotTriple)
+    {
+        const auto &first = slotEntries[0];
+        if (first.isValid() && isBambooTile(first.tile))
+        {
+            isBambooTriple = true;
+            for (int i = 1; i < 3; ++i)
+            {
+                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                {
+                    isBambooTriple = false;
+                    break;
+                }
+            }
+        }
+    }
+
     if (isDotTriple)
         return SlotAttackKind::DotBomb;
+
+    if (isBambooTriple)
+        return SlotAttackKind::BambooTriple;
 
     if (canCheckCombo && allValidCharacters)
     {
@@ -289,6 +377,11 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
     {
         DotBombAttack *bomb = getDotBombAttack(uc.player);
         return bomb ? bomb->getCooldownPercent() : 0.0f;
+    }
+    case SlotAttackKind::BambooTriple:
+    {
+        BambooTripleAttack *bamboo = getBambooTripleAttack(uc.player);
+        return bamboo ? bamboo->getCooldownPercent() : 0.0f;
     }
     case SlotAttackKind::Melee:
     {
@@ -349,6 +442,17 @@ DashAttack *AttackManager::getDashAttack(Entity *spawnedBy)
     }
     this->dashAttacks.push_back(new DashAttack(spawnedBy));
     return this->dashAttacks.back();
+}
+
+BambooTripleAttack *AttackManager::getBambooTripleAttack(Entity *spawnedBy)
+{
+    for (const auto &b : this->bambooTripleAttacks)
+    {
+        if (b->spawnedBy == spawnedBy)
+            return b;
+    }
+    this->bambooTripleAttacks.push_back(new BambooTripleAttack(spawnedBy));
+    return this->bambooTripleAttacks.back();
 }
 
 DotBombAttack *AttackManager::getDotBombAttack(Entity *spawnedBy)

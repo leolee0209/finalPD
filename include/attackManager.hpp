@@ -20,7 +20,8 @@ private:
         DefaultThrow,
         DotBomb,
         Melee,
-        Dash
+        Dash,
+        BambooTriple
     };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
@@ -29,6 +30,7 @@ private:
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<DashAttack *> dashAttacks;
     std::vector<DotBombAttack *> dotBombAttacks;
+    std::vector<BambooTripleAttack *> bambooTripleAttacks;
     std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
@@ -65,6 +67,7 @@ public:
     MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
     DashAttack *getDashAttack(Entity *spawnedBy);
     DotBombAttack *getDotBombAttack(Entity *spawnedBy);
+    BambooTripleAttack *getBambooTripleAttack(Entity *spawnedBy);
     bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**

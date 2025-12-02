@@ -10,6 +10,43 @@ Texture2D DotBombAttack::explosionTexture{};
 bool DotBombAttack::explosionTextureLoaded = false;
 int DotBombAttack::explosionTextureUsers = 0;
 
+// --- BambooTripleAttack: rapid-fire mode triggered by three same bamboo tiles ---
+void BambooTripleAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f)
+        return;
+
+    this->effectRemaining = effectDuration;
+    this->cooldownRemaining = cooldownDuration;
+}
+
+void BambooTripleAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+
+    if (this->cooldownRemaining > 0.0f)
+    {
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
+
+    if (this->effectRemaining > 0.0f)
+    {
+        this->effectRemaining = fmaxf(0.0f, this->effectRemaining - delta);
+    }
+}
+
+float BambooTripleAttack::getCooldownPercent() const
+{
+    if (this->cooldownRemaining <= 0.0f)
+        return 0.0f;
+    return this->cooldownRemaining / cooldownDuration;
+}
+
+float BambooTripleAttack::getReducedCooldown() const
+{
+    return this->isActive() ? reducedCooldown : normalCooldown;
+}
+
 // --- BasicTileAttack: simple horizontal shooting ---
 void BasicTileAttack::spawnProjectile(UpdateContext &uc)
 {
@@ -78,8 +115,8 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
 
     this->projectiles.push_back(projectile);
 
-    // Start cooldown
-    this->cooldownRemaining = cooldownDuration;
+    // Start cooldown (modified by active cooldown modifier)
+    this->cooldownRemaining = cooldownDuration * this->activeCooldownModifier;
 
     // Apply movement slow to player
     if (this->spawnedBy->category() == ENTITY_PLAYER)

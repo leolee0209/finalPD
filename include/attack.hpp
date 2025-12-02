@@ -39,6 +39,7 @@ class BasicTileAttack : public AttackController
 private:
     std::vector<Projectile> projectiles;
     float cooldownRemaining = 0.0f;
+    float activeCooldownModifier = 1.0f; // 1.0 = normal, 0.4 = 40% of normal (faster shooting)
     static constexpr float shootSpeed = 70.0f;
     static constexpr float projectileSize = 0.025f;
     static constexpr float projectileDamage = 10.0f;
@@ -49,6 +50,8 @@ private:
 public:
     BasicTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
     bool canShoot() const { return this->cooldownRemaining <= 0.0f; }
+    void setCooldownModifier(float modifier) { this->activeCooldownModifier = modifier; }
+    void resetCooldownModifier() { this->activeCooldownModifier = 1.0f; }
     void update(UpdateContext &uc) override;
     void spawnProjectile(UpdateContext &uc);
     std::vector<Object *> obj()
@@ -244,6 +247,38 @@ private:
     Vector3 computeDashDirection(const UpdateContext &uc) const;
     void applyDashImpulse(Me *player, UpdateContext &uc);
     Vector3 computeCollisionAdjustedVelocity(Me *player, UpdateContext &uc, float desiredSpeed);
+};
+
+/**
+ * @brief Rapid-fire attack triggered by three same-number bamboo tiles.
+ *
+ * Temporarily reduces the cooldown of BasicTileAttack for a duration,
+ * allowing faster shooting. The attack itself has a longer cooldown
+ * than the effect duration.
+ */
+class BambooTripleAttack : public AttackController
+{
+public:
+    explicit BambooTripleAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    void trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+    bool isActive() const { return this->effectRemaining > 0.0f; }
+    float getReducedCooldown() const;
+
+private:
+    float cooldownRemaining = 0.0f;
+    float effectRemaining = 0.0f;
+
+    // Effect duration is 3.0s, cooldown is 5.0s (cooldown > effect)
+    static constexpr float effectDuration = 3.0f;
+    static constexpr float cooldownDuration = 5.0f;
+    
+    // Original cooldown is 0.5s, reduced to 0.2s during effect
+    static constexpr float normalCooldown = 0.5f;
+    static constexpr float reducedCooldown = 0.2f;
 };
 
 class DotBombAttack : public AttackController
