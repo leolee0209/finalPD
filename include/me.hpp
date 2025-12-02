@@ -269,7 +269,14 @@ private:
         Object visual;
     };
 
+    struct BulletPattern
+    {
+        int bulletCount = 1;      // Number of bullets to fire
+        float arcDegrees = 0.0f;  // Spread arc in degrees (0 = single direction)
+    };
+
     std::vector<Bullet> bullets;
+    BulletPattern bulletPattern;  // Current bullet pattern configuration
     float fireCooldown = 0.0f;
     float fireInterval = 2.0f;
     float bulletSpeed = 25.0f;
@@ -306,6 +313,11 @@ public:
     ShooterEnemy();
     void UpdateBody(UpdateContext &uc) override;
     void gatherObjects(std::vector<Object *> &out) const override;
+    void setBulletPattern(int bulletCount, float arcDegrees)
+    {
+        this->bulletPattern.bulletCount = bulletCount;
+        this->bulletPattern.arcDegrees = arcDegrees;
+    }
 };
 // Class representing the player character
 /**

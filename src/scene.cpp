@@ -364,20 +364,6 @@ void Scene::ReleaseDecorationModels()
     this->decorationModelCache.clear();
 }
 
-void Scene::QueueDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
-{
-    this->pendingDecorations.push_back({std::string(modelPath), desiredPosition, targetHeight, rotationYDeg});
-}
-
-void Scene::LoadPendingDecorations()
-{
-    for (const auto &pending : this->pendingDecorations)
-    {
-        this->AddDecoration(pending.modelPath.c_str(), pending.position, pending.targetHeight, pending.rotationYDeg);
-    }
-    this->pendingDecorations.clear();
-}
-
 void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
 {
     Model *model = this->AcquireDecorationModel(modelPath);
@@ -423,19 +409,27 @@ void Scene::DrawDecorations() const
 
 void Scene::InitializeLighting()
 {
+    // Reset the global light counter before creating new lights
+    ResetLights();
+    TraceLog(LOG_INFO, "InitializeLighting: Light counter reset");
+    
     this->lightingShader = LoadShader("shaders/lighting.vs", "shaders/lighting.fs");
     if (this->lightingShader.id == 0)
     {
+        TraceLog(LOG_ERROR, "InitializeLighting: Failed to load lighting shader");
         this->ambientLoc = -1;
         this->viewPosLoc = -1;
         return;
     }
+    TraceLog(LOG_INFO, "InitializeLighting: Shader loaded with ID: %d", this->lightingShader.id);
 
     this->lightingShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(this->lightingShader, "mvp");
     this->lightingShader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(this->lightingShader, "matModel");
     this->lightingShader.locs[SHADER_LOC_MATRIX_NORMAL] = GetShaderLocation(this->lightingShader, "matNormal");
     this->viewPosLoc = GetShaderLocation(this->lightingShader, "viewPos");
     this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
+
+    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d", this->viewPosLoc, this->ambientLoc);
 
     if (this->cubeModel.materialCount > 0)
     {
@@ -445,10 +439,14 @@ void Scene::InitializeLighting()
     if (this->ambientLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->ambientLoc, &this->ambientColor.x, SHADER_UNIFORM_VEC4);
+        TraceLog(LOG_INFO, "Ambient color set: (%.2f, %.2f, %.2f, %.2f)", 
+                 this->ambientColor.x, this->ambientColor.y, this->ambientColor.z, this->ambientColor.w);
     }
     if (this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+        TraceLog(LOG_INFO, "Initial view position set: (%.2f, %.2f, %.2f)", 
+                 this->shaderViewPos.x, this->shaderViewPos.y, this->shaderViewPos.z);
     }
 }
 
@@ -456,6 +454,7 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
 {
     if (this->lightingShader.id == 0)
     {
+        TraceLog(LOG_WARNING, "CreatePointLight: Shader not initialized");
         return;
     }
 
@@ -468,7 +467,10 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
     };
 
     Color scaledColor = {scaleComponent(color.r), scaleComponent(color.g), scaleComponent(color.b), color.a};
-    CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
+    TraceLog(LOG_INFO, "Creating light at position: (%.2f, %.2f, %.2f), intensity: %.2f, color: (%d, %d, %d)", 
+             position.x, position.y, position.z, intensity, scaledColor.r, scaledColor.g, scaledColor.b);
+    Light light = CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
+    TraceLog(LOG_INFO, "Light created with type: %d, enabled: %d", light.type, light.enabled);
 }
 
 void Scene::ShutdownLighting()
@@ -535,8 +537,62 @@ void Scene::DrawSphereObject(const Object &o) const
     }
     else
     {
-        DrawSphereEx(o.pos, radius, 24, 32, o.tint);
-        DrawSphereWires(o.pos, radius, 16, 16, DARKBLUE);
+        // DrawSphereEx internally may interfere with shader state
+        // Use rlgl immediate mode instead for better shader compatibility
+        rlPushMatrix();
+        rlTranslatef(o.pos.x, o.pos.y, o.pos.z);
+        rlScalef(radius, radius, radius);
+        
+        // Draw using immediate mode triangles
+        const int rings = 16;
+        const int slices = 16;
+        
+        rlBegin(RL_TRIANGLES);
+        rlColor4ub(o.tint.r, o.tint.g, o.tint.b, o.tint.a);
+        
+        for (int i = 0; i < rings; i++)
+        {
+            for (int j = 0; j < slices; j++)
+            {
+                float lat0 = PI * (-0.5f + (float)i / rings);
+                float lat1 = PI * (-0.5f + (float)(i + 1) / rings);
+                float lon0 = 2.0f * PI * (float)j / slices;
+                float lon1 = 2.0f * PI * (float)(j + 1) / slices;
+                
+                float x0 = cosf(lat0) * sinf(lon0);
+                float y0 = sinf(lat0);
+                float z0 = cosf(lat0) * cosf(lon0);
+                
+                float x1 = cosf(lat1) * sinf(lon0);
+                float y1 = sinf(lat1);
+                float z1 = cosf(lat1) * cosf(lon0);
+                
+                float x2 = cosf(lat1) * sinf(lon1);
+                float y2 = sinf(lat1);
+                float z2 = cosf(lat1) * cosf(lon1);
+                
+                float x3 = cosf(lat0) * sinf(lon1);
+                float y3 = sinf(lat0);
+                float z3 = cosf(lat0) * cosf(lon1);
+                
+                rlNormal3f(x0, y0, z0);
+                rlVertex3f(x0, y0, z0);
+                rlNormal3f(x1, y1, z1);
+                rlVertex3f(x1, y1, z1);
+                rlNormal3f(x2, y2, z2);
+                rlVertex3f(x2, y2, z2);
+                
+                rlNormal3f(x0, y0, z0);
+                rlVertex3f(x0, y0, z0);
+                rlNormal3f(x2, y2, z2);
+                rlVertex3f(x2, y2, z2);
+                rlNormal3f(x3, y3, z3);
+                rlVertex3f(x3, y3, z3);
+            }
+        }
+        
+        rlEnd();
+        rlPopMatrix();
     }
 }
 
@@ -547,26 +603,20 @@ void Scene::DrawScene() const
     auto enemyObjects = this->em.getObjects();
     auto projectileObjects = this->am.getObjects();
 
-    if (this->lightingShader.id != 0)
-    {
-        BeginShaderMode(this->lightingShader);
-        DrawRectangle(this->floor);
-        EndShaderMode();
-    }
-    else
-    {
-        DrawRectangle(this->floor);
-    }
-
-    this->DrawShadowCollection(enemyObjects, floorTop);
-    this->DrawShadowCollection(projectileObjects, floorTop);
-
+    // Begin shader mode once for all lit objects
     if (this->lightingShader.id != 0)
     {
         BeginShaderMode(this->lightingShader);
     }
 
-    // Draw all static objects in the scene
+    // Draw floor
+    DrawRectangle(this->floor);
+
+    // Shadow system temporarily disabled
+    // this->DrawShadowCollection(enemyObjects, floorTop);
+    // this->DrawShadowCollection(projectileObjects, floorTop);
+
+    // Draw all static objects in the scene (walls)
     for (auto &o : this->objects)
     {
         if (o && o->isVisible())
@@ -592,6 +642,7 @@ void Scene::DrawScene() const
             DrawRectangle(*o);
     }
 
+    // End shader mode
     if (this->lightingShader.id != 0)
     {
         EndShaderMode();
@@ -771,6 +822,19 @@ Scene::Scene()
 
     this->InitializeLighting();
 
+    // Apply lighting shader to walls after InitializeLighting
+    if (this->lightingShader.id != 0)
+    {
+        for (auto *wall : this->objects)
+        {
+            if (wall && wall->useTexture && wall->texture != nullptr)
+            {
+                // Walls don't use the model system, but floor uses cubeModel
+                // which already has shader applied in InitializeLighting
+            }
+        }
+    }
+
     if (this->lightingShader.id != 0)
     {
         this->CreatePointLight({0.0f, 3, 0.0f}, {255, 214, 170, 255}, 0.2f);
@@ -779,11 +843,11 @@ Scene::Scene()
         // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
     }
 
-    // Queue decorations for lazy loading instead of loading them immediately
-    this->QueueDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
-    this->QueueDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
-    this->QueueDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
-    this->QueueDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
+    // Load decorations directly
+    this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
+    this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
+    this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
+    this->AddDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
 }
 
 // Getter for the list of objects in the scene
@@ -807,10 +871,18 @@ std::vector<Entity *> Scene::getEntities(EntityCategory cat)
 
 void Scene::SetViewPosition(const Vector3 &viewPosition)
 {
+    static int frameCount = 0;
     this->shaderViewPos = viewPosition;
     if (this->lightingShader.id != 0 && this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+        // Log every 60 frames to avoid spam
+        if (frameCount % 60 == 0)
+        {
+            TraceLog(LOG_INFO, "SetViewPosition called: (%.2f, %.2f, %.2f)", 
+                     viewPosition.x, viewPosition.y, viewPosition.z);
+        }
+        frameCount++;
     }
 }
 

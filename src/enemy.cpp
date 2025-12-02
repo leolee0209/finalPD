@@ -449,7 +449,12 @@ void Enemy::gatherObjects(std::vector<Object *> &out) const
     out.push_back(const_cast<Object *>(&this->o));
 }
 
-ShooterEnemy::ShooterEnemy() = default;
+ShooterEnemy::ShooterEnemy()
+{
+    // Set default bullet pattern (single bullet)
+    this->bulletPattern.bulletCount = 1;
+    this->bulletPattern.arcDegrees = 0.0f;
+}
 
 void ShooterEnemy::UpdateBody(UpdateContext &uc)
 {
@@ -599,7 +604,48 @@ void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosit
         return;
     }
 
-    this->spawnBullet(muzzlePosition, aimDirection);
+    // Spawn bullets according to pattern
+    if (this->bulletPattern.bulletCount <= 1 || this->bulletPattern.arcDegrees <= 0.0f)
+    {
+        // Single bullet - shoot straight
+        this->spawnBullet(muzzlePosition, aimDirection);
+    }
+    else
+    {
+        // Multiple bullets in a fan pattern
+        Vector3 aimNormalized = Vector3Normalize(aimDirection);
+        float halfArc = this->bulletPattern.arcDegrees * 0.5f * DEG2RAD;
+        
+        // Calculate right vector perpendicular to aim direction (in horizontal plane)
+        Vector3 up = {0.0f, 1.0f, 0.0f};
+        Vector3 right = Vector3Normalize(Vector3CrossProduct(aimNormalized, up));
+        if (Vector3LengthSqr(right) < 0.0001f)
+        {
+            // If aiming straight up/down, use a default right vector
+            right = {1.0f, 0.0f, 0.0f};
+        }
+        
+        // Spawn bullets spread across the arc
+        for (int i = 0; i < this->bulletPattern.bulletCount; ++i)
+        {
+            float angle;
+            if (this->bulletPattern.bulletCount == 1)
+            {
+                angle = 0.0f;
+            }
+            else
+            {
+                // Distribute bullets evenly across the arc
+                float t = (float)i / (float)(this->bulletPattern.bulletCount - 1);
+                angle = Lerp(-halfArc, halfArc, t);
+            }
+            
+            // Rotate aim direction around the up axis by the angle
+            Vector3 bulletDir = Vector3RotateByAxisAngle(aimNormalized, up, angle);
+            this->spawnBullet(muzzlePosition, bulletDir);
+        }
+    }
+    
     this->fireCooldown = this->fireInterval;
 }
 

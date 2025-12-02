@@ -43,16 +43,7 @@ private:
         int refCount = 0;
     };
 
-    struct PendingDecoration
-    {
-        std::string modelPath;
-        Vector3 position;
-        float targetHeight;
-        float rotationYDeg;
-    };
-
     std::vector<std::unique_ptr<CollidableModel>> decorations;
-    std::vector<PendingDecoration> pendingDecorations;
     std::unordered_map<std::string, CachedModel> decorationModelCache;
     std::unique_ptr<btDefaultCollisionConfiguration> bulletConfig;
     std::unique_ptr<btCollisionDispatcher> bulletDispatcher;
@@ -72,7 +63,6 @@ private:
     void DrawPlanarShadow(const Object &o, float floorY) const;
     void DrawShadowCollection(const std::vector<Object *> &items, float floorY) const;
     float GetFloorTop() const;
-    void QueueDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg = 0.0f);
     void AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg = 0.0f);
     void DrawDecorations() const;
     Model *AcquireDecorationModel(const std::string &relativePath);
@@ -88,8 +78,6 @@ public:
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
     Model cubeModel; // Shared cube model used to render rotated cubes
-
-    void LoadPendingDecorations();
 
     /**
      * @brief Destructor will release GPU resources (model) and deallocate owned data.

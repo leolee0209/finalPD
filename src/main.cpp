@@ -23,31 +23,51 @@ int main(void)
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
 
-    { // Create a charging enemy (mahjong tile)
-        Enemy *enemy = new ChargingEnemy;
-        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06); // Example size for a mahjong tile
-        enemy->obj().pos = {0.0f, 1.0f, 0.0f};                // Example starting position
-        enemy->setPosition(enemy->obj().pos);
+    // { // Create a charging enemy (mahjong tile)
+    //     Enemy *enemy = new ChargingEnemy;
+    //     enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06); // Example size for a mahjong tile
+    //     enemy->obj().pos = {0.0f, 1.0f, 0.0f};                // Example starting position
+    //     enemy->setPosition(enemy->obj().pos);
 
-        // Get the mahjong texture from the UIManager
-        Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
-        enemy->obj().texture = &mahjongTexture;
-        enemy->obj().useTexture = true;
-        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_1); // Use entire texture
+    //     // Get the mahjong texture from the UIManager
+    //     Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
+    //     enemy->obj().texture = &mahjongTexture;
+    //     enemy->obj().useTexture = true;
+    //     enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_1); // Use entire texture
 
-        scene.em.addEnemy(enemy); // Add the enemy to the scene
-    }
+    //     scene.em.addEnemy(enemy); // Add the enemy to the scene
+    // }
 
-    { // Create a shooter enemy (mahjong tile)
-        Enemy *enemy = new ShooterEnemy;
+    // { // Create a shooter enemy with single bullet (mahjong tile)
+    //     ShooterEnemy *enemy = new ShooterEnemy;
+    //     enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
+    //     enemy->obj().pos = {25.0f, 1.0f, -15.0f};
+    //     enemy->setPosition(enemy->obj().pos);
+
+    //     Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
+    //     enemy->obj().texture = &mahjongTexture;
+    //     enemy->obj().useTexture = true;
+    //     enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_2);
+
+    //     // Single bullet pattern (default)
+    //     enemy->setBulletPattern(1, 0.0f);
+
+    //     scene.em.addEnemy(enemy);
+    // }
+
+    { // Create a shooter enemy with fan pattern (5 bullets in 120 degree arc)
+        ShooterEnemy *enemy = new ShooterEnemy;
         enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
-        enemy->obj().pos = {25.0f, 1.0f, -15.0f};
+        enemy->obj().pos = {-25.0f, 1.0f, -15.0f};
         enemy->setPosition(enemy->obj().pos);
 
         Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
         enemy->obj().texture = &mahjongTexture;
         enemy->obj().useTexture = true;
-        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_2);
+        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_3);
+
+        // Fan pattern (5 bullets across 120 degrees)
+        enemy->setBulletPattern(5, 60.0f);
 
         scene.em.addEnemy(enemy);
     }
@@ -56,7 +76,6 @@ int main(void)
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 
     bool gamePaused = false;
-    bool decorationsLoaded = false;
     struct SlotBinding
     {
         enum class Type
@@ -77,13 +96,6 @@ int main(void)
         if (WindowShouldClose())
         {
             break;
-        }
-
-        // Load decorations after the first frame for faster startup
-        if (!decorationsLoaded)
-        {
-            scene.LoadPendingDecorations();
-            decorationsLoaded = true;
         }
 
         if (IsKeyPressed(KEY_ESCAPE))
