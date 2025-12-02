@@ -29,6 +29,12 @@ void Me::applyPlayerMovement(UpdateContext &uc)
         this->meleeWindupTimer = fmaxf(0.0f, this->meleeWindupTimer - delta);
     }
 
+    // Update shoot slow timer
+    if (this->shootSlowTimer > 0.0f)
+    {
+        this->shootSlowTimer = fmaxf(0.0f, this->shootSlowTimer - delta);
+    }
+
     bool lockMovement = this->meleeWindupTimer > 0.0f;
     if (knockedBack || lockMovement)
     {
@@ -77,7 +83,8 @@ void Me::applyPlayerMovement(UpdateContext &uc)
     params.gravity = GRAVITY;
     params.decelGround = FRICTION;
     params.decelAir = AIR_DRAG;
-    params.maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
+    float baseSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
+    params.maxSpeed = baseSpeed * this->getMovementMultiplier();
     params.maxAccel = airborne ? 0.0f : MAX_ACCEL;
     params.floorY = this->getColliderHalfHeight();
     params.iterativeCollisionResolve = true;
@@ -167,6 +174,21 @@ bool Me::damage(DamageResult &dResult)
 EntityCategory Me::category() const
 {
     return ENTITY_PLAYER;
+}
+
+void Me::applyShootSlow(float slowFactor, float durationSeconds)
+{
+    if (durationSeconds <= 0.0f)
+        return;
+    this->shootSlowTimer = fmaxf(this->shootSlowTimer, durationSeconds);
+    this->shootSlowFactor = slowFactor;
+}
+
+float Me::getMovementMultiplier() const
+{
+    if (this->shootSlowTimer > 0.0f)
+        return this->shootSlowFactor;
+    return 1.0f;
 }
 
 // Updates the projectile's body (movement, gravity, etc.)

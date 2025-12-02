@@ -324,6 +324,8 @@ private:
     float meleeSwingDuration = 0.25f;
     float meleeWindupTimer = 0.0f;
     float knockbackTimer = 0.0f;
+    float shootSlowTimer = 0.0f;
+    float shootSlowFactor = 1.0f;
     float colliderWidth = 1.2f;
     float colliderDepth = 1.2f;
     float colliderHeight = 1.8f;
@@ -366,6 +368,8 @@ public:
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
     bool damage(DamageResult &dResult);
     int getHealth() const { return this->health; }
+    void applyShootSlow(float slowFactor, float durationSeconds);
+    float getMovementMultiplier() const;
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }

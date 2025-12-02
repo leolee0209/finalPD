@@ -16,6 +16,10 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
     if (!uc.scene || !this->spawnedBy)
         return;
 
+    // Check cooldown
+    if (this->cooldownRemaining > 0.0f)
+        return;
+
     Vector3 forward = {0.0f, 0.0f, -1.0f};
     Vector3 spawnPos = this->spawnedBy->pos();
 
@@ -73,11 +77,27 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
         tile);
 
     this->projectiles.push_back(projectile);
+
+    // Start cooldown
+    this->cooldownRemaining = cooldownDuration;
+
+    // Apply movement slow to player
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        player->applyShootSlow(movementSlowFactor, movementSlowDuration);
+    }
 }
 
 void BasicTileAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    
+    // Update cooldown
+    if (this->cooldownRemaining > 0.0f)
+    {
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
     
     // Update all projectiles without physics (no gravity, constant velocity)
     for (auto &p : this->projectiles)

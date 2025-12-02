@@ -38,12 +38,17 @@ class BasicTileAttack : public AttackController
 {
 private:
     std::vector<Projectile> projectiles;
+    float cooldownRemaining = 0.0f;
     static constexpr float shootSpeed = 70.0f;
-   static constexpr float projectileSize = 0.025f;
+    static constexpr float projectileSize = 0.025f;
     static constexpr float projectileDamage = 10.0f;
+    static constexpr float cooldownDuration = 0.5f;
+    static constexpr float movementSlowDuration = 0.3f;
+    static constexpr float movementSlowFactor = 0.4f; // Reduces speed to 40% of normal
 
 public:
     BasicTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+    bool canShoot() const { return this->cooldownRemaining <= 0.0f; }
     void update(UpdateContext &uc) override;
     void spawnProjectile(UpdateContext &uc);
     std::vector<Object *> obj()
