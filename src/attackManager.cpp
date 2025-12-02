@@ -24,6 +24,8 @@ bool isDotTile(MahjongTileType tile)
 // Destructor cleans up dynamically allocated ThousandAttack instances
 AttackManager::~AttackManager()
  {
+    for (auto &a : this->basicTileAttacks)
+        delete a;
     for (auto &a : this->singleTileAttack)
         delete a;
     for (auto &m : this->meleeAttacks)
@@ -37,6 +39,8 @@ AttackManager::~AttackManager()
 // Updates all ThousandAttack instances
 void AttackManager::update(UpdateContext& uc)
 {
+    for (auto &a : this->basicTileAttacks)
+        a->update(uc);
     for (auto &a : this->singleTileAttack)
         a->update(uc);
     for (auto &m : this->meleeAttacks)
@@ -301,6 +305,18 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
     }
 }
 
+BasicTileAttack *AttackManager::getBasicTileAttack(Entity *spawnedBy)
+{
+    for (const auto &a : this->basicTileAttacks)
+    {
+        if (a->spawnedBy == spawnedBy)
+            return a;
+    }
+    // Create a new BasicTileAttack if none exists for the entity
+    this->basicTileAttacks.push_back(new BasicTileAttack(spawnedBy));
+    return this->basicTileAttacks.back();
+}
+
 ThousandTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
 {
     for (const auto &a : this->singleTileAttack)
@@ -352,6 +368,11 @@ std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
     // If caller requests projectiles or all entities, include projectiles
     if (cat == ENTITY_PROJECTILE || cat == ENTITY_ALL)
     {
+        for (const auto &a : this->basicTileAttacks)
+        {
+            auto v = a->getEntities();
+            ret.insert(ret.end(), v.begin(), v.end());
+        }
         for (const auto &a : this->singleTileAttack)
         {
             auto v = a->getEntities();
@@ -370,6 +391,11 @@ std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
 std::vector<Object *> AttackManager::getObjects() const
 {
     std::vector<Object *> ret;
+    for (const auto &a : this->basicTileAttacks)
+    {
+        auto v = a->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
     for (const auto &a : this->singleTileAttack)
     {
         auto v = a->obj();

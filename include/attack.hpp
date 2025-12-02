@@ -29,6 +29,40 @@ public:
 };
 
 /**
+ * @brief Simple tile-based attack controller for basic shooting.
+ *
+ * Fires single projectiles horizontally from the camera/entity direction.
+ * Used for normal attacks without special combo modes.
+ */
+class BasicTileAttack : public AttackController
+{
+private:
+    std::vector<Projectile> projectiles;
+    static constexpr float shootSpeed = 70.0f;
+   static constexpr float projectileSize = 0.025f;
+    static constexpr float projectileDamage = 10.0f;
+
+public:
+    BasicTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+    void update(UpdateContext &uc) override;
+    void spawnProjectile(UpdateContext &uc);
+    std::vector<Object *> obj()
+    {
+        std::vector<Object *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p.obj());
+        return ret;
+    }
+    std::vector<Entity *> getEntities() override
+    {
+        std::vector<Entity *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p);
+        return ret;
+    }
+};
+
+/**
  * @brief Tile-based attack controller used by players/enemies.
  *
  * Manages a list of `Projectile` instances and supports multiple modes
@@ -46,11 +80,10 @@ private:
     enum Mode
     {
         MODE_IDLE,
-        MODE_NORMAL,
         MODE_THOUSAND_FINAL,     // converge to a dest (was ThousandAttack final)
         MODE_TRIPLET_CONNECTING, // spawn connectors (was TripletAttack connecting)
         MODE_TRIPLET_FINAL,
-    } mode = MODE_NORMAL;
+    } mode = MODE_IDLE;
 
     // Thousand-mode data (converge to dest)
     static constexpr float thousandFinalVel = 30.0f;

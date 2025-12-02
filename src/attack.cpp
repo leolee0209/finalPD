@@ -10,6 +10,132 @@ Texture2D DotBombAttack::explosionTexture{};
 bool DotBombAttack::explosionTextureLoaded = false;
 int DotBombAttack::explosionTextureUsers = 0;
 
+// --- BasicTileAttack: simple horizontal shooting ---
+void BasicTileAttack::spawnProjectile(UpdateContext &uc)
+{
+    if (!uc.scene || !this->spawnedBy)
+        return;
+
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    Vector3 spawnPos = this->spawnedBy->pos();
+
+    // Get firing direction from spawner
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        // Get the actual look direction from camera (keep full 3D direction)
+        forward = Vector3Subtract(camera.target, camera.position);
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        spawnPos.y += 1.6f; // spawn at eye level
+    }
+    else if (this->spawnedBy->category() == ENTITY_ENEMY)
+    {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
+        forward = enemy->dir();
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        spawnPos.y += 1.0f;
+    }
+
+    Vector3 velocity = Vector3Scale(forward, shootSpeed);
+
+    // Create projectile object with same proportions as enemy tiles (44, 60, 30) but smaller
+    Vector3 tileSize = Vector3Scale({44.0f, 60.0f, 30.0f}, projectileSize);
+    Object body(tileSize, spawnPos);
+    body.setRotationFromForward(forward);
+    body.useTexture = uc.uiManager != nullptr;
+    if (uc.uiManager)
+    {
+        const auto tile = uc.uiManager->muim.getSelectedTile();
+        body.texture = &uc.uiManager->muim.getSpriteSheet();
+        body.sourceRect = uc.uiManager->muim.getTile(tile);
+        body.tint = WHITE;
+    }
+    body.UpdateOBB();
+
+    MahjongTileType tile = uc.uiManager ? uc.uiManager->muim.getSelectedTile() : MahjongTileType::BAMBOO_1;
+    Projectile projectile(
+        spawnPos,
+        velocity,
+        forward,
+        false,
+        body,
+        FRICTION,
+        AIR_DRAG,
+        tile);
+
+    this->projectiles.push_back(projectile);
+}
+
+void BasicTileAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    // Update all projectiles without physics (no gravity, constant velocity)
+    for (auto &p : this->projectiles)
+    {
+        // Manual position update with constant velocity
+        Vector3 newPos = p.pos();
+        newPos.x += p.vel().x * delta;
+        newPos.y += p.vel().y * delta;
+        newPos.z += p.vel().z * delta;
+        p.setPosition(newPos);
+    }
+
+    // Check for collisions and remove projectiles that hit something
+    auto shouldRemove = [&](Projectile &p) -> bool
+    {
+        // Check if hit ground
+        if (p.pos().y <= 0.1f)
+        {
+            return true;
+        }
+
+        // Check collision with static objects
+        if (uc.scene)
+        {
+            const auto worldHits = Object::collided(p.obj(), uc.scene);
+            for (const auto &hit : worldHits)
+            {
+                if (hit.collided && hit.with == nullptr) // hit static geometry
+                {
+                    return true;
+                }
+            }
+
+            // Check collision with enemies
+            for (Entity *entity : uc.scene->em.getEntities())
+            {
+                if (!entity || entity->category() != ENTITY_ENEMY)
+                    continue;
+                Enemy *enemy = static_cast<Enemy *>(entity);
+                CollisionResult result = Object::collided(p.obj(), enemy->obj());
+                if (result.collided)
+                {
+                    // Deal damage to enemy
+                    DamageResult damage(projectileDamage, result);
+                    uc.scene->em.damage(enemy, damage);
+                    return true; // remove projectile
+                }
+            }
+        }
+
+        return false;
+    };
+
+    this->projectiles.erase(
+        std::remove_if(this->projectiles.begin(), this->projectiles.end(), shouldRemove),
+        this->projectiles.end());
+}
+
 // Helper: create quaternion that faces forward (used by setRotationFromForward / quaternion helpers already in file)
 Quaternion GetQuaternionFromForward(Vector3 forward)
 {
@@ -505,7 +631,7 @@ void ThousandTileAttack::update(UpdateContext &uc)
     case MODE_THOUSAND_FINAL:
         if (thousandEndFinal())
         {
-            this->mode = MODE_NORMAL;
+            this->mode = MODE_IDLE;
             this->thousandActivated = false;
             this->count = 0;
             this->thousandDest = {0};
@@ -536,13 +662,13 @@ void ThousandTileAttack::update(UpdateContext &uc)
             this->projectiles.clear();
             this->connectors.clear();
             this->connectorForward.clear();
-            this->mode = MODE_NORMAL;
+            this->mode = MODE_IDLE;
             this->count = 0;
         }
     }
     break;
     default:
-        // MODE_NORMAL etc. nothing special
+        // MODE_IDLE etc. nothing special
         break;
     }
 }

@@ -99,6 +99,12 @@ public:
     // Setters for entity properties
     void setVelocity(const Vector3 &newVel) { this->velocity = newVel; }
     void setDirection(const Vector3 &newDir) { this->direction = newDir; }
+    void setPosition(const Vector3 &newPos)
+    {
+        this->position = newPos;
+        this->o.pos = newPos;
+        this->o.UpdateOBB();
+    }
 
     /**
      * @brief Per-frame body update.

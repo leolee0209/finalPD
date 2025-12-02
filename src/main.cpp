@@ -27,6 +27,7 @@ int main(void)
         Enemy *enemy = new ChargingEnemy;
         enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06); // Example size for a mahjong tile
         enemy->obj().pos = {0.0f, 1.0f, 0.0f};                // Example starting position
+        enemy->setPosition(enemy->obj().pos);
 
         // Get the mahjong texture from the UIManager
         Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
@@ -41,6 +42,7 @@ int main(void)
         Enemy *enemy = new ShooterEnemy;
         enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
         enemy->obj().pos = {25.0f, 1.0f, -15.0f};
+        enemy->setPosition(enemy->obj().pos);
 
         Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
         enemy->obj().texture = &mahjongTexture;
@@ -54,6 +56,7 @@ int main(void)
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 
     bool gamePaused = false;
+    bool decorationsLoaded = false;
     struct SlotBinding
     {
         enum class Type
@@ -65,7 +68,7 @@ int main(void)
     };
     const SlotBinding slotBindings[3] = {
         {SlotBinding::Type::Mouse, MOUSE_BUTTON_RIGHT},
-        {SlotBinding::Type::Mouse, MOUSE_BUTTON_LEFT},
+        {SlotBinding::Type::Key, KEY_R},
         {SlotBinding::Type::Key, KEY_E}};
 
     // Main game loop
@@ -74,6 +77,13 @@ int main(void)
         if (WindowShouldClose())
         {
             break;
+        }
+
+        // Load decorations after the first frame for faster startup
+        if (!decorationsLoaded)
+        {
+            scene.LoadPendingDecorations();
+            decorationsLoaded = true;
         }
 
         if (IsKeyPressed(KEY_ESCAPE))
@@ -112,6 +122,16 @@ int main(void)
 
         if (!gamePaused)
         {
+            // Handle basic attack (left click)
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            {
+                BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                if (basicAttack)
+                {
+                    basicAttack->spawnProjectile(uc);
+                }
+            }
+
             for (int slotIdx = 0; slotIdx < 3; ++slotIdx)
             {
                 bool pressed = false;

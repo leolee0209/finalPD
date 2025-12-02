@@ -24,6 +24,7 @@ private:
     };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
+    std::vector<BasicTileAttack *> basicTileAttacks;
     std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<DashAttack *> dashAttacks;
@@ -47,6 +48,11 @@ public:
      * @brief Record a thrown tile into history for combo detection.
      */
     void recordThrow(UpdateContext &uc);
+
+    /**
+     * @brief Retrieve or create a `BasicTileAttack` bound to `spawnedBy`.
+     */
+    BasicTileAttack *getBasicTileAttack(Entity *spawnedBy);
 
     /**
      * @brief Retrieve or create a `ThousandTileAttack` bound to `spawnedBy`.

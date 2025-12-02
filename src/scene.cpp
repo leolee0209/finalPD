@@ -20,6 +20,42 @@ btQuaternion ToBtQuaternion(const Quaternion &q)
     return btQuaternion(q.x, q.y, q.z, q.w);
 }
 }
+
+RenderTexture2D Scene::CreateHealthBarTexture(int currentHealth, int maxHealth, float fillPercent)
+{
+    const int barWidth = 128;
+    const int barHeight = 24;
+    const int padding = 3;
+    const int fillHeight = barHeight - padding * 2;
+    const Color bgColor{30, 30, 36, 220};
+    const Color fillColor{230, 41, 55, 255};
+    const Color textColor{255, 255, 255, 255};
+    const Color outlineColor{0, 0, 0, 220};
+
+    RenderTexture2D target = LoadRenderTexture(barWidth, barHeight);
+    BeginTextureMode(target);
+    ClearBackground({0, 0, 0, 0});
+
+    ::DrawRectangle(0, 0, barWidth, barHeight, bgColor);
+    ::DrawRectangleLines(0, 0, barWidth, barHeight, outlineColor);
+
+    if (fillPercent > 0.001f)
+    {
+        int fillWidth = static_cast<int>(barWidth * fillPercent);
+        ::DrawRectangle(0, padding, fillWidth, fillHeight, fillColor);
+    }
+
+    const char *healthText = TextFormat("%d/%d", currentHealth, maxHealth);
+    int fontSize = 10;
+    int textWidth = MeasureText(healthText, fontSize);
+    int textX = (barWidth - textWidth) / 2;
+    int textY = (barHeight - fontSize) / 2;
+    ::DrawText(healthText, textX, textY, fontSize, textColor);
+
+    EndTextureMode();
+    return target;
+}
+
 // Destructor: unload shared model resources
 Scene::~Scene()
 {
@@ -328,6 +364,20 @@ void Scene::ReleaseDecorationModels()
     this->decorationModelCache.clear();
 }
 
+void Scene::QueueDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
+{
+    this->pendingDecorations.push_back({std::string(modelPath), desiredPosition, targetHeight, rotationYDeg});
+}
+
+void Scene::LoadPendingDecorations()
+{
+    for (const auto &pending : this->pendingDecorations)
+    {
+        this->AddDecoration(pending.modelPath.c_str(), pending.position, pending.targetHeight, pending.rotationYDeg);
+    }
+    this->pendingDecorations.clear();
+}
+
 void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
 {
     Model *model = this->AcquireDecorationModel(modelPath);
@@ -581,7 +631,7 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
         camUp = Vector3Normalize(camUp);
     }
 
-    const float worldBarWidth = 1.7f;
+    const float worldBarWidth = 2.5f;
     const float worldBarHeight = 0.32f;
     const float barVisibleDistance = 55.0f;
     const float numbersVisibleDistance = 32.0f;
@@ -652,18 +702,6 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
             Rectangle barFillRect = barBack;
             barFillRect.width = barBack.width * fillPercent;
             DrawRectangleRounded(barFillRect, 0.4f, 6, barFill);
-        }
-
-        if (dist <= numbersVisibleDistance)
-        {
-            const char *healthText = TextFormat("%d / %d", currentHealth, maxHealth);
-            int fontSize = static_cast<int>(Clamp(pixelHeight * 0.75f, 10.0f, 30.0f));
-            if (fontSize < 10)
-                fontSize = 10;
-            int textWidth = MeasureText(healthText, fontSize);
-            float textX = barBack.x + barBack.width * 0.5f - textWidth * 0.5f;
-            float textY = barBack.y + barBack.height * 0.5f - fontSize * 0.5f;
-            DrawText(healthText, static_cast<int>(textX), static_cast<int>(textY), fontSize, RAYWHITE);
         }
     }
 }
@@ -741,10 +779,11 @@ Scene::Scene()
         // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
     }
 
-    this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
-    this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
-    this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
-    this->AddDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
+    // Queue decorations for lazy loading instead of loading them immediately
+    this->QueueDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
+    this->QueueDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
+    this->QueueDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
+    this->QueueDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
 }
 
 // Getter for the list of objects in the scene
