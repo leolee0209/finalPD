@@ -4,17 +4,59 @@
 #include "constant.hpp"
 #include <rlgl.h>
 #include "enemyManager.hpp"
+#include "dialogBox.hpp"
 #include "rlights.hpp"
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <array>
+#include <cfloat>
+#include <string>
 
 namespace
 {
     constexpr char doorModelPath[] = "decorations/door.glb";
     constexpr float doorOpenAngleDeg = 95.0f;
     constexpr float doorOpenDuration = 1.35f;
+    constexpr float doorTargetHeight = 18.0f;
     constexpr float boundingAxisEpsilon = 0.0001f;
+
+    float RandomRange(float minValue, float maxValue)
+    {
+        if (minValue > maxValue)
+            std::swap(minValue, maxValue);
+        int minInt = (int)floorf(minValue * 1000.0f);
+        int maxInt = (int)floorf(maxValue * 1000.0f);
+        int value = GetRandomValue(minInt, maxInt);
+        return (float)value / 1000.0f;
+    }
+
+    void DrawOutlinedText(const Font &font,
+                          const std::string &text,
+                          Vector2 position,
+                          float fontSize,
+                          float outlineThickness,
+                          float shadowOffset,
+                          Color fill,
+                          Color outline,
+                          Color shadow)
+    {
+        DrawTextEx(font, text.c_str(), {position.x + shadowOffset, position.y + shadowOffset}, fontSize, 1.0f, shadow);
+
+        const Vector2 offsets[] = {
+            {-1.0f, -1.0f}, {0.0f, -1.0f}, {1.0f, -1.0f},
+            {-1.0f, 0.0f},                  {1.0f, 0.0f},
+            {-1.0f, 1.0f},  {0.0f, 1.0f},  {1.0f, 1.0f}};
+
+        for (Vector2 off : offsets)
+        {
+            Vector2 outlinePos{position.x + off.x * outlineThickness,
+                               position.y + off.y * outlineThickness};
+            DrawTextEx(font, text.c_str(), outlinePos, fontSize, 1.0f, outline);
+        }
+
+        DrawTextEx(font, text.c_str(), position, fontSize, 1.0f, fill);
+    }
 
     btVector3 ToBtVector(const Vector3 &v)
     {
@@ -27,39 +69,79 @@ namespace
     }
 }
 
-RenderTexture2D Scene::CreateHealthBarTexture(int currentHealth, int maxHealth, float fillPercent)
+void DamageIndicatorSystem::Spawn(const Vector3 &worldPosition, float amount)
 {
-    const int barWidth = 128;
-    const int barHeight = 24;
-    const int padding = 3;
-    const int fillHeight = barHeight - padding * 2;
-    const Color bgColor{30, 30, 36, 220};
-    const Color fillColor{230, 41, 55, 255};
-    const Color textColor{255, 255, 255, 255};
-    const Color outlineColor{0, 0, 0, 220};
+    int rounded = (int)lroundf(amount);
+    if (rounded <= 0)
+        return;
 
-    RenderTexture2D target = LoadRenderTexture(barWidth, barHeight);
-    BeginTextureMode(target);
-    ClearBackground({0, 0, 0, 0});
+    DamageIndicator indicator;
+    indicator.worldPosition = worldPosition;
+    indicator.screenOffset = {RandomRange(-18.0f, 18.0f), RandomRange(-8.0f, 8.0f)};
+    indicator.velocity = {RandomRange(-10.0f, 10.0f), RandomRange(28.0f, 46.0f)};
+    indicator.lifetime = RandomRange(0.8f, 1.05f);
+    indicator.age = 0.0f;
+    indicator.text = std::to_string(rounded);
+    this->indicators.push_back(std::move(indicator));
+}
 
-    ::DrawRectangle(0, 0, barWidth, barHeight, bgColor);
-    ::DrawRectangleLines(0, 0, barWidth, barHeight, outlineColor);
+void DamageIndicatorSystem::Update(float deltaSeconds)
+{
+    if (this->indicators.empty())
+        return;
 
-    if (fillPercent > 0.001f)
+    for (auto &indicator : this->indicators)
     {
-        int fillWidth = static_cast<int>(barWidth * fillPercent);
-        ::DrawRectangle(0, padding, fillWidth, fillHeight, fillColor);
+        indicator.age += deltaSeconds;
+        indicator.screenOffset.x += indicator.velocity.x * deltaSeconds;
+        indicator.screenOffset.y += indicator.velocity.y * deltaSeconds;
     }
 
-    const char *healthText = TextFormat("%d/%d", currentHealth, maxHealth);
-    int fontSize = 10;
-    int textWidth = MeasureText(healthText, fontSize);
-    int textX = (barWidth - textWidth) / 2;
-    int textY = (barHeight - fontSize) / 2;
-    ::DrawText(healthText, textX, textY, fontSize, textColor);
+    this->indicators.erase(std::remove_if(this->indicators.begin(), this->indicators.end(), [](const DamageIndicator &indicator) {
+        return indicator.age >= indicator.lifetime;
+    }), this->indicators.end());
+}
 
-    EndTextureMode();
-    return target;
+void DamageIndicatorSystem::Draw(const Camera &camera) const
+{
+    if (this->indicators.empty())
+        return;
+
+    Font font = GetFontDefault();
+    int screenW = GetScreenWidth();
+    int screenH = GetScreenHeight();
+
+    for (const auto &indicator : this->indicators)
+    {
+        float t = indicator.lifetime > 0.0f ? indicator.age / indicator.lifetime : 1.0f;
+        float alpha = 1.0f - t;
+        if (alpha <= 0.0f)
+            continue;
+
+        Vector2 base = GetWorldToScreen(indicator.worldPosition, camera);
+        if (base.x < -96.0f || base.x > screenW + 96.0f ||
+            base.y < -96.0f || base.y > screenH + 96.0f)
+        {
+            continue;
+        }
+
+        Vector2 drawPos{base.x + indicator.screenOffset.x, base.y + indicator.screenOffset.y};
+        float fontSize = Lerp(38.0f, 26.0f, Clamp(t, 0.0f, 1.0f));
+        float outlineThickness = Clamp(fontSize * 0.08f, 1.0f, 5.0f);
+        float shadowOffset = Clamp(fontSize * 0.12f, 1.0f, 6.0f);
+
+        unsigned char alphaByte = (unsigned char)Clamp(alpha * 255.0f, 0.0f, 255.0f);
+        Color fill = {255, 235, 196, alphaByte};
+        Color outline = {40, 5, 5, alphaByte};
+        Color shadow = {0, 0, 0, (unsigned char)Clamp(alpha * 200.0f, 0.0f, 255.0f)};
+
+        DrawOutlinedText(font, indicator.text, drawPos, fontSize, outlineThickness, shadowOffset, fill, outline, shadow);
+    }
+}
+
+void DamageIndicatorSystem::Clear()
+{
+    this->indicators.clear();
 }
 
 // Destructor: unload shared model resources
@@ -67,7 +149,8 @@ Scene::~Scene()
 {
     this->RemoveDecorationColliders();
     this->decorations.clear();
-    this->ShutdownDoorVisuals();
+    this->doors.clear();
+    this->rooms.clear();
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
@@ -90,8 +173,9 @@ Scene::~Scene()
             UnloadTexture(this->glowTexture);
             this->glowTexture.id = 0;
         }
-        }
-        this->ShutdownBulletWorld();
+    }
+    this->damageIndicators.Clear();
+    this->ShutdownBulletWorld();
 }
 
 void Scene::InitializeBulletWorld()
@@ -283,53 +367,6 @@ float Scene::GetFloorTop() const
     return floorPos.y + floorSize.y * 0.5f;
 }
 
-void Scene::DrawPlanarShadow(const Object &o, float floorY) const
-{
-    if (!o.isVisible())
-    {
-        return;
-    }
-
-    const Vector3 &objPos = o.getPos();
-    if (objPos.y < floorY - 0.05f)
-    {
-        return;
-    }
-
-    float heightAboveFloor = std::max(0.0f, objPos.y - floorY);
-    float fade = std::clamp(1.0f - heightAboveFloor * 0.05f, this->shadowMinAlpha, 1.0f);
-    float baseAlpha = static_cast<float>(this->shadowColor.a) / 255.0f;
-    float finalAlpha = std::clamp(baseAlpha * fade, this->shadowMinAlpha, 1.0f);
-    Color finalColor = this->shadowColor;
-    finalColor.a = static_cast<unsigned char>(finalAlpha * 255.0f);
-
-    Vector3 shadowPos = {objPos.x, floorY - (this->shadowThickness * 0.5f) - 0.005f, objPos.z};
-
-    if (o.isSphere())
-    {
-        float radius = o.getSphereRadius() * this->shadowInflation;
-        DrawCylinder(shadowPos, radius, radius, this->shadowThickness, 16, finalColor);
-    }
-    else
-    {
-        Vector3 size = o.getSize();
-        float width = std::max(0.1f, size.x * this->shadowInflation);
-        float length = std::max(0.1f, size.z * this->shadowInflation);
-        DrawCube(shadowPos, width, this->shadowThickness, length, finalColor);
-    }
-}
-
-void Scene::DrawShadowCollection(const std::vector<Object *> &items, float floorY) const
-{
-    for (auto *obj : items)
-    {
-        if (obj)
-        {
-            this->DrawPlanarShadow(*obj, floorY);
-        }
-    }
-}
-
 Model *Scene::AcquireDecorationModel(const std::string &relativePath)
 {
     auto found = this->decorationModelCache.find(relativePath);
@@ -432,310 +469,258 @@ std::unique_ptr<CollidableModel> Scene::DetachDecoration(CollidableModel *target
     return nullptr;
 }
 
-void Scene::ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredPosition)
+void Scene::ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredCenter)
 {
     if (!door)
+    {
         return;
+    }
 
     Model *doorModel = door->GetModel();
     if (!doorModel)
+    {
         return;
+    }
 
     BoundingBox bounds = GetModelBoundingBox(*doorModel);
     Vector3 scale = door->GetScale();
-    Vector3 pos = desiredPosition;
-    float floorY = this->GetFloorTop();
 
-    float scaledHeight = (bounds.max.y - bounds.min.y) * scale.y;
-    float heightCenter = ((bounds.min.y + bounds.max.y) * 0.5f) * scale.y;
-    pos.y = floorY - heightCenter + scaledHeight * 0.5f;
+    Vector3 localCenter = {
+        (bounds.min.x + bounds.max.x) * 0.5f,
+        (bounds.min.y + bounds.max.y) * 0.5f,
+        (bounds.min.z + bounds.max.z) * 0.5f};
 
-    float widthCenter = ((bounds.min.x + bounds.max.x) * 0.5f) * scale.x;
-    pos.x -= widthCenter;
+    Vector3 scaledCenter = {
+        localCenter.x * scale.x,
+        localCenter.y * scale.y,
+        localCenter.z * scale.z};
 
-    float depthCenter = ((bounds.min.z + bounds.max.z) * 0.5f) * scale.z;
-    pos.z -= depthCenter;
+    Vector3 axis = door->GetRotationAxis();
+    float angle = door->GetRotationAngleDeg();
+    if (Vector3Length(axis) > 0.0001f && fabsf(angle) > 0.0001f)
+    {
+        axis = Vector3Normalize(axis);
+        Quaternion rotation = QuaternionFromAxisAngle(axis, angle * DEG2RAD);
+        scaledCenter = Vector3RotateByQuaternion(scaledCenter, rotation);
+    }
 
-    door->SetPosition(pos);
+    Vector3 worldPosition = Vector3Subtract(desiredCenter, scaledCenter);
+    door->SetPosition(worldPosition);
 }
 
 void Scene::InitializeRooms(float roomWidth, float roomLength, float wallHeight,
-                            const Vector3 &firstCenter, const Vector3 &secondCenter)
+                            const std::vector<Vector3> &centers)
 {
     this->rooms.clear();
-    this->rooms.reserve(2);
+    this->rooms.reserve(centers.size());
 
-    Room first{};
-    first.name = "Entry Hall";
-    first.bounds.min = {firstCenter.x - roomWidth * 0.5f, 0.0f, firstCenter.z - roomLength * 0.5f};
-    first.bounds.max = {firstCenter.x + roomWidth * 0.5f, wallHeight, firstCenter.z + roomLength * 0.5f};
-    this->rooms.push_back(first);
-
-    Room second{};
-    second.name = "Back Room";
-    second.bounds.min = {secondCenter.x - roomWidth * 0.5f, 0.0f, secondCenter.z - roomLength * 0.5f};
-    second.bounds.max = {secondCenter.x + roomWidth * 0.5f, wallHeight, secondCenter.z + roomLength * 0.5f};
-    this->rooms.push_back(second);
+    for (size_t i = 0; i < centers.size(); ++i)
+    {
+        const Vector3 &center = centers[i];
+        BoundingBox bounds;
+        bounds.min = {center.x - roomWidth * 0.5f, 0.0f, center.z - roomLength * 0.5f};
+        bounds.max = {center.x + roomWidth * 0.5f, wallHeight, center.z + roomLength * 0.5f};
+        RoomType type = (i == 0) ? RoomType::Start : RoomType::Enemy;
+        std::string name = (i == 0) ? "Spawn Room" : "Room " + std::to_string(i + 1);
+        this->rooms.push_back(std::make_unique<Room>(name, bounds, type));
+    }
 }
 
-void Scene::UpdateRooms()
+void Scene::BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float roomWidth, float roomLength, float wallThickness)
 {
-    if (this->rooms.empty())
+    if (roomCenters.size() < 5)
     {
         return;
     }
 
-    const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
-    for (int roomIndex = 0; roomIndex < static_cast<int>(this->rooms.size()); ++roomIndex)
+    float halfWidth = roomWidth * 0.5f;
+    float halfLength = roomLength * 0.5f;
+    float doorCenterY = this->GetFloorTop() + doorTargetHeight * 0.5f;
+
+    struct DoorLink
     {
-        Room &room = this->rooms[roomIndex];
-        bool hasEnemy = false;
-        for (Entity *entity : enemies)
-        {
-            Enemy *enemy = dynamic_cast<Enemy *>(entity);
-            if (!enemy)
-            {
-                continue;
-            }
-
-            const Vector3 pos = enemy->obj().getPos();
-            if (pos.x >= room.bounds.min.x && pos.x <= room.bounds.max.x &&
-                pos.y >= room.bounds.min.y && pos.y <= room.bounds.max.y &&
-                pos.z >= room.bounds.min.z && pos.z <= room.bounds.max.z)
-            {
-                hasEnemy = true;
-                room.hadEnemies = true;
-                break;
-            }
-        }
-
-        if (!hasEnemy && room.hadEnemies && !room.completed)
-        {
-            room.completed = true;
-            this->OnRoomCompleted(roomIndex);
-        }
-    }
-}
-
-void Scene::OnRoomCompleted(int roomIndex)
-{
-    if (roomIndex < 0 || roomIndex >= static_cast<int>(this->rooms.size()))
-    {
-        return;
-    }
-
-    const Room &room = this->rooms[roomIndex];
-    for (int doorIndex : room.connectedDoors)
-    {
-        this->OpenDoor(doorIndex);
-    }
-}
-
-void Scene::OpenDoor(int doorIndex)
-{
-    if (doorIndex < 0 || doorIndex >= static_cast<int>(this->doors.size()))
-    {
-        return;
-    }
-
-    DoorInstance &door = this->doors[doorIndex];
-    if (door.openComplete)
-    {
-        return;
-    }
-
-    door.opening = true;
-}
-
-void Scene::UpdateDoorAnimations(float deltaSeconds)
-{
-    if (deltaSeconds <= 0.0f)
-    {
-        return;
-    }
-
-    for (auto &door : this->doors)
-    {
-        if (!door.opening || door.openComplete)
-        {
-            continue;
-        }
-
-        if (door.openDuration <= 0.0f)
-        {
-            door.openProgress = 1.0f;
-        }
-        else
-        {
-            door.openProgress = std::clamp(door.openProgress + deltaSeconds / door.openDuration, 0.0f, 1.0f);
-        }
-
-        float eased = door.openProgress * door.openProgress * (3.0f - 2.0f * door.openProgress); // smoothstep
-        if (door.leftLeaf.valid)
-        {
-            door.leftLeaf.currentAngleDeg = door.leftLeaf.targetAngleDeg * eased;
-        }
-        if (door.rightLeaf.valid)
-        {
-            door.rightLeaf.currentAngleDeg = door.rightLeaf.targetAngleDeg * eased;
-        }
-
-        if (door.openProgress >= 1.0f)
-        {
-            door.openComplete = true;
-            if (door.collisionEnabled && this->bulletWorld && door.collider)
-            {
-                if (btCollisionObject *collisionObject = door.collider->GetBulletObject())
-                {
-                    this->bulletWorld->removeCollisionObject(collisionObject);
-                }
-                door.collisionEnabled = false;
-            }
-        }
-    }
-}
-
-bool Scene::InitializeDoorVisuals(DoorInstance &door)
-{
-    if (!door.collider)
-    {
-        return false;
-    }
-
-    door.visualModel = door.collider->GetModel();
-    if (!door.visualModel)
-    {
-        return false;
-    }
-
-    if (door.visualModel->meshCount < 2)
-    {
-        TraceLog(LOG_WARNING, "Door model missing expected meshes");
-        door.visualModel = nullptr;
-        return false;
-    }
-
-    auto setupLeaf = [&](DoorLeafVisual &leaf, int meshIndex, float openSign)
-    {
-        if (!door.visualModel || meshIndex < 0 || meshIndex >= door.visualModel->meshCount)
-        {
-            return;
-        }
-
-        leaf.meshIndex = meshIndex;
-        leaf.bounds = GetMeshBoundingBox(door.visualModel->meshes[meshIndex]);
-        float hingeX = (openSign < 0.0f) ? leaf.bounds.min.x : leaf.bounds.max.x;
-        float centerZ = (leaf.bounds.min.z + leaf.bounds.max.z) * 0.5f;
-        leaf.hingeLocal = {hingeX, leaf.bounds.min.y, centerZ};
-        leaf.targetAngleDeg = doorOpenAngleDeg * openSign;
-        leaf.currentAngleDeg = 0.0f;
-        leaf.valid = true;
+        Vector3 center;
+        float rotationDeg;
+        int roomA;
+        int roomB;
     };
 
-    setupLeaf(door.leftLeaf, 0, -1.0f);
-    setupLeaf(door.rightLeaf, 1, 1.0f);
+    std::vector<DoorLink> doorLinks;
+    doorLinks.reserve(4);
+    doorLinks.push_back({
+        {roomCenters[0].x,
+         doorCenterY,
+         roomCenters[0].z + halfLength - wallThickness * 0.5f},
+        0.0f, 0, 1});
+    doorLinks.push_back({
+        {roomCenters[1].x - halfWidth + wallThickness * 0.5f,
+         doorCenterY,
+         roomCenters[1].z},
+        90.0f, 1, 2});
+    doorLinks.push_back({
+        {roomCenters[1].x + halfWidth - wallThickness * 0.5f,
+         doorCenterY,
+         roomCenters[1].z},
+        90.0f, 1, 3});
+    doorLinks.push_back({
+        {roomCenters[3].x,
+         doorCenterY,
+         roomCenters[3].z + halfLength - wallThickness * 0.5f},
+        0.0f, 3, 4});
 
-    if (!door.leftLeaf.valid || !door.rightLeaf.valid)
+    for (const DoorLink &link : doorLinks)
     {
-        door.visualModel = nullptr;
-        return false;
+        this->CreateDoorBetweenRooms(link.center, link.rotationDeg, link.roomA, link.roomB);
     }
-
-    if (this->lightingShader.id != 0)
-    {
-        this->ApplyLightingToDoor(door);
-    }
-
-    return true;
 }
 
-void Scene::ApplyLightingToDoor(DoorInstance &door)
+void Scene::CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg, int roomA, int roomB)
 {
-    if (this->lightingShader.id == 0 || !door.visualModel)
+    if (roomA < 0 || roomB < 0)
     {
         return;
     }
 
-    for (int i = 0; i < door.visualModel->materialCount; ++i)
-    {
-        door.visualModel->materials[i].shader = this->lightingShader;
-    }
-}
-
-Vector3 Scene::TransformDoorPoint(const DoorInstance &door, const Vector3 &localPoint) const
-{
-    Vector3 scaled = {localPoint.x * door.scale.x, localPoint.y * door.scale.y, localPoint.z * door.scale.z};
-    if (door.rotationAngleDeg != 0.0f)
-    {
-        scaled = Vector3RotateByQuaternion(scaled, door.rotation);
-    }
-    return Vector3Add(door.basePosition, scaled);
-}
-
-void Scene::DrawDoorLeaf(const DoorInstance &door, const DoorLeafVisual &leaf) const
-{
-    if (!leaf.valid || !door.visualModel)
+    if (roomA >= static_cast<int>(this->rooms.size()) || roomB >= static_cast<int>(this->rooms.size()))
     {
         return;
     }
 
-    if (leaf.meshIndex < 0 || leaf.meshIndex >= door.visualModel->meshCount)
+    CollidableModel *doorDecoration = this->AddDecoration(doorModelPath, doorCenter, doorTargetHeight, rotationYDeg, true);
+    if (!doorDecoration)
     {
         return;
     }
 
-    int materialIndex = 0;
-    if (door.visualModel->meshMaterial)
+    auto owned = this->DetachDecoration(doorDecoration);
+    if (!owned)
     {
-        int candidate = door.visualModel->meshMaterial[leaf.meshIndex];
-        if (candidate >= 0 && candidate < door.visualModel->materialCount)
+        return;
+    }
+
+    this->ConfigureDoorPlacement(owned.get(), doorCenter);
+
+    Shader *shaderPtr = (this->lightingShader.id != 0) ? &this->lightingShader : nullptr;
+    auto door = Door::Create(std::move(owned), this->bulletWorld.get(), shaderPtr, doorOpenDuration, doorOpenAngleDeg);
+    if (!door)
+    {
+        return;
+    }
+
+    Door *doorPtr = door.get();
+    this->rooms[roomA]->AttachDoor(doorPtr);
+    this->rooms[roomB]->AttachDoor(doorPtr);
+    this->doors.push_back(std::move(door));
+}
+
+void Scene::PopulateRoomEnemies(const std::vector<Vector3> &roomCenters)
+{
+    if (roomCenters.size() <= 1)
+    {
+        return;
+    }
+
+    const Vector3 tileSize = Vector3Scale({44.0f, 60.0f, 30.0f}, 0.06f);
+    float floorY = this->GetFloorTop();
+
+    auto spawnShooter = [&](const Vector3 &center, const Vector2 &offset)
+    {
+        ShooterEnemy *enemy = new ShooterEnemy();
+        enemy->obj().size = tileSize;
+        Vector3 position = {center.x + offset.x, floorY + tileSize.y * 0.5f, center.z + offset.y};
+        enemy->obj().pos = position;
+        enemy->setPosition(position);
+        
+        this->em.addEnemy(enemy);
+    };
+
+    std::array<std::vector<Vector2>, 5> enemyOffsets;
+    enemyOffsets[0] = {};
+    enemyOffsets[1] = {Vector2{-18.0f, -8.0f}, Vector2{14.0f, 6.0f}};
+    enemyOffsets[2] = {Vector2{0.0f, 0.0f}};
+    enemyOffsets[3] = {Vector2{-12.0f, 8.0f}, Vector2{12.0f, -10.0f}};
+    enemyOffsets[4] = {Vector2{-16.0f, 10.0f}, Vector2{0.0f, -12.0f}, Vector2{16.0f, 6.0f}};
+
+    for (size_t roomIndex = 1; roomIndex < roomCenters.size() && roomIndex < enemyOffsets.size(); ++roomIndex)
+    {
+        const Vector3 &center = roomCenters[roomIndex];
+        for (const Vector2 &offset : enemyOffsets[roomIndex])
         {
-            materialIndex = candidate;
+            spawnShooter(center, offset);
         }
     }
+}
 
-    Vector3 hingeWorld = this->TransformDoorPoint(door, leaf.hingeLocal);
-
-    rlPushMatrix();
-    rlTranslatef(hingeWorld.x, hingeWorld.y, hingeWorld.z);
-    if (door.rotationAngleDeg != 0.0f)
+void Scene::AssignEnemyTextures(UIManager *uiManager)
+{
+    if (!uiManager)
+        return;
+    
+    // Assign random tile textures to all enemies
+    std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    for (Entity *entity : enemies)
     {
-        rlRotatef(door.rotationAngleDeg, door.rotationAxis.x, door.rotationAxis.y, door.rotationAxis.z);
+        if (Enemy *enemy = dynamic_cast<Enemy *>(entity))
+        {
+            TileType randomType = (TileType)(rand() % (int)TileType::TILE_COUNT);
+            enemy->obj().texture = &uiManager->muim.getSpriteSheet();
+            enemy->obj().sourceRect = uiManager->muim.getTile(randomType);
+            enemy->obj().useTexture = true;
+        }
     }
-    rlScalef(door.scale.x, door.scale.y, door.scale.z);
-    rlRotatef(leaf.currentAngleDeg, 0.0f, 1.0f, 0.0f);
-    rlTranslatef(-leaf.hingeLocal.x, -leaf.hingeLocal.y, -leaf.hingeLocal.z);
-    DrawMesh(door.visualModel->meshes[leaf.meshIndex], door.visualModel->materials[materialIndex], MatrixIdentity());
-    rlPopMatrix();
+}
+
+void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
+{
+    for (auto &room : this->rooms)
+    {
+        if (room)
+        {
+            bool wasCompleted = room->IsCompleted();
+            room->Update(enemies);
+            
+            // Spawn briefcase when room is newly completed
+            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy)
+            {
+                // Calculate room center
+                BoundingBox bounds = room->GetBounds();
+                Vector3 center = {
+                    (bounds.min.x + bounds.max.x) * 0.5f,
+                    bounds.min.y + 1.0f,  // Spawn slightly above floor
+                    (bounds.min.z + bounds.max.z) * 0.5f
+                };
+                
+                // Generate 3-5 reward tiles with random stats
+                std::vector<RewardTile> rewards;
+                int tileCount = 3 + (rand() % 3);  // 3-5 tiles
+                for (int i = 0; i < tileCount; ++i)
+                {
+                    // Random tile type
+                    TileType type = (TileType)(rand() % (int)TileType::TILE_COUNT);
+                    // Random stats (better than starting tiles)
+                    float damage = 10.0f + (float)(rand() % 8);  // 10-17 damage
+                    float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);  // 0.9-1.5 fire rate
+                    rewards.push_back({type, TileStats(damage, fireRate)});
+                }
+                
+                // Create briefcase
+                this->rewardBriefcases.push_back(std::make_unique<RewardBriefcase>(center, rewards));
+            }
+        }
+    }
 }
 
 void Scene::DrawDoors() const
 {
     for (const auto &door : this->doors)
     {
-        this->DrawDoorLeaf(door, door.leftLeaf);
-        this->DrawDoorLeaf(door, door.rightLeaf);
-    }
-}
-
-void Scene::ShutdownDoorVisuals()
-{
-    for (auto &door : this->doors)
-    {
-        if (door.collider && this->bulletWorld)
+        if (door)
         {
-            if (btCollisionObject *collisionObject = door.collider->GetBulletObject())
-            {
-                this->bulletWorld->removeCollisionObject(collisionObject);
-            }
+            door->Draw();
         }
-
-        door.leftLeaf.valid = false;
-        door.rightLeaf.valid = false;
-        door.visualModel = nullptr;
     }
-    this->doors.clear();
 }
+
 
 void Scene::DrawDecorations() const
 {
@@ -790,7 +775,10 @@ void Scene::InitializeLighting()
 
     for (auto &door : this->doors)
     {
-        this->ApplyLightingToDoor(door);
+        if (door)
+        {
+            door->SetLightingShader(&this->lightingShader);
+        }
     }
 }
 
@@ -909,10 +897,6 @@ void Scene::DrawScene(Camera camera) const
     // Draw floor
     DrawRectangle(this->floor);
 
-    // Shadow system temporarily disabled
-    // this->DrawShadowCollection(enemyObjects, floorTop);
-    // this->DrawShadowCollection(projectileObjects, floorTop);
-
     // Draw all static objects in the scene (walls)
     for (auto &o : this->objects)
     {
@@ -922,6 +906,15 @@ void Scene::DrawScene(Camera camera) const
 
     this->DrawDecorations();
     this->DrawDoors();
+    
+    // Draw all reward briefcases
+    for (const auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase)
+        {
+            briefcase->Draw();
+        }
+    }
 
     int debugBulletCount = 0;
     for (auto *obj : enemyObjects)
@@ -978,40 +971,6 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
     const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
     if (enemies.empty())
         return;
-
-    Vector3 camForward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-    if (Vector3LengthSqr(camForward) < 0.0001f)
-    {
-        camForward = {0.0f, 0.0f, -1.0f};
-    }
-    Vector3 camRight = Vector3CrossProduct(camForward, {0.0f, 1.0f, 0.0f});
-    if (Vector3LengthSqr(camRight) < 0.0001f)
-    {
-        camRight = {1.0f, 0.0f, 0.0f};
-    }
-    else
-    {
-        camRight = Vector3Normalize(camRight);
-    }
-    Vector3 camUp = Vector3CrossProduct(camRight, camForward);
-    if (Vector3LengthSqr(camUp) < 0.0001f)
-    {
-        camUp = {0.0f, 1.0f, 0.0f};
-    }
-    else
-    {
-        camUp = Vector3Normalize(camUp);
-    }
-
-    const float worldBarWidth = 2.5f;
-    const float worldBarHeight = 0.32f;
-    const float barVisibleDistance = 55.0f;
-    const float numbersVisibleDistance = 32.0f;
-    const float verticalOffset = 1.4f;
-    const Color barOutline{0, 0, 0, 220};
-    const Color barBackground{30, 30, 36, 220};
-    const Color barFill{230, 41, 55, 255};
-
     for (Entity *entity : enemies)
     {
         if (!entity || entity->category() != ENTITY_ENEMY)
@@ -1021,61 +980,33 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
         if (!enemy)
             continue;
 
-        const int currentHealth = enemy->getHealth();
-        const int maxHealth = enemy->getMaxHealth();
-        if (maxHealth <= 0 || currentHealth <= 0)
+        DialogBox *dlg = enemy->getHealthDialog();
+        if (!dlg)
             continue;
 
-        Vector3 headPos = enemy->obj().getPos();
-        headPos.y += enemy->obj().getSize().y * 0.5f + verticalOffset;
-
-        Vector3 toEnemy = Vector3Subtract(headPos, camera.position);
-        float distSq = Vector3LengthSqr(toEnemy);
-        if (distSq < 0.0001f)
-            continue;
-        float dist = sqrtf(distSq);
-        if (dist > barVisibleDistance)
-            continue;
-        Vector3 toEnemyDir = Vector3Scale(toEnemy, 1.0f / sqrtf(distSq));
-        if (Vector3DotProduct(camForward, toEnemyDir) <= 0.0f)
-            continue;
-
-        Vector2 screenPos = GetWorldToScreen(headPos, camera);
-        if (screenPos.x < 0.0f || screenPos.x > static_cast<float>(GetScreenWidth()) ||
-            screenPos.y < 0.0f || screenPos.y > static_cast<float>(GetScreenHeight()))
-        {
-            continue;
-        }
-
-        Vector3 barCenter = headPos;
-        Vector3 halfRight = Vector3Scale(camRight, worldBarWidth * 0.5f);
-        Vector3 halfUp = Vector3Scale(camUp, worldBarHeight * 0.5f);
-
-        Vector2 screenLeft = GetWorldToScreen(Vector3Subtract(barCenter, halfRight), camera);
-        Vector2 screenRight = GetWorldToScreen(Vector3Add(barCenter, halfRight), camera);
-        Vector2 screenTop = GetWorldToScreen(Vector3Add(barCenter, halfUp), camera);
-        Vector2 screenBottom = GetWorldToScreen(Vector3Subtract(barCenter, halfUp), camera);
-
-        float pixelWidth = Vector2Distance(screenLeft, screenRight);
-        float pixelHeight = fabsf(screenTop.y - screenBottom.y);
-        if (pixelWidth < 4.0f || pixelHeight < 2.0f)
-            continue;
-
-        Rectangle barBack{screenPos.x - pixelWidth * 0.5f,
-                          screenPos.y - pixelHeight,
-                          pixelWidth,
-                          pixelHeight};
-        DrawRectangleRounded(barBack, 0.45f, 6, barBackground);
-        DrawRectangleRoundedLines(barBack, 0.45f, 6, barOutline);
-
-        float fillPercent = enemy->getHealthPercent();
-        if (fillPercent > 0.0f)
-        {
-            Rectangle barFillRect = barBack;
-            barFillRect.width = barBack.width * fillPercent;
-            DrawRectangleRounded(barFillRect, 0.4f, 6, barFill);
-        }
+        dlg->Draw(camera);
     }
+}
+
+void Scene::DrawDamageIndicators(const Camera &camera) const
+{
+    this->damageIndicators.Draw(camera);
+}
+
+void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
+{
+    if (damageAmount <= 0.0f)
+        return;
+
+    const Object &body = enemy.obj();
+    Vector3 halfSize = Vector3Scale(body.getSize(), 0.5f);
+
+    Vector3 spawn = body.getPos();
+    spawn.x += RandomRange(-halfSize.x, halfSize.x);
+    spawn.y += halfSize.y + RandomRange(-halfSize.y * 0.2f, halfSize.y * 0.6f);
+    spawn.z += RandomRange(-halfSize.z, halfSize.z);
+
+    this->damageIndicators.Spawn(spawn, damageAmount);
 }
 
 // Updates all entities and attacks in the scene
@@ -1087,13 +1018,31 @@ void Scene::Update(UpdateContext &uc)
     this->em.update(uc);
 
     // Monitor room completion after enemies update so door logic is in sync
-    this->UpdateRooms();
+    const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    this->UpdateRooms(enemies);
 
     // Advance any active door animations
-    this->UpdateDoorAnimations(deltaSeconds);
+    for (auto &door : this->doors)
+    {
+        if (door)
+        {
+            door->Update(deltaSeconds);
+        }
+    }
+    
+    // Update all reward briefcases
+    for (auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase)
+        {
+            briefcase->Update(uc);
+        }
+    }
 
     // Update all attacks managed by the AttackManager
     this->am.update(uc);
+
+    this->damageIndicators.Update(deltaSeconds);
 }
 
 // Constructor initializes the scene with default objects
@@ -1122,7 +1071,6 @@ Scene::Scene()
     const float wallThickness = 1.0f;
     const float wallHeight = 30.0f;
     const float floorThickness = 0.5f;
-    const float doorHeight = 18.0f;
     float doorWidth = 12.0f;
 
     if (Model *doorSample = this->AcquireDecorationModel(doorModelPath))
@@ -1131,21 +1079,40 @@ Scene::Scene()
         float sourceHeight = sourceBounds.max.y - sourceBounds.min.y;
         if (sourceHeight > boundingAxisEpsilon)
         {
-            float uniformScale = doorHeight / sourceHeight;
+            float uniformScale = doorTargetHeight / sourceHeight;
             doorWidth = (sourceBounds.max.x - sourceBounds.min.x) * uniformScale;
         }
     }
 
-    Vector3 firstRoomCenter{0.0f, 0.0f, 0.0f};
-    Vector3 secondRoomCenter{0.0f, 0.0f, roomLength - wallThickness};
+    const float sharedWidthSpacing = roomWidth - wallThickness;
+    const float sharedLengthSpacing = roomLength - wallThickness;
 
-    float minRoomZ = firstRoomCenter.z - roomLength * 0.5f;
-    float maxRoomZ = secondRoomCenter.z + roomLength * 0.5f;
-    float combinedLength = maxRoomZ - minRoomZ;
-    float floorCenterZ = minRoomZ + combinedLength * 0.5f;
+    std::vector<Vector3> roomCenters;
+    roomCenters.reserve(5);
+    roomCenters.push_back({0.0f, 0.0f, 0.0f});                                         // Spawn room
+    roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                           // Hub room
+    roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});               // West branch
+    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                // East branch
+    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
 
-    this->floor = Object({roomWidth - wallThickness, floorThickness, combinedLength - wallThickness},
-                         {0.0f, -floorThickness / 2.0f, floorCenterZ});
+    Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
+    Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
+    for (const Vector3 &center : roomCenters)
+    {
+        minBounds.x = std::min(minBounds.x, center.x - roomWidth * 0.5f);
+        maxBounds.x = std::max(maxBounds.x, center.x + roomWidth * 0.5f);
+        minBounds.z = std::min(minBounds.z, center.z - roomLength * 0.5f);
+        maxBounds.z = std::max(maxBounds.z, center.z + roomLength * 0.5f);
+    }
+
+    Vector3 floorSize = {(maxBounds.x - minBounds.x) + wallThickness,
+                         floorThickness,
+                         (maxBounds.z - minBounds.z) + wallThickness};
+    Vector3 floorCenter = {(minBounds.x + maxBounds.x) * 0.5f,
+                           -floorThickness / 2.0f,
+                           (minBounds.z + maxBounds.z) * 0.5f};
+
+    this->floor = Object(floorSize, floorCenter);
     if (this->floorTexture.id != 0)
     {
         this->ApplyFullTexture(this->floor, this->floorTexture);
@@ -1161,7 +1128,25 @@ Scene::Scene()
         this->objects.push_back(wall);
     };
 
-    auto buildRoom = [&](const Vector3 &center, bool doorNorth, bool doorSouth)
+    struct RoomDoorConfig
+    {
+        bool north = false;
+        bool south = false;
+        bool east = false;
+        bool west = false;
+    };
+
+    std::array<RoomDoorConfig, 5> doorConfigs{};
+    doorConfigs[0].north = true;        // Room 1 -> Room 2
+    doorConfigs[1].south = true;        // Room 2 -> Room 1
+    doorConfigs[1].west = true;         // Room 2 -> Room 3
+    doorConfigs[1].east = true;         // Room 2 -> Room 4
+    doorConfigs[2].east = true;         // Room 3 -> Room 2
+    doorConfigs[3].west = true;         // Room 4 -> Room 2
+    doorConfigs[3].north = true;        // Room 4 -> Room 5
+    doorConfigs[4].south = true;        // Room 5 -> Room 4
+
+    auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
     {
         float halfWidth = roomWidth * 0.5f;
         float halfLength = roomLength * 0.5f;
@@ -1189,24 +1174,46 @@ Scene::Scene()
             }
         };
 
-        addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorNorth);
-        addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorSouth);
+        addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorConfig.north);
+        addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorConfig.south);
+
+        auto addWallColumn = [&](float xPos, bool hasDoor)
+        {
+            bool canAddDoor = (doorWidth < roomLength - 1.0f);
+            if (hasDoor && canAddDoor)
+            {
+                float sideLength = (roomLength - doorWidth) * 0.5f;
+                float doorHalf = doorWidth * 0.5f;
+                float segmentHalf = sideLength * 0.5f;
+                if (sideLength > 0.1f)
+                {
+                    createWall({wallThickness, wallHeight, sideLength},
+                               {xPos, wallY, center.z - (doorHalf + segmentHalf)});
+                    createWall({wallThickness, wallHeight, sideLength},
+                               {xPos, wallY, center.z + (doorHalf + segmentHalf)});
+                }
+            }
+            else
+            {
+                createWall({wallThickness, wallHeight, roomLength}, {xPos, wallY, center.z});
+            }
+        };
 
         float eastX = center.x + halfWidth - wallThickness / 2.0f;
         float westX = center.x - halfWidth + wallThickness / 2.0f;
-        createWall({wallThickness, wallHeight, roomLength}, {eastX, wallY, center.z});
-        createWall({wallThickness, wallHeight, roomLength}, {westX, wallY, center.z});
+        addWallColumn(eastX, doorConfig.east);
+        addWallColumn(westX, doorConfig.west);
     };
 
-    buildRoom(firstRoomCenter, true, false);
-    buildRoom(secondRoomCenter, false, true);
+    for (size_t i = 0; i < roomCenters.size(); ++i)
+    {
+        const RoomDoorConfig &config = (i < doorConfigs.size()) ? doorConfigs[i] : RoomDoorConfig{};
+        buildRoom(roomCenters[i], config);
+    }
 
-    this->InitializeRooms(roomWidth, roomLength, wallHeight, firstRoomCenter, secondRoomCenter);
+    this->InitializeRooms(roomWidth, roomLength, wallHeight, roomCenters);
     this->doors.clear();
-
-    const Vector3 doorwayPosition = {firstRoomCenter.x,
-                                     10.0f,
-                                     firstRoomCenter.z + roomLength * 0.5f - wallThickness * 0.5f};
+    this->BuildDoorNetwork(roomCenters, roomWidth, roomLength, wallThickness);
 
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
@@ -1239,50 +1246,13 @@ Scene::Scene()
 
     if (this->lightingShader.id != 0)
     {
-        this->CreatePointLight({firstRoomCenter.x, 3.0f, firstRoomCenter.z}, {255, 214, 170, 255}, 0.25f);
-        this->CreatePointLight({secondRoomCenter.x, 3.0f, secondRoomCenter.z}, {255, 214, 190, 255}, 0.22f);
-        // Additional lights can be added per room as needed.
-    }
-
-    // Add a door between the two rooms that starts closed with collision enabled
-    if (CollidableModel *doorDecoration = this->AddDecoration(doorModelPath, doorwayPosition, doorHeight, 0.0f, true))
-    {
-        auto owned = this->DetachDecoration(doorDecoration);
-        if (owned)
+        for (const Vector3 &center : roomCenters)
         {
-            this->ConfigureDoorPlacement(owned.get(), doorwayPosition);
-
-            DoorInstance instance{};
-            instance.collider = std::move(owned);
-            instance.collisionEnabled = true;
-            instance.openDuration = doorOpenDuration;
-            instance.basePosition = instance.collider->GetPosition();
-            instance.scale = instance.collider->GetScale();
-            instance.rotationAxis = instance.collider->GetRotationAxis();
-            instance.rotationAngleDeg = instance.collider->GetRotationAngleDeg();
-            Vector3 axis = instance.rotationAxis;
-            if (Vector3Length(axis) < 0.0001f)
-            {
-                axis = {0.0f, 1.0f, 0.0f};
-            }
-            axis = Vector3Normalize(axis);
-            instance.rotation = QuaternionFromAxisAngle(axis, instance.rotationAngleDeg * DEG2RAD);
-
-            if (this->InitializeDoorVisuals(instance))
-            {
-                int doorIndex = static_cast<int>(this->doors.size());
-                this->doors.push_back(std::move(instance));
-                if (!this->rooms.empty())
-                {
-                    this->rooms[0].connectedDoors.push_back(doorIndex);
-                    if (this->rooms.size() > 1)
-                    {
-                        this->rooms[1].connectedDoors.push_back(doorIndex);
-                    }
-                }
-            }
+            this->CreatePointLight({center.x, 3.0f, center.z}, {255, 214, 180, 255}, 0.24f);
         }
     }
+
+    this->PopulateRoomEnemies(roomCenters);
 
     // Load decorations directly
     this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
@@ -1316,6 +1286,97 @@ void Scene::SetViewPosition(const Vector3 &viewPosition)
     if (this->lightingShader.id != 0 && this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
+}
+
+std::vector<RewardBriefcase *> Scene::GetRewardBriefcases()
+{
+    std::vector<RewardBriefcase *> result;
+    for (auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase)
+        {
+            result.push_back(briefcase.get());
+        }
+    }
+    return result;
+}
+
+void Scene::UpdateRoomDoors(const Vector3 &playerPos)
+{
+    // Determine current player room
+    Room *newRoom = nullptr;
+    for (auto &room : this->rooms)
+    {
+        if (room && room->IsPlayerInside(playerPos))
+        {
+            newRoom = room.get();
+            break;
+        }
+    }
+    
+    // If player changed rooms, close doors behind them
+    if (newRoom != this->currentPlayerRoom && this->currentPlayerRoom)
+    {
+        for (Door *door : this->currentPlayerRoom->GetDoors())
+        {
+            if (door && !door->IsClosed())
+            {
+                // Only close if the new room isn't completed yet
+                if (!newRoom || !newRoom->IsCompleted() || !this->currentPlayerRoom->IsCompleted())
+                {
+                    door->Close();
+                }
+            }
+        }
+    }
+    
+    this->currentPlayerRoom = newRoom;
+}
+
+void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const
+{
+    const int screenW = GetScreenWidth();
+    const int screenH = GetScreenHeight();
+    const int fontSize = 22;
+    int y = screenH - 50;
+    
+    // Briefcase prompt (if any nearby and UI not open)
+    bool briefcaseNearby = false;
+    for (const auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase && briefcase->IsPlayerNearby(playerPos) && !briefcase->IsUIOpen())
+        {
+            briefcaseNearby = true;
+            break;
+        }
+    }
+    if (briefcaseNearby)
+    {
+        const char *text = "Press C to Open Briefcase";
+        int tw = MeasureText(text, fontSize);
+        DrawText(text, (screenW - tw) / 2, y, fontSize, YELLOW);
+        y -= 26;
+    }
+    
+    // Door prompt (if near a closed door in a completed room)
+    if (this->currentPlayerRoom && this->currentPlayerRoom->IsCompleted())
+    {
+        bool doorNearby = false;
+        for (Door *door : this->currentPlayerRoom->GetDoors())
+        {
+            if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
+            {
+                doorNearby = true;
+                break;
+            }
+        }
+        if (doorNearby)
+        {
+            const char *text = "Press C to Open Door";
+            int tw = MeasureText(text, fontSize);
+            DrawText(text, (screenW - tw) / 2, y, fontSize, GREEN);
+        }
     }
 }
 

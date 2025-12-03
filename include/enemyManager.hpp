@@ -16,7 +16,8 @@ public:
 
     void addEnemy(Enemy *e);
     void update(UpdateContext &uc);
-    void damage(Enemy *enemy, DamageResult &dResult);
+    void damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc);
     std::vector<Object *> getObjects() const;
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ENEMY) const;
+    void clear();
 };

@@ -59,6 +59,18 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
 
     Vector3 forward = {0.0f, 0.0f, -1.0f};
     Vector3 spawnPos = this->spawnedBy->pos();
+    
+    // Get tile stats from selected tile
+    float tileDamage = projectileDamage;
+    float tileCooldown = cooldownDuration;
+    
+    if (uc.uiManager)
+    {
+        int selectedIndex = uc.uiManager->muim.getSelectedTileIndex();
+        TileStats stats = uc.uiManager->muim.getTileStats(selectedIndex);
+        tileDamage = stats.damage;
+        tileCooldown = stats.getCooldownDuration(cooldownDuration);
+    }
 
     // Get firing direction from spawner
     if (this->spawnedBy->category() == ENTITY_PLAYER)
@@ -102,7 +114,7 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
     }
     body.UpdateOBB();
 
-    MahjongTileType tile = uc.uiManager ? uc.uiManager->muim.getSelectedTile() : MahjongTileType::BAMBOO_1;
+    TileType tile = uc.uiManager ? uc.uiManager->muim.getSelectedTile() : TileType::BAMBOO_1;
     Projectile projectile(
         spawnPos,
         velocity,
@@ -112,11 +124,14 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
         FRICTION,
         AIR_DRAG,
         tile);
+    
+    // Store the damage in the projectile (we'll need to add a field for this)
+    projectile.damage = tileDamage;
 
     this->projectiles.push_back(projectile);
 
-    // Start cooldown (modified by active cooldown modifier)
-    this->cooldownRemaining = cooldownDuration * this->activeCooldownModifier;
+    // Start cooldown (modified by active cooldown modifier and tile stats)
+    this->cooldownRemaining = tileCooldown * this->activeCooldownModifier;
 
     // Apply movement slow to player
     if (this->spawnedBy->category() == ENTITY_PLAYER)
@@ -177,9 +192,9 @@ void BasicTileAttack::update(UpdateContext &uc)
                 CollisionResult result = Object::collided(p.obj(), enemy->obj());
                 if (result.collided)
                 {
-                    // Deal damage to enemy
-                    DamageResult damage(projectileDamage, result);
-                    uc.scene->em.damage(enemy, damage);
+                    // Deal damage to enemy using projectile's damage value
+                    DamageResult damage(p.damage, result);
+                    uc.scene->em.damage(enemy, damage, uc);
                     return true; // remove projectile
                 }
             }
@@ -269,7 +284,7 @@ DotBombAttack::~DotBombAttack()
     releaseExplosionTexture();
 }
 
-bool DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
+bool DotBombAttack::trigger(UpdateContext &uc, TileType tile)
 {
     if (!uc.scene || !this->spawnedBy)
         return false;
@@ -560,7 +575,7 @@ void DotBombAttack::applyExplosionEffects(const Vector3 &origin, UpdateContext &
         {
             Enemy *enemy = static_cast<Enemy *>(entity);
             enemy->applyKnockback(push, explosionKnockbackDuration, explosionLift);
-            uc.scene->em.damage(enemy, damage);
+            uc.scene->em.damage(enemy, damage, uc);
         }
         else if (category == ENTITY_PLAYER)
         {
@@ -978,7 +993,7 @@ bool MeleePushAttack::pushEnemies(UpdateContext &uc, EffectVolume &volume)
         enemy->applyKnockback(push, knockbackDuration, verticalLift);
 
         DamageResult damage(pushDamage, collision);
-        uc.scene->em.damage(enemy, damage);
+        uc.scene->em.damage(enemy, damage, uc);
         hit = true;
     }
     return hit;
@@ -1056,7 +1071,7 @@ void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
         return;
 
     Texture2D &sheet = uc.uiManager->muim.getSpriteSheet();
-    MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+    TileType tile = uc.uiManager->muim.getSelectedTile();
 
     this->tileIndicator.sprite.size = {indicatorWidth, indicatorHeight, indicatorThickness};
     this->tileIndicator.sprite.useTexture = true;

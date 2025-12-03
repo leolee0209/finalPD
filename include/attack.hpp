@@ -290,7 +290,7 @@ public:
     void update(UpdateContext &uc) override;
     std::vector<Entity *> getEntities() override;
     std::vector<Object *> obj();
-    bool trigger(UpdateContext &uc, MahjongTileType tile);
+    bool trigger(UpdateContext &uc, TileType tile);
     float getCooldownPercent() const;
 
 private:

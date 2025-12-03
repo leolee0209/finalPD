@@ -4,9 +4,11 @@
 #include <string>
 #include <unordered_map>
 #include <array>
+#include "updateContext.hpp"
 #include <algorithm>
 #include "uiElement.hpp"
-#include "mahjongTypes.hpp"
+#include "tiles.hpp"
+class RewardBriefcase;
 
 /**
  * @brief Enumeration of Mahjong tile types used by the UI sprite sheet.
@@ -34,33 +36,35 @@ public:
     void cleanup()
     {
         UnloadTexture(spriteSheet);
-        for (auto &e : this->elements)
+        for (auto &e : this->handElements)
         {
             delete e;
         }
-        elements.clear();
+        handElements.clear();
         tileHitboxes.clear();
         tileUsed.clear();
     }
 
-    void addTile(MahjongTileType type, Vector2 position);
-    void createPlayerHand(int screenWidth, int screenHeight);
-    void update();
+    // Build UI elements from an inventory (call in update)
+    void createHandUI(Inventory &inventory, int screenWidth, int screenHeight);
+    void update(Inventory &inventory);
     void draw();
-    void nextTile();
-    void previousTile();
-    MahjongTileType getSelectedTile();
-    void selectTileByType(MahjongTileType type);
+    void nextTile(Inventory &inventory);
+    void previousTile(Inventory &inventory);
+
+    TileType getSelectedTile(Inventory &inventory);
+    void selectTileByType(Inventory &inventory, TileType type);
     void selectTileByIndex(int index);
-    MahjongTileType getTileTypeAt(int index) const;
     int getTileIndexAt(Vector2 position) const;
+
     Rectangle getTileBounds(int index) const;
-    const std::vector<MahjongTileType> &getPlayerHand() const { return playerHand; }
     bool isTileUsed(int index) const;
     void setTileUsed(int index, bool used);
+    
+    int getSelectedTileIndex() const { return selectedTileIndex; }
 
     // Returns the source rectangle for a given tile type.
-    Rectangle getTile(MahjongTileType type)
+    Rectangle getTile(TileType type)
     {
         int index = static_cast<int>(type);
         int row = index / this->tilesPerRow;
@@ -76,11 +80,10 @@ public:
 
 private:
     int selectedTileIndex = 0;
-    std::vector<MahjongTileType> playerHand;
     int tilesPerRow;
     int tileWidth, tileHeight;
     Texture2D spriteSheet;
-    std::vector<UIElement *> elements;
+    std::vector<UIElement *> handElements;
     std::vector<Rectangle> tileHitboxes;
     std::vector<bool> tileUsed;
 };
@@ -103,8 +106,8 @@ public:
     ~UIManager() = default;
     void cleanup();
 
-    void update();
-    void draw();
+    void update(Inventory &playerInventory);
+    void draw(UpdateContext& uc, Inventory &playerInventory);
     void addElement(UIElement *element);
     void setSlotCooldownPercent(int slotIndex, float percent);
 
@@ -113,6 +116,18 @@ public:
     bool consumeResumeRequest();
     bool consumeQuitRequest();
     const std::vector<SlotTileEntry> &getSlotEntries(int slotIndex) const;
+    
+    void setRewardBriefcaseUIOpen(bool open) { this->briefcaseUIOpen = open; }
+    bool isRewardBriefcaseUIOpen() const { return this->briefcaseUIOpen; }
+    void setHoveredTileIndex(int index) { this->hoveredTileIndex = index; }
+    int getHoveredTileIndex() const { return this->hoveredTileIndex; }
+    
+    // Briefcase UI: update/draw pair (mirror pause menu structure)
+    void updateBriefcaseUI(Inventory &briefcaseInventory, Inventory &playerInventory);
+    void drawBriefcaseUI(Inventory &briefcaseInventory, Inventory &playerInventory);
+
+    // Selection state for briefcase-hand swap
+    int selectedBriefcaseIndex = -1;
 
     MahjongUIManager muim;
 
@@ -122,8 +137,8 @@ private:
     void updateHud();
     void drawHud();
     void drawSlotHudPreview();
-    void updatePauseMenu();
-    void drawPauseMenu();
+    void updatePauseMenu(Inventory &playerInventory);
+    void drawPauseMenu(Inventory &playerInventory);
 
     Rectangle getSmallButtonRect(int index) const;
     void drawSmallButton(const Rectangle &rect, const char *label, bool hovered) const;
@@ -147,6 +162,11 @@ private:
     bool pauseMenuVisible = false;
     bool resumeRequested = false;
     bool quitRequested = false;
+    bool briefcaseUIOpen = false;
+    int hoveredTileIndex = -1;
+    // Hover states for briefcase UI
+    int hoveredBriefcaseIndex = -1;
+    int hoveredHandIndex = -1;
     std::array<std::vector<SlotTileEntry>, slotCount> attackSlots;
     std::array<AttackSlotElement *, slotCount> slotElements{}; // Owned UI wrappers for each slot
     std::array<float, slotCount> slotCooldowns{};

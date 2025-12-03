@@ -1,67 +1,76 @@
 #include "uiManager.hpp"
 #include "raylib.h"
 #include <iostream>
+#include "Inventory.hpp"
 
-void MahjongUIManager::addTile(MahjongTileType type, Vector2 position)
+void MahjongUIManager::createHandUI(Inventory &inventory, int screenWidth, int screenHeight)
 {
-    Rectangle sourceRect = getTile(type);
-    Vector2 size = {(float)sourceRect.width, (float)sourceRect.height};
-    elements.push_back(new UITexturedSquare(&this->spriteSheet, position, size, sourceRect));
-    tileHitboxes.push_back({position.x, position.y, size.x, size.y});
-}
-
-void MahjongUIManager::createPlayerHand(int screenWidth, int screenHeight)
-{
-    this->elements.clear();
-    this->playerHand.clear();
-    this->tileHitboxes.clear();
-    this->tileUsed.clear();
-
-    const float startY = screenHeight - this->tileHeight - 10.0f; // 10px margin from bottom
-
-    playerHand.push_back(MahjongTileType::CHARACTER_1);
-    playerHand.push_back(MahjongTileType::CHARACTER_2);
-    playerHand.push_back(MahjongTileType::CHARACTER_3);
-    playerHand.push_back(MahjongTileType::BAMBOO_6);
-    playerHand.push_back(MahjongTileType::BAMBOO_6);
-    playerHand.push_back(MahjongTileType::BAMBOO_6);
-    playerHand.push_back(MahjongTileType::DOT_9);
-    playerHand.push_back(MahjongTileType::DOT_9);
-    playerHand.push_back(MahjongTileType::DOT_9);
-    playerHand.push_back(MahjongTileType::WIND_EAST);
-    playerHand.push_back(MahjongTileType::WIND_WEST);
-    playerHand.push_back(MahjongTileType::DRAGON_RED);
-    playerHand.push_back(MahjongTileType::DRAGON_GREEN);
-    playerHand.push_back(MahjongTileType::CHARACTER_9);
-    playerHand.push_back(MahjongTileType::CHARACTER_9);
-    playerHand.push_back(MahjongTileType::CHARACTER_9);
-    //playerHand.push_back(MahjongTileType::BAMBOO_1);
-
-    const int handSize = playerHand.size();
-    const float totalHandWidth = handSize * this->tileWidth;
-    const float startX = (screenWidth - totalHandWidth) / 2.0f;
-
-    for (int i = 0; i < handSize; i++)
+    auto &tiles = inventory.getTiles();
+    
+    // Clear existing UI elements if size changed
+    if (handElements.size() != tiles.size())
     {
-        addTile(playerHand[i], {startX + i * this->tileWidth, startY});
+        for (auto *elem : handElements)
+        {
+            delete elem;
+        }
+        handElements.clear();
+        tileHitboxes.clear();
+        tileUsed.clear();
+        
+        // Create new UI elements for each tile
+        const int handSize = tiles.size();
+        const float totalHandWidth = handSize * this->tileWidth;
+        const float startX = (screenWidth - totalHandWidth) / 2.0f;
+        const float startY = screenHeight - this->tileHeight - 10.0f;
+        
+        for (int i = 0; i < handSize; ++i)
+        {
+            float x = startX + i * this->tileWidth;
+            Rectangle source = getTile(tiles[i].type);
+            UITexturedSquare *elem = new UITexturedSquare(&spriteSheet, {x, startY}, 
+                                                          {(float)this->tileWidth, (float)this->tileHeight}, 
+                                                          source);
+            handElements.push_back(elem);
+            tileHitboxes.push_back(elem->getBounds());
+        }
+        
+        tileUsed.resize(handSize, false);
     }
-
-    tileUsed.assign(handSize, false);
+    else
+    {
+        // Update existing elements with new tile types - need to recreate them
+        // For simplicity, just recreate if types changed
+        auto &tiles = inventory.getTiles();
+        for (int i = 0; i < tiles.size(); ++i)
+        {
+            Rectangle source = getTile(tiles[i].type);
+            if (UITexturedSquare *elem = dynamic_cast<UITexturedSquare*>(handElements[i]))
+            {
+                // Recreate element with new source rect
+                Vector2 pos = {elem->getBounds().x, elem->getBounds().y};
+                Vector2 sz = {elem->getBounds().width, elem->getBounds().height};
+                delete handElements[i];
+                handElements[i] = new UITexturedSquare(&spriteSheet, pos, sz, source);
+                tileHitboxes[i] = handElements[i]->getBounds();
+            }
+        }
+    }
 }
 
-void MahjongUIManager::update()
+void MahjongUIManager::update(Inventory &inventory)
 {
     float mouseWheelMove = GetMouseWheelMove();
     if (mouseWheelMove > 0)
     {
-        nextTile();
+        nextTile(inventory);
     }
     if (mouseWheelMove < 0)
     {
-        previousTile();
+        previousTile(inventory);
     }
 
-    for (auto const &element : elements)
+    for (auto const &element : handElements)
     {
         element->update();
     }
@@ -69,52 +78,62 @@ void MahjongUIManager::update()
 
 void MahjongUIManager::draw()
 {
-    for (int i = 0; i < elements.size(); i++)
+    for (int i = 0; i < handElements.size(); i++)
     {
-        elements[i]->draw();
+        handElements[i]->draw();
         if (i == selectedTileIndex)
         {
             // Draw a rectangle around the selected tile
-            DrawRectangleLinesEx(elements[i]->getBounds(), 2.0f, YELLOW);
+            DrawRectangleLinesEx(handElements[i]->getBounds(), 2.0f, YELLOW);
         }
         if (i < tileUsed.size() && tileUsed[i])
         {
-            Rectangle bounds = elements[i]->getBounds();
+            Rectangle bounds = handElements[i]->getBounds();
             DrawRectangleRec(bounds, Fade(DARKGRAY, 0.5f));
         }
     }
 }
 
-void MahjongUIManager::nextTile()
+void MahjongUIManager::nextTile(Inventory &inventory)
 {
-    selectedTileIndex = (selectedTileIndex + 1) % playerHand.size();
-}
-
-void MahjongUIManager::previousTile()
-{
-    selectedTileIndex = (selectedTileIndex - 1 + playerHand.size()) % playerHand.size();
-}
-
-MahjongTileType MahjongUIManager::getSelectedTile()
-{
-    if (selectedTileIndex >= 0 && selectedTileIndex < playerHand.size())
+    auto &tiles = inventory.getTiles();
+    if (!tiles.empty())
     {
-        return playerHand[selectedTileIndex];
+        selectedTileIndex = (selectedTileIndex + 1) % tiles.size();
     }
-    return MahjongTileType::EMPTY;
 }
 
-void MahjongUIManager::selectTileByType(MahjongTileType type)
+void MahjongUIManager::previousTile(Inventory &inventory)
 {
-    for (int i = 0; i < playerHand.size(); ++i)
+    auto &tiles = inventory.getTiles();
+    if (!tiles.empty())
     {
-        if (playerHand[i] == type)
+        selectedTileIndex = (selectedTileIndex - 1 + tiles.size()) % tiles.size();
+    }
+}
+
+TileType MahjongUIManager::getSelectedTile(Inventory &inventory)
+{
+    auto &tiles = inventory.getTiles();
+    if (selectedTileIndex >= 0 && selectedTileIndex < tiles.size())
+    {
+        return tiles[selectedTileIndex].type;
+    }
+    return TileType::EMPTY;
+}
+
+void MahjongUIManager::selectTileByType(Inventory &inventory, TileType type)
+{
+    auto &tiles = inventory.getTiles();
+    for (int i = 0; i < tiles.size(); ++i)
+    {
+        if (tiles[i].type == type)
         {
             selectedTileIndex = i;
             return;
         }
     }
-    if (!playerHand.empty())
+    if (!tiles.empty())
     {
         selectedTileIndex = 0;
     }
@@ -122,10 +141,7 @@ void MahjongUIManager::selectTileByType(MahjongTileType type)
 
 void MahjongUIManager::selectTileByIndex(int index)
 {
-    if (index >= 0 && index < playerHand.size())
-    {
-        selectedTileIndex = index;
-    }
+    selectedTileIndex = index;
 }
 
 int MahjongUIManager::getTileIndexAt(Vector2 position) const
@@ -147,13 +163,6 @@ Rectangle MahjongUIManager::getTileBounds(int index) const
         return {0.0f, 0.0f, 0.0f, 0.0f};
     }
     return tileHitboxes[index];
-}
-
-MahjongTileType MahjongUIManager::getTileTypeAt(int index) const
-{
-    if (index < 0 || index >= playerHand.size())
-        return MahjongTileType::EMPTY;
-    return playerHand[index];
 }
 
 bool MahjongUIManager::isTileUsed(int index) const

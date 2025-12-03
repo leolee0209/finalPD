@@ -5,24 +5,24 @@
 
 namespace
 {
-bool isCharacterTile(MahjongTileType tile)
+bool isCharacterTile(TileType tile)
 {
-    return tile >= MahjongTileType::CHARACTER_1 && tile <= MahjongTileType::CHARACTER_9;
+    return tile >= TileType::CHARACTER_1 && tile <= TileType::CHARACTER_9;
 }
 
-int getCharacterValue(MahjongTileType tile)
+int getCharacterValue(TileType tile)
 {
-    return static_cast<int>(tile) - static_cast<int>(MahjongTileType::CHARACTER_1) + 1;
+    return static_cast<int>(tile) - static_cast<int>(TileType::CHARACTER_1) + 1;
 }
 
-bool isDotTile(MahjongTileType tile)
+bool isDotTile(TileType tile)
 {
-    return tile >= MahjongTileType::DOT_1 && tile <= MahjongTileType::DOT_9;
+    return tile >= TileType::DOT_1 && tile <= TileType::DOT_9;
 }
 
-bool isBambooTile(MahjongTileType tile)
+bool isBambooTile(TileType tile)
 {
-    return tile >= MahjongTileType::BAMBOO_1 && tile <= MahjongTileType::BAMBOO_9;
+    return tile >= TileType::BAMBOO_1 && tile <= TileType::BAMBOO_9;
 }
 }
 
@@ -99,7 +99,7 @@ void AttackManager::recordThrow(UpdateContext &uc)
     // Record the thrown tile (spawn already done by ThousandTileAttack::spawnProjectile)
     if (uc.uiManager)
     {
-        MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+        TileType tile = uc.uiManager->muim.getSelectedTile();
         Rectangle rect = uc.uiManager->muim.getTile(tile);
         this->thrownTiles.push_back({tile, rect});
     }
@@ -243,8 +243,8 @@ void AttackManager::checkActivation(Entity *player)
     int t2_val = static_cast<int>(t2);
     int t3_val = static_cast<int>(t3);
 
-    int char_1 = static_cast<int>(MahjongTileType::CHARACTER_1);
-    int char_9 = static_cast<int>(MahjongTileType::CHARACTER_9);
+    int char_1 = static_cast<int>(TileType::CHARACTER_1);
+    int char_9 = static_cast<int>(TileType::CHARACTER_9);
 
     bool combo_found = false;
 

@@ -31,7 +31,7 @@ private:
     std::vector<DashAttack *> dashAttacks;
     std::vector<DotBombAttack *> dotBombAttacks;
     std::vector<BambooTripleAttack *> bambooTripleAttacks;
-    std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
+    std::vector<std::pair<TileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
     void checkActivation(Entity *player);

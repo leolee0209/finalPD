@@ -217,7 +217,7 @@ void Projectile::UpdateBody(UpdateContext &uc)
         {
             Enemy *e = static_cast<Enemy *>(result.with);
             auto dResult = DamageResult(10, result);
-            uc.scene->em.damage(e, dResult);
+            uc.scene->em.damage(e, dResult, uc);
         }
     }
 }

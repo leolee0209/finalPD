@@ -8,6 +8,30 @@
 #include "updateContext.hpp"
 #include "enemyManager.hpp"
 #include "collidableModel.hpp"
+#include "room.hpp"
+#include "rewardBriefcase.hpp"
+
+struct DamageIndicator
+{
+    Vector3 worldPosition{0.0f, 0.0f, 0.0f};
+    Vector2 screenOffset{0.0f, 0.0f};
+    Vector2 velocity{0.0f, 0.0f};
+    float age = 0.0f;
+    float lifetime = 0.85f;
+    std::string text;
+};
+
+class DamageIndicatorSystem
+{
+public:
+    void Spawn(const Vector3 &worldPosition, float amount);
+    void Update(float deltaSeconds);
+    void Draw(const Camera &camera) const;
+    void Clear();
+
+private:
+    mutable std::vector<DamageIndicator> indicators;
+};
 
 class Object;
 
@@ -32,10 +56,6 @@ private:
     Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
     Color skyColor = {12, 17, 32, 255};
-    Color shadowColor = {0, 0, 0, 80};
-    float shadowThickness = 0.05f;
-    float shadowInflation = 1.12f;
-    float shadowMinAlpha = 0.2f;
 
     struct CachedModel
     {
@@ -50,45 +70,11 @@ private:
     std::unique_ptr<btBroadphaseInterface> bulletBroadphase;
     std::unique_ptr<btCollisionWorld> bulletWorld;
 
-    struct DoorLeafVisual
-    {
-        BoundingBox bounds{};
-        Vector3 hingeLocal{};
-        float targetAngleDeg = 90.0f;
-        float currentAngleDeg = 0.0f;
-        int meshIndex = -1;
-        bool valid = false;
-    };
-
-    struct DoorInstance
-    {
-        std::unique_ptr<CollidableModel> collider;
-        bool collisionEnabled = false;
-        bool opening = false;
-        bool openComplete = false;
-        float openProgress = 0.0f;
-        float openDuration = 1.2f;
-        Vector3 basePosition{};
-        Vector3 scale{1.0f, 1.0f, 1.0f};
-        Vector3 rotationAxis{0.0f, 1.0f, 0.0f};
-        float rotationAngleDeg = 0.0f;
-        Quaternion rotation{0.0f, 0.0f, 0.0f, 1.0f};
-        Model *visualModel = nullptr; // Non-owning: model owned by decoration cache
-        DoorLeafVisual leftLeaf;
-        DoorLeafVisual rightLeaf;
-    };
-
-    struct Room
-    {
-        std::string name;
-        BoundingBox bounds{};
-        std::vector<int> connectedDoors;
-        bool hadEnemies = false;
-        bool completed = false;
-    };
-
-    std::vector<Room> rooms;
-    std::vector<DoorInstance> doors;
+    std::vector<std::unique_ptr<Room>> rooms;
+    std::vector<std::unique_ptr<Door>> doors;
+    std::vector<std::unique_ptr<RewardBriefcase>> rewardBriefcases;
+    DamageIndicatorSystem damageIndicators;
+    Room *currentPlayerRoom = nullptr;
 
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
@@ -100,17 +86,15 @@ private:
     void InitializeLighting();
     void ShutdownLighting();
     void CreatePointLight(Vector3 position, Color color, float intensity = 1.0f);
-    void DrawPlanarShadow(const Object &o, float floorY) const;
-    void DrawShadowCollection(const std::vector<Object *> &items, float floorY) const;
     float GetFloorTop() const;
     CollidableModel *AddDecoration(const char *modelPath,
                                    Vector3 desiredPosition,
                                    float targetHeight,
                                    float rotationYDeg = 0.0f,
                                    bool addCollision = false);
-    void ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredPosition);
+    void ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredCenter);
     void InitializeRooms(float roomWidth, float roomLength, float wallHeight,
-                         const Vector3 &firstCenter, const Vector3 &secondCenter);
+                         const std::vector<Vector3> &centers);
     void DrawDecorations() const;
     Model *AcquireDecorationModel(const std::string &relativePath);
     void ReleaseDecorationModels();
@@ -120,19 +104,15 @@ private:
     void AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const;
     static btTransform BuildBtTransform(const Object &obj);
     static btCollisionShape *CreateShapeFromObject(const Object &obj);
-    static RenderTexture2D CreateHealthBarTexture(int currentHealth, int maxHealth, float fillPercent);
-    void UpdateRooms();
-    void OnRoomCompleted(int roomIndex);
-    void OpenDoor(int doorIndex);
-    void UpdateDoorAnimations(float deltaSeconds);
+    void UpdateRooms(const std::vector<Entity *> &enemies);
     void DrawDoors() const;
-    bool InitializeDoorVisuals(DoorInstance &door);
-    void ApplyLightingToDoor(DoorInstance &door);
-    Vector3 TransformDoorPoint(const DoorInstance &door, const Vector3 &localPoint) const;
-    void DrawDoorLeaf(const DoorInstance &door, const DoorLeafVisual &leaf) const;
-    void ShutdownDoorVisuals();
     std::unique_ptr<CollidableModel> DetachDecoration(CollidableModel *target);
+    void BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float roomWidth, float roomLength, float wallThickness);
+    void CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg, int roomA, int roomB);
+    void PopulateRoomEnemies(const std::vector<Vector3> &roomCenters);
+    
 public:
+    void AssignEnemyTextures(UIManager *uiManager);
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
     Model cubeModel; // Shared cube model used to render rotated cubes
@@ -151,6 +131,7 @@ public:
      */
     void DrawScene(Camera camera) const;
     void DrawEnemyHealthDialogs(const Camera &camera) const;
+    void DrawDamageIndicators(const Camera &camera) const;
 
     /**
      * @brief Advance scene simulation: update enemies, attacks and other systems.
@@ -178,4 +159,11 @@ public:
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
     void SetViewPosition(const Vector3 &viewPosition);
     Color getSkyColor() const { return this->skyColor; }
+    void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
+    
+    // Room and door management
+    void UpdateRoomDoors(const Vector3 &playerPos);
+    void DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const;
+    std::vector<RewardBriefcase *> GetRewardBriefcases();
+    Room *GetCurrentPlayerRoom() const { return this->currentPlayerRoom; }
 };

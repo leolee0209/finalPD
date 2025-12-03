@@ -22,6 +22,9 @@ int main(void)
     uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
+    
+    // Assign tile textures to enemies after UIManager is ready
+    scene.AssignEnemyTextures(&uiManager);
 
     // { // Create a charging enemy (mahjong tile)
     //     Enemy *enemy = new ChargingEnemy;
@@ -33,7 +36,7 @@ int main(void)
     //     Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
     //     enemy->obj().texture = &mahjongTexture;
     //     enemy->obj().useTexture = true;
-    //     enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_1); // Use entire texture
+    //     enemy->obj().sourceRect = uiManager.muim.getTile(TileType::BAMBOO_1); // Use entire texture
 
     //     scene.em.addEnemy(enemy); // Add the enemy to the scene
     // }
@@ -47,30 +50,13 @@ int main(void)
     //     Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
     //     enemy->obj().texture = &mahjongTexture;
     //     enemy->obj().useTexture = true;
-    //     enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_2);
+    //     enemy->obj().sourceRect = uiManager.muim.getTile(TileType::BAMBOO_2);
 
     //     // Single bullet pattern (default)
     //     enemy->setBulletPattern(1, 0.0f);
 
     //     scene.em.addEnemy(enemy);
     // }
-
-    { // Create a shooter enemy with fan pattern (5 bullets in 120 degree arc)
-        ShooterEnemy *enemy = new ShooterEnemy;
-        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
-        enemy->obj().pos = {-25.0f, 1.0f, -15.0f};
-        enemy->setPosition(enemy->obj().pos);
-
-        Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
-        enemy->obj().texture = &mahjongTexture;
-        enemy->obj().useTexture = true;
-        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_3);
-
-        // Fan pattern (5 bullets across 120 degrees)
-        enemy->setBulletPattern(5, 60.0f);
-
-        scene.em.addEnemy(enemy);
-    }
 
     DisableCursor();  // Limit cursor to relative movement inside the window
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
@@ -132,8 +118,54 @@ int main(void)
 
         UpdateContext uc(&scene, &player, frameInput, &uiManager);
 
-        if (!gamePaused)
+        if (!gamePaused && !uiManager.isRewardBriefcaseUIOpen())
         {
+            // Handle interaction with briefcases and doors (C key)
+            if (IsKeyPressed(KEY_C))
+            {
+                Vector3 playerPos = player.pos();
+                
+                // Check for briefcase interaction
+                auto briefcases = scene.GetRewardBriefcases();
+                for (auto *briefcase : briefcases)
+                {
+                    if (briefcase && briefcase->IsPlayerNearby(playerPos))
+                    {
+                        if (briefcase->IsUIOpen())
+                        {
+                            briefcase->CloseUI();
+                            uiManager.setRewardBriefcaseUIOpen(false);
+                        }
+                        else
+                        {
+                            briefcase->OpenUI();
+                            uiManager.setRewardBriefcaseUIOpen(true);
+                            uiManager.setPauseMenuVisible(false);
+                        }
+                        break;
+                    }
+                }
+                
+                // Check for door interaction
+                Room *currentRoom = scene.GetCurrentPlayerRoom();
+                if (currentRoom && currentRoom->IsCompleted())
+                {
+                    for (Door *door : currentRoom->GetDoors())
+                    {
+                        if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
+                        {
+                            // Check if both connected rooms are completed
+                            // For now, just open the door
+                            door->Open();
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Update room doors and player room tracking
+            scene.UpdateRoomDoors(player.pos());
+            
             // Handle basic attack (left click)
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
@@ -193,8 +225,31 @@ int main(void)
         EndMode3D();
 
         scene.DrawEnemyHealthDialogs(camera);
+        scene.DrawDamageIndicators(camera);
+        scene.DrawInteractionPrompts(player.pos(), camera);
 
         uiManager.draw();
+        
+        // Update + Draw briefcase UI if open (mirror pause menu structure)
+        if (uiManager.isRewardBriefcaseUIOpen())
+        {
+            EnableCursor();
+            auto briefcases = scene.GetRewardBriefcases();
+            for (auto *briefcase : briefcases)
+            {
+                if (briefcase && briefcase->IsUIOpen())
+                {
+                    // Handle input first, then draw
+                    uiManager.updateBriefcaseUI(briefcase);
+                    uiManager.drawBriefcaseUI(briefcase);
+                    break;
+                }
+            }
+        }
+        else if (!gamePaused)
+        {
+            DisableCursor();
+        }
 
         EndDrawing();
         //----------------------------------------------------------------------------------
@@ -202,6 +257,8 @@ int main(void)
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
+    // Ensure enemies are destroyed while window/context is alive
+    scene.em.clear();
     uiManager.cleanup();
     CloseWindow(); // Close window and OpenGL context
     //--------------------------------------------------------------------------------------

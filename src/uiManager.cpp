@@ -1,9 +1,11 @@
 #include "uiManager.hpp"
 #include "attackSlotElement.hpp"
+#include "rewardBriefcase.hpp"
 #include <algorithm>
 #include <cmath>
+#include "updateContext.hpp"
 
-const char *UIManager::slotKeyLabels[slotCount] = {"Left Click", "Right Click", "E"};
+const char *UIManager::slotKeyLabels[slotCount] = {"Left Click", "R", "E"};
 
 void UIManager::cleanup()
 {
@@ -71,6 +73,14 @@ bool UIManager::consumeQuitRequest()
 
 void UIManager::update()
 {
+    // Suppress ESC pause toggle while briefcase UI is open
+    if (this->briefcaseUIOpen)
+    {
+        if (IsKeyPressed(KEY_ESCAPE))
+        {
+            // ignore
+        }
+    }
     if (pauseMenuVisible)
     {
         updatePauseMenu();
@@ -81,7 +91,7 @@ void UIManager::update()
     }
 }
 
-void UIManager::draw()
+void UIManager::draw(UpdateContext& uc)
 {
     if (pauseMenuVisible)
     {
@@ -90,6 +100,10 @@ void UIManager::draw()
     else
     {
         drawHud();
+    }
+    if(isRewardBriefcaseUIOpen()){
+        for(auto* briefcase:)
+        drawBriefcaseUI(uc.scene->briefcase);
     }
 }
 
@@ -195,6 +209,14 @@ void UIManager::updatePauseMenu()
     Vector2 mousePos = GetMousePosition();
     bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
     bool mouseReleased = IsMouseButtonReleased(MOUSE_LEFT_BUTTON);
+    
+    // Update hovered tile index
+    int newHoveredTileIndex = muim.getTileIndexAt(mousePos);
+    if (newHoveredTileIndex >= 0 && muim.isTileUsed(newHoveredTileIndex))
+    {
+        newHoveredTileIndex = -1;  // Don't hover over used tiles
+    }
+    this->hoveredTileIndex = newHoveredTileIndex;
 
     if (mousePressed)
     {
@@ -205,6 +227,11 @@ void UIManager::updatePauseMenu()
         else if (CheckCollisionPointRec(mousePos, quitRect))
         {
             quitRequested = true;
+        }
+        // Check if clicking on a tile to select it
+        else if (newHoveredTileIndex >= 0)
+        {
+            muim.selectTileByIndex(newHoveredTileIndex);
         }
     }
 
@@ -271,11 +298,321 @@ void UIManager::drawPauseMenu()
         }
     }
 
+    // Draw player hand with selection highlight
+    const auto &hand = muim.getPlayerHand();
+    int selectedIdx = muim.getSelectedTileIndex();
+    
+    for (int i = 0; i < (int)hand.size(); ++i)
+    {
+        Rectangle tileBounds = muim.getTileBounds(i);
+        
+        // Draw selected tile higher
+        if (i == selectedIdx)
+        {
+            tileBounds.y -= 15.0f;  // Raise selected tile
+            DrawRectangleLinesEx(tileBounds, 3.0f, YELLOW);
+        }
+        // Draw hover indicator
+        else if (i == this->hoveredTileIndex)
+        {
+            DrawRectangleLinesEx(tileBounds, 2.0f, Fade(WHITE, 0.7f));
+        }
+    }
+    
     this->muim.draw();
+    
+    // Draw tile stats for hovered or selected tile (top-right)
+    int displayIndex = this->hoveredTileIndex >= 0 ? this->hoveredTileIndex : selectedIdx;
+    if (displayIndex >= 0 && displayIndex < (int)hand.size())
+    {
+        TileStats stats = muim.getTileStats(displayIndex);
+        const float boxWidth = 200.0f;
+        const float boxHeight = 100.0f;
+        const float boxX = (float)GetScreenWidth() - boxWidth - 20.0f;
+        const float boxY = 20.0f;
+        Rectangle statsBox = {boxX, boxY, boxWidth, boxHeight};
+        DrawRectangleRounded(statsBox, 0.2f, 8, Color{20, 25, 35, 230});
+        DrawRectangleRoundedLines(statsBox, 0.2f, 8, Fade(RAYWHITE, 0.8f));
+        const int fontSize = 16;
+        DrawText("TILE STATS", (int)(boxX + 10), (int)(boxY + 10), fontSize + 2, RAYWHITE);
+        char damageText[64];
+        snprintf(damageText, sizeof(damageText), "Damage: %.1f", stats.damage);
+        DrawText(damageText, (int)(boxX + 10), (int)(boxY + 35), fontSize, Fade(RAYWHITE, 0.9f));
+        char fireRateText[64];
+        snprintf(fireRateText, sizeof(fireRateText), "Fire Rate: %.2fx", stats.fireRate);
+        DrawText(fireRateText, (int)(boxX + 10), (int)(boxY + 55), fontSize, Fade(RAYWHITE, 0.9f));
+    }
+    
     if (isDraggingTile)
     {
         drawDraggingTile();
     }
+}
+
+void UIManager::updateBriefcaseUI(RewardBriefcase *briefcase)
+{
+    if (!briefcase)
+        return;
+
+    const int screenW = GetScreenWidth();
+    const int screenH = GetScreenHeight();
+
+    // Layout constants should mirror drawBriefcaseUI
+    const float briefcaseBoxX = screenW * 0.5f - 300.0f;
+    const float briefcaseBoxY = 120.0f;
+    const float briefcaseBoxW = 600.0f;
+    const float briefcaseBoxH = 200.0f;
+
+    auto &rewardTiles = briefcase->GetRewardTiles();
+
+    // Compute briefcase tile layout
+    const float tileBaseW = 44.0f;
+    const float tileBaseH = 60.0f;
+    const float caseInnerPadding = 20.0f;
+    const float caseAvailW = briefcaseBoxW - caseInnerPadding * 2.0f;
+    int caseCount = (int)rewardTiles.size();
+    float caseGap = 12.0f;
+    float caseScale = 1.0f;
+    if (caseCount > 0)
+    {
+        float maxScaleByWidth = (caseAvailW - caseGap * (caseCount - 1)) / (caseCount * tileBaseW);
+        caseScale = fminf(1.8f, fmaxf(0.6f, maxScaleByWidth));
+    }
+    const float tileSpacing = caseGap;
+    const float tileW = tileBaseW * caseScale;
+    const float tileH = tileBaseH * caseScale;
+    const float rowWidth = caseCount * tileW + (caseCount - 1) * tileSpacing;
+    const float tileStartX = briefcaseBoxX + (briefcaseBoxW - rowWidth) * 0.5f;
+    const float tileY = briefcaseBoxY + (briefcaseBoxH - tileH) * 0.5f;
+
+    // Compute hand layout
+    const float handBoxY = briefcaseBoxY + briefcaseBoxH + 60.0f;
+    const float handPadding = 24.0f;
+    const float handAvailW = briefcaseBoxW - handPadding * 2.0f;
+    const auto &hand = muim.getPlayerHand();
+    int handCount = (int)hand.size();
+    float handGap = 0.0f;
+    float handScale = 1.0f;
+    if (handCount > 0)
+    {
+        float maxScaleByWidth = (handAvailW - handGap * (handCount - 1)) / (handCount * tileBaseW);
+        handScale = fminf(1.6f, fmaxf(0.5f, maxScaleByWidth));
+    }
+    const float handTileW = tileBaseW * handScale;
+    const float handTileH = tileBaseH * handScale;
+    const float handTotalWidth = handCount * handTileW + (handCount - 1) * handGap;
+    const float handStartX = briefcaseBoxX + (briefcaseBoxW - handTotalWidth) * 0.5f;
+
+    // Mouse
+    Vector2 mousePos = GetMousePosition();
+    bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+
+    // Update hovered indices
+    hoveredBriefcaseIndex = -1;
+    hoveredHandIndex = -1;
+    for (int i = 0; i < caseCount; ++i)
+    {
+        float tileX = tileStartX + i * (tileW + tileSpacing);
+        Rectangle tileRect = {tileX, tileY, tileW, tileH};
+        if (CheckCollisionPointRec(mousePos, tileRect))
+        {
+            hoveredBriefcaseIndex = i;
+            TraceLog(LOG_DEBUG, "briefcase thing hover\n");
+        }
+    }
+    for (int i = 0; i < handCount; ++i)
+    {
+        float tileX = handStartX + i * (handTileW + handGap);
+        Rectangle tileRect = {tileX, handBoxY, handTileW, handTileH};
+        if (CheckCollisionPointRec(mousePos, tileRect))
+        {
+            hoveredHandIndex = i;
+            TraceLog(LOG_DEBUG, "hand thing hover\n");
+        }
+    }
+
+    // Handle clicks
+    if (mousePressed)
+    {
+        // Close button
+        Rectangle closeButton = {screenW * 0.5f - 70.0f, screenH - 100.0f, 140.0f, 50.0f};
+        if (CheckCollisionPointRec(mousePos, closeButton))
+        {
+            briefcase->CloseUI();
+            this->setRewardBriefcaseUIOpen(false);
+            // Clear any selection state
+            selectedBriefcaseIndex = -1;
+            hoveredBriefcaseIndex = -1;
+            hoveredHandIndex = -1;
+            TraceLog(LOG_DEBUG, "close clicked\n");
+            return;
+        }
+
+        // Select a briefcase tile
+        if (hoveredBriefcaseIndex >= 0)
+        {
+            selectedBriefcaseIndex = hoveredBriefcaseIndex;
+            TraceLog(LOG_DEBUG, "briefcase selected\n");
+        }
+        // Swap with hand tile if one is selected
+        else if (hoveredHandIndex >= 0 && selectedBriefcaseIndex >= 0 && selectedBriefcaseIndex < (int)rewardTiles.size())
+        {
+            RewardTile picked = rewardTiles[selectedBriefcaseIndex];
+            // swap types and stats
+            TileType oldHandType = hand[hoveredHandIndex];
+            TileStats oldStats = muim.getTileStats(hoveredHandIndex);
+            muim.setTileType(hoveredHandIndex, picked.type);
+            muim.setTileStats(hoveredHandIndex, picked.stats);
+            // replace briefcase slot with the discarded hand tile
+            rewardTiles[selectedBriefcaseIndex].type = oldHandType;
+            rewardTiles[selectedBriefcaseIndex].stats = oldStats;
+            // clear selection
+            selectedBriefcaseIndex = -1;
+        }
+    }
+}
+
+void UIManager::drawBriefcaseUI(RewardBriefcase *briefcase)
+{
+    if (!briefcase)
+        return;
+    
+    const int screenW = GetScreenWidth();
+    const int screenH = GetScreenHeight();
+    
+    // Draw overlay
+    DrawRectangle(0, 0, screenW, screenH, Fade(BLACK, 0.75f));
+    
+    // Draw title
+    const char *title = "REWARD BRIEFCASE";
+    const int titleSize = 32;
+    int titleWidth = MeasureText(title, titleSize);
+    DrawText(title, (screenW - titleWidth) / 2, 40, titleSize, RAYWHITE);
+    
+    // Draw briefcase contents area
+    const float briefcaseBoxX = screenW * 0.5f - 300.0f;
+    const float briefcaseBoxY = 120.0f;
+    const float briefcaseBoxW = 600.0f;
+    const float briefcaseBoxH = 200.0f;
+    
+    Rectangle briefcaseBox = {briefcaseBoxX, briefcaseBoxY, briefcaseBoxW, briefcaseBoxH};
+    DrawRectangleRounded(briefcaseBox, 0.15f, 8, Color{30, 35, 45, 240});
+    DrawRectangleRoundedLines(briefcaseBox, 0.15f, 8, Fade(RAYWHITE, 0.8f));
+    
+    const char *briefcaseLabel = "Briefcase Contents (Click to take)";
+    DrawText(briefcaseLabel, (int)briefcaseBoxX + 10, (int)briefcaseBoxY - 25, 18, Fade(RAYWHITE, 0.8f));
+    
+    // Draw reward tiles with hover stats and selection
+    auto &rewardTiles = briefcase->GetRewardTiles();
+    const float tileBaseW = 44.0f;
+    const float tileBaseH = 60.0f;
+    const float caseInnerPadding = 20.0f;
+    const float caseAvailW = briefcaseBoxW - caseInnerPadding * 2.0f;
+    int caseCount = (int)rewardTiles.size();
+    float caseGap = 12.0f;
+    float caseScale = 1.0f;
+    if (caseCount > 0)
+    {
+        float maxScaleByWidth = (caseAvailW - caseGap * (caseCount - 1)) / (caseCount * tileBaseW);
+        caseScale = fminf(1.8f, fmaxf(0.6f, maxScaleByWidth));
+    }
+    const float tileSpacing = caseGap;
+    const float tileW = tileBaseW * caseScale;
+    const float tileH = tileBaseH * caseScale;
+    const float rowWidth = caseCount * tileW + (caseCount - 1) * tileSpacing;
+    const float tileStartX = briefcaseBoxX + (briefcaseBoxW - rowWidth) * 0.5f;
+    const float tileY = briefcaseBoxY + (briefcaseBoxH - tileH) * 0.5f;
+    
+    Vector2 mousePos = GetMousePosition();
+    
+    for (int i = 0; i < (int)rewardTiles.size(); ++i)
+    {
+        float tileX = tileStartX + i * (tileW + tileSpacing);
+        Rectangle tileRect = {tileX, tileY, tileW, tileH};
+        
+        bool hovered = (hoveredBriefcaseIndex == i) || CheckCollisionPointRec(mousePos, tileRect);
+        
+        // Draw tile background
+        DrawRectangleRounded(tileRect, 0.15f, 6, hovered ? Fade(YELLOW, 0.3f) : Fade(WHITE, 0.1f));
+        Color border = (this->selectedBriefcaseIndex == i) ? ORANGE : (hovered ? YELLOW : Fade(RAYWHITE, 0.4f));
+        DrawRectangleRoundedLines(tileRect, 0.15f, 6, border);
+        
+        // Draw tile texture
+        Rectangle source = muim.getTile(rewardTiles[i].type);
+        Rectangle dest = {tileX + tileW * 0.05f, tileY + tileH * 0.05f, tileW * 0.90f, tileH * 0.90f};
+        DrawTexturePro(muim.getSpriteSheet(), source, dest, {0, 0}, 0, WHITE);
+        
+        // Draw stats below tile
+        char statsText[64];
+        snprintf(statsText, sizeof(statsText), "DMG:%.0f FR:%.1fx", rewardTiles[i].stats.damage, rewardTiles[i].stats.fireRate);
+        DrawText(statsText, (int)tileX, (int)(tileY + tileRect.height + 6), 14, Fade(RAYWHITE, 0.7f));
+        
+    }
+
+    // Draw player hand area with hover and swap target
+    const float handBoxY = briefcaseBoxY + briefcaseBoxH + 60.0f;
+    const char *handLabel = "Your Hand (Click a tile to swap)";
+    DrawText(handLabel, (int)briefcaseBoxX + 10, (int)handBoxY - 25, 18, Fade(RAYWHITE, 0.8f));
+    
+    const auto &hand = muim.getPlayerHand();
+    // Fit the entire hand on-screen with consistent look
+    const float handPadding = 24.0f;
+    const float handAvailW = briefcaseBoxW - handPadding * 2.0f;
+    int handCount = (int)hand.size();
+    float handGap = 12.0f;
+    float handScale = 1.0f;
+    if (handCount > 0)
+    {
+        float maxScaleByWidth = (handAvailW - handGap * (handCount - 1)) / (handCount * tileBaseW);
+        handScale = fminf(1.6f, fmaxf(0.5f, maxScaleByWidth));
+    }
+    const float handTileW = tileBaseW * handScale;
+    const float handTileH = tileBaseH * handScale;
+    const float handTotalWidth = handCount * handTileW + (handCount - 1) * handGap;
+    const float handStartX = briefcaseBoxX + (briefcaseBoxW - handTotalWidth) * 0.5f;
+    for (int i = 0; i < (int)hand.size(); ++i)
+    {
+        float tileX = handStartX + i * (handTileW + handGap);
+        Rectangle tileRect = {tileX, handBoxY, handTileW, handTileH};
+        bool hovered = (hoveredHandIndex == i) || CheckCollisionPointRec(mousePos, tileRect);
+        DrawRectangleRounded(tileRect, 0.15f, 6, hovered ? Fade(SKYBLUE, 0.25f) : Fade(WHITE, 0.08f));
+        DrawRectangleRoundedLines(tileRect, 0.15f, 6, hovered ? SKYBLUE : Fade(RAYWHITE, 0.4f));
+        Rectangle src = muim.getTile(hand[i]);
+        Rectangle dest = {tileX + handTileW * 0.05f, handBoxY + handTileH * 0.05f, handTileW * 0.90f, handTileH * 0.90f};
+        DrawTexturePro(muim.getSpriteSheet(), src, dest, {0,0}, 0.0f, WHITE);
+        // Hover stats (top-right overlay)
+        if (hovered)
+        {
+            TileStats stats = muim.getTileStats(i);
+            const float boxW = 180.0f;
+            const float boxH = 80.0f;
+            float boxX = (float)GetScreenWidth() - boxW - 20.0f;
+            float boxY = 20.0f;
+            Rectangle statsBox = {boxX, boxY, boxW, boxH};
+            DrawRectangleRounded(statsBox, 0.2f, 8, Color{20,25,35,230});
+            DrawRectangleRoundedLines(statsBox, 0.2f, 8, Fade(RAYWHITE, 0.8f));
+            DrawText("TILE STATS", (int)(boxX + 10), (int)(boxY + 8), 18, RAYWHITE);
+            char t1[64]; snprintf(t1, sizeof(t1), "Damage: %.1f", stats.damage);
+            DrawText(t1, (int)(boxX + 10), (int)(boxY + 30), 16, RAYWHITE);
+            char t2[64]; snprintf(t2, sizeof(t2), "Fire Rate: %.2fx", stats.fireRate);
+            DrawText(t2, (int)(boxX + 10), (int)(boxY + 48), 16, RAYWHITE);
+        }
+    }
+    
+    // Reminder: player hand drawn above
+    
+    // Draw close button
+    Rectangle closeButton = {screenW * 0.5f - 70.0f, screenH - 100.0f, 140.0f, 50.0f};
+    bool closeHovered = CheckCollisionPointRec(mousePos, closeButton);
+    DrawRectangleRounded(closeButton, 0.2f, 8, closeHovered ? Color{80, 130, 200, 220} : Color{50, 80, 120, 220});
+    DrawRectangleRoundedLines(closeButton, 0.2f, 8, Fade(RAYWHITE, 0.9f));
+    
+    const char *closeText = "Close";
+    int closeTextWidth = MeasureText(closeText, 24);
+    DrawText(closeText, (int)(closeButton.x + closeButton.width / 2 - closeTextWidth / 2), 
+             (int)(closeButton.y + 13), 24, RAYWHITE);
+    
+    // Close click handled in updateBriefcaseUI
 }
 
 Rectangle UIManager::getSmallButtonRect(int index) const
@@ -315,7 +652,7 @@ Rectangle UIManager::getSlotRect(int index) const
 
 void UIManager::drawDraggingTile()
 {
-    if (draggingTile.tile == MahjongTileType::EMPTY)
+    if (draggingTile.tile == TileType::EMPTY)
         return;
     Rectangle source = muim.getTile(draggingTile.tile);
     float scale = 0.9f;
@@ -444,7 +781,7 @@ void UIManager::endTileDrag(const Vector2 &mousePos)
 
 void UIManager::addTileToSlot(int slotIndex, const SlotTileEntry &entry)
 {
-    if (!isValidSlotIndex(slotIndex) || entry.tile == MahjongTileType::EMPTY || entry.handIndex < 0)
+    if (!isValidSlotIndex(slotIndex) || entry.tile == TileType::EMPTY || entry.handIndex < 0)
         return;
 
     auto &slot = attackSlots[slotIndex];

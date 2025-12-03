@@ -1,5 +1,6 @@
 #include "enemyManager.hpp"
 #include "me.hpp"
+#include "scene.hpp"
 void EnemyManager::RemoveEnemy(Enemy *e)
 {
     int found = -1;
@@ -47,8 +48,16 @@ std::vector<Object *> EnemyManager::getObjects() const
     return os;
 }
 
-void EnemyManager::damage(Enemy *enemy, DamageResult &dResult)
+void EnemyManager::damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc)
 {
+    if (!enemy)
+        return;
+
+    if (uc.scene)
+    {
+        uc.scene->EmitDamageIndicator(*enemy, dResult.damage);
+    }
+
     if (!enemy->damage(dResult))
         this->RemoveEnemy(enemy);
 }
@@ -62,4 +71,13 @@ std::vector<Entity *> EnemyManager::getEntities(EntityCategory cat) const
             r.push_back(e);
     }
     return r;
+}
+
+void EnemyManager::clear()
+{
+    for (auto &e : this->enemies)
+    {
+        delete e;
+    }
+    this->enemies.clear();
 }

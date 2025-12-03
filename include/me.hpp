@@ -3,6 +3,8 @@
 #include <constant.hpp>
 #include <vector>
 #include "object.hpp"
+class DialogBox;
+#include "Inventory.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
 #include "updateContext.hpp"
@@ -135,6 +137,7 @@ class Enemy : public Entity
 {
 private:
     int health; // Enemy's health
+    DialogBox *healthDialog = nullptr;
     
     // Animation state variables
     float runTimer;
@@ -162,6 +165,7 @@ protected:
     };
 
     void UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirection, float deltaSeconds, const MovementSettings &settings);
+    void UpdateDialog(UpdateContext &uc, float verticalOffset = 1.4f);
     bool isKnockbackActive() const { return this->knockbackTimer > 0.0f; }
     float computeSupportHeightForRotation(const Quaternion &rotation) const;
     void snapToGroundWithRotation(const Quaternion &rotation);
@@ -180,7 +184,10 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
+        // healthDialog will be created by enemy implementations (cpp) where type is complete
     }
+
+    virtual ~Enemy();
 
     // Updates the enemy's body (movement, jumping, etc.)
     void UpdateBody(UpdateContext& uc) override;
@@ -203,6 +210,8 @@ public:
             percent = 1.0f;
         return percent;
     }
+
+    DialogBox *getHealthDialog() { return this->healthDialog; }
 };
 
 class ChargingEnemy : public Enemy
@@ -352,9 +361,11 @@ private:
     float getColliderHalfHeight() const { return this->colliderHeight * 0.5f; }
 
 public:
+    Inventory hand;
     // Default constructor initializes the player with default values
     Me()
     {
+        this->hand.CreatePlayerHand();
         position = {0.0f, this->getColliderHalfHeight(), 0.0f};
         velocity = {0};
         direction = {0};
@@ -413,7 +424,8 @@ private:
     float airDrag;  // Air drag applied to the projectile when in the air
 
 public:
-    MahjongTileType type;
+    TileType type;
+    float damage = 10.0f; // Damage dealt by this projectile
     // Default constructor initializes the projectile with default values
     Projectile()
     {
@@ -426,7 +438,7 @@ public:
     }
 
     // Parameterized constructor initializes the projectile with specific values
-    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird, MahjongTileType _type)
+    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird, TileType _type)
     {
         this->position = pos;
         this->velocity = vel;

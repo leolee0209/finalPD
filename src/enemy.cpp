@@ -1,8 +1,10 @@
 #include "me.hpp"       // Contains Enemy class definition
+#include "dialogBox.hpp"
 #include "scene.hpp"    // For Scene class and its methods
 #include "raymath.h"    // For Vector3 operations
 #include "constant.hpp" // For constants like GRAVITY, FRICTION, AIR_DRAG, MAX_SPEED, MAX_ACCEL
 #include <iostream>
+#include <cstdio>
 #include <cmath> // For sinf, cosf
 #include <algorithm>
 
@@ -144,6 +146,12 @@ void Enemy::UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirect
     this->o.UpdateOBB();
 }
 
+Enemy::~Enemy()
+{
+    delete this->healthDialog;
+    this->healthDialog = nullptr;
+}
+
 float Enemy::computeSupportHeightForRotation(const Quaternion &rotation) const
 {
     Vector3 halfSize = Vector3Scale(this->o.size, 0.5f);
@@ -182,6 +190,8 @@ void Enemy::UpdateBody(UpdateContext &uc)
     settings.facingHint = directionToPlayer;
 
     this->UpdateCommonBehavior(uc, directionToPlayer, delta, settings);
+    // Update health dialog owned by this enemy (position/text/orientation)
+    this->UpdateDialog(uc);
 }
 
 void ChargingEnemy::UpdateBody(UpdateContext &uc)
@@ -376,6 +386,8 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
             this->appliedChargeDamage = true;
         }
     }
+    // Update health dialog for charging enemy
+    this->UpdateDialog(uc);
 }
 
 bool ChargingEnemy::updatePoseTowards(float targetAngleDeg, float deltaSeconds)
@@ -449,6 +461,24 @@ void Enemy::gatherObjects(std::vector<Object *> &out) const
     out.push_back(const_cast<Object *>(&this->o));
 }
 
+// Update the enemy's dialog box position/text/visibility
+void Enemy::UpdateDialog(UpdateContext &uc, float verticalOffset)
+{
+    if (!this->healthDialog)
+    {
+        this->healthDialog = new DialogBox();
+        this->healthDialog->setBarSize(2.5f, 0.32f);
+    }
+
+    // Position the dialog above the enemy's head
+    Vector3 headPos = this->o.getPos();
+    headPos.y += this->o.getSize().y * 0.5f + verticalOffset;
+    this->healthDialog->setWorldPosition(headPos);
+    this->healthDialog->setVisible(true);
+
+    this->healthDialog->setFillPercent(this->getHealthPercent());
+}
+
 ShooterEnemy::ShooterEnemy()
 {
     // Set default bullet pattern (single bullet)
@@ -514,6 +544,8 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
     }
 
     this->updateBullets(uc, delta);
+    // Update health dialog
+    this->UpdateDialog(uc);
 }
 
 ShooterEnemy::MovementCommand ShooterEnemy::FindMovement(UpdateContext &uc, const Vector3 &toPlayer, float distance, bool hasLineOfSight, float deltaSeconds)
@@ -859,7 +891,10 @@ ShooterEnemy::~ShooterEnemy()
 {
     if (this->sunTexture.id != 0)
     {
-        UnloadTexture(this->sunTexture);
+        if (IsWindowReady())
+        {
+            UnloadTexture(this->sunTexture);
+        }
         this->sunTexture.id = 0;
     }
 }
