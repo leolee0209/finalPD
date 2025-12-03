@@ -21,6 +21,9 @@ int main(void)
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
     
+    // Set player spawn position
+    player.setSpawnPosition({0.0f, 0.0f, 0.0f});
+    
     // Assign tile textures to enemies after UIManager is ready
     scene.AssignEnemyTextures(&uiManager);
 
@@ -178,6 +181,23 @@ int main(void)
         // Briefcase menu update: UIManager queries Scene for activation/state
         // Must be outside gamePaused check so it can process clicks while menu is open
         uiManager.updateBriefcaseMenu(uc, player.hand, gamePaused);
+
+        // Check for player death
+        if (player.getHealth() <= 0 && !uiManager.isGameOverVisible())
+        {
+            uiManager.setGameOverVisible(true);
+            EnableCursor(); // Show cursor for respawn button
+        }
+
+        // Handle respawn request
+        if (uiManager.consumeRespawnRequest())
+        {
+            player.respawn(player.getSpawnPosition());
+            uiManager.setGameOverVisible(false);
+            gamePaused = false;
+            uiManager.setPauseMenuVisible(false);
+            DisableCursor();
+        }
 
         uiManager.update(player.hand);
 

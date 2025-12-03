@@ -72,6 +72,82 @@ bool UIManager::consumeQuitRequest()
     return true;
 }
 
+bool UIManager::consumeRespawnRequest()
+{
+    if (!respawnRequested)
+        return false;
+    respawnRequested = false;
+    return true;
+}
+
+void UIManager::updateGameOverUI()
+{
+    if (!gameOverVisible)
+        return;
+
+    // Check for respawn button click
+    Vector2 mousePos = GetMousePosition();
+    int screenW = GetScreenWidth();
+    int screenH = GetScreenHeight();
+    
+    // Respawn button centered below "GAME OVER" text
+    Rectangle respawnButton = {
+        (float)screenW / 2.0f - 100.0f,
+        (float)screenH / 2.0f + 50.0f,
+        200.0f,
+        50.0f
+    };
+    
+    bool hovered = CheckCollisionPointRec(mousePos, respawnButton);
+    
+    if (hovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+    {
+        respawnRequested = true;
+        gameOverVisible = false;
+    }
+}
+
+void UIManager::drawGameOverUI()
+{
+    if (!gameOverVisible)
+        return;
+    
+    int screenW = GetScreenWidth();
+    int screenH = GetScreenHeight();
+    
+    // Semi-transparent dark overlay
+    DrawRectangle(0, 0, screenW, screenH, ColorAlpha(BLACK, 0.7f));
+    
+    // "GAME OVER" text
+    const char *gameOverText = "GAME OVER";
+    int fontSize = 80;
+    int textWidth = MeasureText(gameOverText, fontSize);
+    DrawText(gameOverText, screenW / 2 - textWidth / 2, screenH / 2 - 100, fontSize, RED);
+    
+    // Respawn button
+    Rectangle respawnButton = {
+        (float)screenW / 2.0f - 100.0f,
+        (float)screenH / 2.0f + 50.0f,
+        200.0f,
+        50.0f
+    };
+    
+    Vector2 mousePos = GetMousePosition();
+    bool hovered = CheckCollisionPointRec(mousePos, respawnButton);
+    
+    Color buttonColor = hovered ? DARKGREEN : GREEN;
+    DrawRectangleRec(respawnButton, buttonColor);
+    DrawRectangleLinesEx(respawnButton, 3, WHITE);
+    
+    const char *buttonText = "RESPAWN";
+    int buttonTextSize = 30;
+    int buttonTextWidth = MeasureText(buttonText, buttonTextSize);
+    DrawText(buttonText, 
+             (int)(respawnButton.x + respawnButton.width / 2 - buttonTextWidth / 2),
+             (int)(respawnButton.y + respawnButton.height / 2 - buttonTextSize / 2),
+             buttonTextSize, WHITE);
+}
+
 const std::vector<SlotTileEntry> &UIManager::getSlotEntries(int slotIndex) const
 {
     static const std::vector<SlotTileEntry> empty;
@@ -82,6 +158,13 @@ const std::vector<SlotTileEntry> &UIManager::getSlotEntries(int slotIndex) const
 
 void UIManager::update(Inventory &playerInventory)
 {
+    // Update game over UI first (highest priority)
+    if (gameOverVisible)
+    {
+        updateGameOverUI();
+        return; // Don't process other UI when game over is shown
+    }
+    
     // Suppress ESC pause toggle while briefcase UI is open
     if (this->briefcaseUIOpen)
     {
@@ -106,6 +189,12 @@ void UIManager::update(Inventory &playerInventory)
 
 void UIManager::draw(UpdateContext& uc, Inventory &playerInventory)
 {
+    if (gameOverVisible)
+    {
+        drawGameOverUI();
+        return; // Game over UI takes full screen
+    }
+    
     if (pauseMenuVisible)
     {
         drawPauseMenu(playerInventory);

@@ -479,8 +479,11 @@ void Enemy::UpdateDialog(UpdateContext &uc, float verticalOffset)
     this->healthDialog->setFillPercent(this->getHealthPercent());
 }
 
-ShooterEnemy::ShooterEnemy()
+ShooterEnemy::ShooterEnemy() : Enemy(250)  // Sniper: 250 HP
 {
+    this->setMaxHealth(250);
+    this->setTileType(TileType::BAMBOO_7); // Sniper uses Bamboo tiles
+    
     // Set default bullet pattern (single bullet)
     this->bulletPattern.bulletCount = 1;
     this->bulletPattern.arcDegrees = 0.0f;

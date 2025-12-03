@@ -133,6 +133,13 @@ public:
     void setHoveredTileIndex(int index) { this->hoveredTileIndex = index; }
     int getHoveredTileIndex() const { return this->hoveredTileIndex; }
 
+    // Game Over UI
+    void setGameOverVisible(bool visible) { this->gameOverVisible = visible; }
+    bool isGameOverVisible() const { return this->gameOverVisible; }
+    bool consumeRespawnRequest();
+    void updateGameOverUI();
+    void drawGameOverUI();
+
     // Briefcase menu: update/draw pair, mirrors pause menu design
 
     // Selection state for briefcase-hand swap
@@ -180,6 +187,8 @@ private:
     bool resumeRequested = false;
     bool quitRequested = false;
     bool briefcaseUIOpen = false;
+    bool gameOverVisible = false;
+    bool respawnRequested = false;
     int activeBriefcaseIndex = -1; // index into Scene briefcases when menu is open
     int hoveredTileIndex = -1;
     // Hover states for briefcase UI

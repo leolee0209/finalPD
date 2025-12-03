@@ -58,6 +58,11 @@ public:
     const Camera &getCamera() const { return this->camera; }
 
     /**
+     * @brief Set camera position directly (useful for respawn).
+     */
+    void setPosition(const Vector3 &position) { this->camera.position = position; }
+
+    /**
      * @brief Update internal camera transform from player state.
      *
      * @param sideway -1/0/1 for strafing input
@@ -73,6 +78,11 @@ public:
      * @brief Apply a short camera shake.
      */
     void addShake(float magnitude, float durationSeconds);
+
+    /**
+     * @brief Reset camera shake (useful for respawn).
+     */
+    void resetShake();
 
     /**
      * @brief Temporarily boosts FOV for speed effects.

@@ -191,6 +191,35 @@ float Me::getMovementMultiplier() const
     return 1.0f;
 }
 
+void Me::respawn(const Vector3 &spawnPosition)
+{
+    // Reset position
+    this->position = spawnPosition;
+    this->position.y = this->getColliderHalfHeight();
+    this->o.pos = this->position;
+    this->o.UpdateOBB();
+    
+    // Reset physics
+    this->velocity = Vector3Zero();
+    this->direction = Vector3Zero();
+    this->grounded = true;
+    
+    // Reset health
+    this->health = MAX_HEALTH_ME;
+    
+    // Reset timers
+    this->knockbackTimer = 0.0f;
+    this->meleeSwingTimer = 0.0f;
+    this->meleeWindupTimer = 0.0f;
+    this->shootSlowTimer = 0.0f;
+    
+    // Reset camera
+    this->camera.resetShake();
+    Vector3 cameraPos = this->position;
+    cameraPos.y += this->getColliderHalfHeight();
+    this->camera.setPosition(cameraPos);
+}
+
 // Updates the projectile's body (movement, gravity, etc.)
 void Projectile::UpdateBody(UpdateContext &uc)
 {

@@ -120,6 +120,16 @@ void MyCamera::addShake(float magnitude, float durationSeconds)
     this->shakeMagnitude = fmaxf(this->shakeMagnitude, magnitude);
 }
 
+void MyCamera::resetShake()
+{
+    this->shakeTimer = 0.0f;
+    this->shakeDuration = 0.0f;
+    this->shakeMagnitude = 0.0f;
+    this->fovKickTimer = 0.0f;
+    this->fovKickDuration = 0.0f;
+    this->fovKickMagnitude = 0.0f;
+}
+
 void MyCamera::addFovKick(float magnitude, float durationSeconds)
 {
     if (durationSeconds <= 0.0f || magnitude <= 0.0f)

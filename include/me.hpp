@@ -137,7 +137,9 @@ class Enemy : public Entity
 {
 private:
     int health; // Enemy's health
+    int maxHealth = MAX_HEALTH_ENEMY; // Enemy's max health
     DialogBox *healthDialog = nullptr;
+    TileType tileType = TileType::BAMBOO_1; // Associated mahjong tile type
     
     // Animation state variables
     float runTimer;
@@ -186,6 +188,20 @@ public:
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
         // healthDialog will be created by enemy implementations (cpp) where type is complete
     }
+    
+    Enemy(int customHealth)
+    {
+        position = {0};
+        velocity = {0};
+        direction = {0};
+        grounded = true;
+        health = customHealth;
+        
+        // Initialize animation state
+        runTimer = 0.0f;
+        runLerp = 0.0f;
+        facingDirection = {0.0f, 0.0f, 1.0f};
+    }
 
     virtual ~Enemy();
 
@@ -199,11 +215,14 @@ public:
     virtual void gatherObjects(std::vector<Object *> &out) const;
     int getHealth() const { return this->health; }
     int getMaxHealth() const { return MAX_HEALTH_ENEMY; }
+    void setMaxHealth(int maxHealth) { this->maxHealth = maxHealth; }
+    TileType getTileType() const { return this->tileType; }
+    void setTileType(TileType type) { this->tileType = type; }
     float getHealthPercent() const
     {
-        if (MAX_HEALTH_ENEMY <= 0)
+        if (this->maxHealth <= 0)
             return 0.0f;
-        float percent = static_cast<float>(this->health) / static_cast<float>(MAX_HEALTH_ENEMY);
+        float percent = static_cast<float>(this->health) / static_cast<float>(this->maxHealth);
         if (percent < 0.0f)
             percent = 0.0f;
         if (percent > 1.0f)
@@ -250,7 +269,11 @@ private:
     bool updatePoseTowards(float targetAngleDeg, float deltaSeconds);
 
 public:
-    ChargingEnemy() = default;
+    ChargingEnemy() : Enemy(500) 
+    { 
+        this->setMaxHealth(500);  // Tank: 500 HP
+        this->setTileType(TileType::CHARACTER_9); // Tank uses Character tiles
+    }
     void UpdateBody(UpdateContext &uc) override;
 };
 
@@ -320,7 +343,7 @@ private:
     bool SelectRepositionGoal(UpdateContext &uc, const Vector3 &planarToPlayer, float distanceToPlayer);
 
 public:
-    ShooterEnemy();
+    ShooterEnemy();  // Constructor sets 250 HP (Sniper)
     ~ShooterEnemy();
     void UpdateBody(UpdateContext &uc) override;
     void gatherObjects(std::vector<Object *> &out) const override;
@@ -352,6 +375,7 @@ private:
     float colliderWidth = 1.2f;
     float colliderDepth = 1.2f;
     float colliderHeight = 1.8f;
+    Vector3 spawnPosition = {0.0f, 0.0f, 0.0f};
 
     // New: Struct to hold player input state
     
@@ -395,6 +419,9 @@ public:
     int getHealth() const { return this->health; }
     void applyShootSlow(float slowFactor, float durationSeconds);
     float getMovementMultiplier() const;
+    void respawn(const Vector3 &spawnPosition);
+    void setSpawnPosition(const Vector3 &pos) { this->spawnPosition = pos; }
+    Vector3 getSpawnPosition() const { return this->spawnPosition; }
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }

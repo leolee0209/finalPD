@@ -1066,8 +1066,8 @@ Scene::Scene()
     this->wallTexture = LoadTexture("rough_pine_door_4k.blend/textures/rough_pine_door_diff_4k.jpg");
     this->floorTexture = LoadTexture("wood_cabinet_worn_long_4k.blend/textures/wood_cabinet_worn_long_diff_4k.jpg");
 
-    const float roomWidth = 120.0f;
-    const float roomLength = 100.0f;
+    const float roomWidth = 72.0f;   // Reduced to 60% of original (120.0f)
+    const float roomLength = 60.0f;  // Reduced to 60% of original (100.0f)
     const float wallThickness = 1.0f;
     const float wallHeight = 30.0f;
     const float floorThickness = 0.5f;
