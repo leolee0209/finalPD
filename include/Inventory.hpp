@@ -51,10 +51,10 @@ inline void Inventory::CreatePlayerHand()
     // const float startX = (screenWidth - totalHandWidth) / 2.0f;
 }
 
-Inventory::Inventory(/* args */)
+inline Inventory::Inventory(/* args */)
 {
 }
 
-Inventory::~Inventory()
+inline Inventory::~Inventory()
 {
 }

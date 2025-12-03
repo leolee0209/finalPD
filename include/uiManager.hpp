@@ -8,6 +8,7 @@
 #include <algorithm>
 #include "uiElement.hpp"
 #include "tiles.hpp"
+#include "Inventory.hpp"
 class RewardBriefcase;
 
 /**
@@ -16,6 +17,16 @@ class RewardBriefcase;
  * `TILE_COUNT` can be used to size arrays referencing the full tile set.
  */
 class AttackSlotElement;
+
+/**
+ * @brief Stores position and size information for a single briefcase tile UI element.
+ */
+struct BriefcaseTileUI
+{
+    Rectangle rect;
+    TileType tileType;
+    int inventoryIndex;
+};
 
 /**
  * @brief Helper to manage the Mahjong tile sprite sheet and player hand UI.
@@ -60,7 +71,7 @@ public:
     Rectangle getTileBounds(int index) const;
     bool isTileUsed(int index) const;
     void setTileUsed(int index, bool used);
-    
+
     int getSelectedTileIndex() const { return selectedTileIndex; }
 
     // Returns the source rectangle for a given tile type.
@@ -76,7 +87,7 @@ public:
         return {x, y, static_cast<float>(this->tileWidth), static_cast<float>(this->tileHeight)};
     }
 
-    Texture2D& getSpriteSheet() { return spriteSheet; }
+    Texture2D &getSpriteSheet() { return spriteSheet; }
 
 private:
     int selectedTileIndex = 0;
@@ -107,7 +118,7 @@ public:
     void cleanup();
 
     void update(Inventory &playerInventory);
-    void draw(UpdateContext& uc, Inventory &playerInventory);
+    void draw(UpdateContext &uc, Inventory &playerInventory);
     void addElement(UIElement *element);
     void setSlotCooldownPercent(int slotIndex, float percent);
 
@@ -116,24 +127,23 @@ public:
     bool consumeResumeRequest();
     bool consumeQuitRequest();
     const std::vector<SlotTileEntry> &getSlotEntries(int slotIndex) const;
-    
+
     void setRewardBriefcaseUIOpen(bool open) { this->briefcaseUIOpen = open; }
     bool isRewardBriefcaseUIOpen() const { return this->briefcaseUIOpen; }
     void setHoveredTileIndex(int index) { this->hoveredTileIndex = index; }
     int getHoveredTileIndex() const { return this->hoveredTileIndex; }
-    
-    // Briefcase UI: update/draw pair (mirror pause menu structure)
-    void updateBriefcaseUI(Inventory &briefcaseInventory, Inventory &playerInventory);
-    void drawBriefcaseUI(Inventory &briefcaseInventory, Inventory &playerInventory);
+
+    // Briefcase menu: update/draw pair, mirrors pause menu design
 
     // Selection state for briefcase-hand swap
     int selectedBriefcaseIndex = -1;
 
     MahjongUIManager muim;
 
-private:
-    static Texture2D loadTexture(const std::string &fileName);
+    void updateBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory, bool& gamePaused);
+    void drawBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory);
 
+private:
     void updateHud();
     void drawHud();
     void drawSlotHudPreview();
@@ -145,12 +155,12 @@ private:
 
     Rectangle getSlotRect(int index) const;
     void drawDraggingTile();
-    void ensureSlotSetup();             // Initializes slot data from the hand on first use
-    void ensureSlotElements();          // Lazily instantiates AttackSlotElement widgets
-    void updateSlotElementLayout();     // Recomputes bounds + bindings every frame
+    void ensureSlotSetup();         // Initializes slot data from the hand on first use
+    void ensureSlotElements();      // Lazily instantiates AttackSlotElement widgets
+    void updateSlotElementLayout(); // Recomputes bounds + bindings every frame
     AttackSlotElement *getSlotElement(int index) const;
 
-    void beginTileDragFromHand(int tileIndex, const Vector2 &mousePos);
+    void beginTileDragFromHand(int tileIndex, TileType tileType, const Vector2 &mousePos);
     void beginTileDragFromSlot(int slotIndex, int tileIndex, const Vector2 &mousePos);
     void endTileDrag(const Vector2 &mousePos);
     void addTileToSlot(int slotIndex, const SlotTileEntry &entry);
@@ -158,11 +168,19 @@ private:
     bool slotHasSpace(int slotIndex) const;
     bool isValidSlotIndex(int slotIndex) const;
 
+    // Rebuild briefcase UI element rectangles from inventory
+    void rebuildBriefcaseUI(Inventory *briefcaseInventory);
+
+    // Draw tile stats tooltip at top-right corner
+    void drawTileStatsTooltip(const TileStats &stats, TileType type) const;
+
     std::vector<UIElement *> elements;
+    std::vector<BriefcaseTileUI> briefcaseTileRects;
     bool pauseMenuVisible = false;
     bool resumeRequested = false;
     bool quitRequested = false;
     bool briefcaseUIOpen = false;
+    int activeBriefcaseIndex = -1; // index into Scene briefcases when menu is open
     int hoveredTileIndex = -1;
     // Hover states for briefcase UI
     int hoveredBriefcaseIndex = -1;

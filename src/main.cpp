@@ -18,8 +18,6 @@ int main(void)
     Me player;
     Scene scene;
     UIManager uiManager("mahjong.png", 9, 44, 60);
-
-    uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
     
@@ -118,34 +116,12 @@ int main(void)
 
         UpdateContext uc(&scene, &player, frameInput, &uiManager);
 
-        if (!gamePaused && !uiManager.isRewardBriefcaseUIOpen())
+        if (!gamePaused)
         {
             // Handle interaction with briefcases and doors (C key)
             if (IsKeyPressed(KEY_C))
             {
                 Vector3 playerPos = player.pos();
-                
-                // Check for briefcase interaction
-                auto briefcases = scene.GetRewardBriefcases();
-                for (auto *briefcase : briefcases)
-                {
-                    if (briefcase && briefcase->IsPlayerNearby(playerPos))
-                    {
-                        if (briefcase->IsUIOpen())
-                        {
-                            briefcase->CloseUI();
-                            uiManager.setRewardBriefcaseUIOpen(false);
-                        }
-                        else
-                        {
-                            briefcase->OpenUI();
-                            uiManager.setRewardBriefcaseUIOpen(true);
-                            uiManager.setPauseMenuVisible(false);
-                        }
-                        break;
-                    }
-                }
-                
                 // Check for door interaction
                 Room *currentRoom = scene.GetCurrentPlayerRoom();
                 if (currentRoom && currentRoom->IsCompleted())
@@ -199,7 +175,11 @@ int main(void)
             scene.Update(uc); // Pass the player to the scene update
         }
 
-        uiManager.update();
+        // Briefcase menu update: UIManager queries Scene for activation/state
+        // Must be outside gamePaused check so it can process clicks while menu is open
+        uiManager.updateBriefcaseMenu(uc, player.hand, gamePaused);
+
+        uiManager.update(player.hand);
 
         if (uiManager.consumeResumeRequest())
         {
@@ -228,29 +208,8 @@ int main(void)
         scene.DrawDamageIndicators(camera);
         scene.DrawInteractionPrompts(player.pos(), camera);
 
-        uiManager.draw();
+        uiManager.draw(uc, player.hand);
         
-        // Update + Draw briefcase UI if open (mirror pause menu structure)
-        if (uiManager.isRewardBriefcaseUIOpen())
-        {
-            EnableCursor();
-            auto briefcases = scene.GetRewardBriefcases();
-            for (auto *briefcase : briefcases)
-            {
-                if (briefcase && briefcase->IsUIOpen())
-                {
-                    // Handle input first, then draw
-                    uiManager.updateBriefcaseUI(briefcase);
-                    uiManager.drawBriefcaseUI(briefcase);
-                    break;
-                }
-            }
-        }
-        else if (!gamePaused)
-        {
-            DisableCursor();
-        }
-
         EndDrawing();
         //----------------------------------------------------------------------------------
     }

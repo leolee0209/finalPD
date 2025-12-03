@@ -1,12 +1,5 @@
 #pragma once
 
-class Tile
-{
-public:
-    TileStats stat;
-    TileType type;
-    Tile(TileStats _stat, TileType _type) : stat(_stat), type(_type) {}
-};
 struct TileStats
 {
     float damage = 10.0f;  // Base damage per hit
@@ -90,4 +83,12 @@ struct SlotTileEntry
     TileType tile = TileType::EMPTY;
     int handIndex = -1;
     bool isValid() const { return tile != TileType::EMPTY && handIndex >= 0; }
+};
+
+class Tile
+{
+public:
+    TileStats stat;
+    TileType type;
+    Tile(TileStats _stat, TileType _type) : stat(_stat), type(_type) {}
 };

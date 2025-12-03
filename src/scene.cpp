@@ -12,6 +12,7 @@
 #include <array>
 #include <cfloat>
 #include <string>
+#include "Inventory.hpp"
 
 namespace
 {
@@ -691,20 +692,19 @@ void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
                 };
                 
                 // Generate 3-5 reward tiles with random stats
-                std::vector<RewardTile> rewards;
+                Inventory inv;
+                auto &tiles = inv.getTiles();
                 int tileCount = 3 + (rand() % 3);  // 3-5 tiles
                 for (int i = 0; i < tileCount; ++i)
                 {
-                    // Random tile type
                     TileType type = (TileType)(rand() % (int)TileType::TILE_COUNT);
-                    // Random stats (better than starting tiles)
-                    float damage = 10.0f + (float)(rand() % 8);  // 10-17 damage
-                    float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);  // 0.9-1.5 fire rate
-                    rewards.push_back({type, TileStats(damage, fireRate)});
+                    float damage = 10.0f + (float)(rand() % 8);
+                    float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);
+                    tiles.emplace_back(TileStats(damage, fireRate), type);
                 }
-                
+
                 // Create briefcase
-                this->rewardBriefcases.push_back(std::make_unique<RewardBriefcase>(center, rewards));
+                this->rewardBriefcases.push_back(std::make_unique<RewardBriefcase>(center, std::move(inv)));
             }
         }
     }
@@ -1345,7 +1345,7 @@ void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camer
     bool briefcaseNearby = false;
     for (const auto &briefcase : this->rewardBriefcases)
     {
-        if (briefcase && briefcase->IsPlayerNearby(playerPos) && !briefcase->IsUIOpen())
+        if (briefcase && briefcase->IsPlayerNearby(playerPos) && !briefcase->IsActivated())
         {
             briefcaseNearby = true;
             break;

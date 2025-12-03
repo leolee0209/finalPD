@@ -64,12 +64,16 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
     float tileDamage = projectileDamage;
     float tileCooldown = cooldownDuration;
     
-    if (uc.uiManager)
+    if (uc.uiManager && uc.player)
     {
         int selectedIndex = uc.uiManager->muim.getSelectedTileIndex();
-        TileStats stats = uc.uiManager->muim.getTileStats(selectedIndex);
-        tileDamage = stats.damage;
-        tileCooldown = stats.getCooldownDuration(cooldownDuration);
+        auto &tiles = uc.player->hand.getTiles();
+        if (selectedIndex >= 0 && selectedIndex < (int)tiles.size())
+        {
+            const TileStats &stats = tiles[selectedIndex].stat;
+            tileDamage = stats.damage;
+            tileCooldown = stats.getCooldownDuration(cooldownDuration);
+        }
     }
 
     // Get firing direction from spawner
@@ -107,14 +111,22 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
     body.useTexture = uc.uiManager != nullptr;
     if (uc.uiManager)
     {
-        const auto tile = uc.uiManager->muim.getSelectedTile();
+        TileType tileType = TileType::BAMBOO_1;
+        if (uc.player)
+        {
+            tileType = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        }
         body.texture = &uc.uiManager->muim.getSpriteSheet();
-        body.sourceRect = uc.uiManager->muim.getTile(tile);
+        body.sourceRect = uc.uiManager->muim.getTile(tileType);
         body.tint = WHITE;
     }
     body.UpdateOBB();
 
-    TileType tile = uc.uiManager ? uc.uiManager->muim.getSelectedTile() : TileType::BAMBOO_1;
+    TileType tile = TileType::BAMBOO_1;
+    if (uc.uiManager && uc.player)
+    {
+        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+    }
     Projectile projectile(
         spawnPos,
         velocity,
@@ -785,7 +797,11 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     o.setRotationFromForward(forward);
     o.useTexture = true;
 
-    const auto tile = uc.uiManager->muim.getSelectedTile();
+    TileType tile = TileType::BAMBOO_1;
+    if (uc.uiManager && uc.player)
+    {
+        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+    }
     o.texture = &uc.uiManager->muim.getSpriteSheet();
     o.sourceRect = uc.uiManager->muim.getTile(tile);
 
@@ -1071,7 +1087,11 @@ void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
         return;
 
     Texture2D &sheet = uc.uiManager->muim.getSpriteSheet();
-    TileType tile = uc.uiManager->muim.getSelectedTile();
+    TileType tile = TileType::BAMBOO_1;
+    if (uc.uiManager && uc.player)
+    {
+        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+    }
 
     this->tileIndicator.sprite.size = {indicatorWidth, indicatorHeight, indicatorThickness};
     this->tileIndicator.sprite.useTexture = true;

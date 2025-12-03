@@ -99,7 +99,11 @@ void AttackManager::recordThrow(UpdateContext &uc)
     // Record the thrown tile (spawn already done by ThousandTileAttack::spawnProjectile)
     if (uc.uiManager)
     {
-        TileType tile = uc.uiManager->muim.getSelectedTile();
+        TileType tile = TileType::BAMBOO_1;
+        if (uc.player)
+        {
+            tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        }
         Rectangle rect = uc.uiManager->muim.getTile(tile);
         this->thrownTiles.push_back({tile, rect});
     }

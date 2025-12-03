@@ -1,9 +1,10 @@
 #include "uiManager.hpp"
 #include "attackSlotElement.hpp"
 #include "rewardBriefcase.hpp"
+#include "Inventory.hpp"
+#include "scene.hpp"
 #include <algorithm>
 #include <cmath>
-#include "updateContext.hpp"
 
 const char *UIManager::slotKeyLabels[slotCount] = {"Left Click", "R", "E"};
 
@@ -71,7 +72,15 @@ bool UIManager::consumeQuitRequest()
     return true;
 }
 
-void UIManager::update()
+const std::vector<SlotTileEntry> &UIManager::getSlotEntries(int slotIndex) const
+{
+    static const std::vector<SlotTileEntry> empty;
+    if (!isValidSlotIndex(slotIndex))
+        return empty;
+    return attackSlots[slotIndex];
+}
+
+void UIManager::update(Inventory &playerInventory)
 {
     // Suppress ESC pause toggle while briefcase UI is open
     if (this->briefcaseUIOpen)
@@ -81,9 +90,13 @@ void UIManager::update()
             // ignore
         }
     }
+    
+    // Create/update hand UI from player inventory
+    muim.createHandUI(playerInventory, GetScreenWidth(), GetScreenHeight());
+    
     if (pauseMenuVisible)
     {
-        updatePauseMenu();
+        updatePauseMenu(playerInventory);
     }
     else
     {
@@ -91,19 +104,20 @@ void UIManager::update()
     }
 }
 
-void UIManager::draw(UpdateContext& uc)
+void UIManager::draw(UpdateContext& uc, Inventory &playerInventory)
 {
     if (pauseMenuVisible)
     {
-        drawPauseMenu();
+        drawPauseMenu(playerInventory);
     }
     else
     {
         drawHud();
     }
-    if(isRewardBriefcaseUIOpen()){
-        for(auto* briefcase:)
-        drawBriefcaseUI(uc.scene->briefcase);
+    // Draw briefcase menu if active
+    if (this->briefcaseUIOpen)
+    {
+        drawBriefcaseMenu(uc, playerInventory);
     }
 }
 
@@ -122,6 +136,81 @@ void UIManager::drawHud()
         element->draw();
     }
     drawSlotHudPreview();
+}
+
+void UIManager::rebuildBriefcaseUI(Inventory *briefcaseInventory)
+{
+    briefcaseTileRects.clear();
+    if (!briefcaseInventory)
+        return;
+
+    const auto &btiles = briefcaseInventory->getTiles();
+    const int count = (int)btiles.size();
+    int screenW = GetScreenWidth();
+    int screenH = GetScreenHeight();
+    float tileW = 44.0f * 1.2f;
+    float tileH = 60.0f * 1.2f;
+    float spacing = 8.0f;
+    float totalW = count * tileW + (count - 1) * spacing;
+    float startX = (screenW - totalW) * 0.5f;
+    float startY = screenH * 0.18f;
+
+    for (int i = 0; i < count; ++i)
+    {
+        BriefcaseTileUI ui;
+        ui.rect = Rectangle{startX + i * (tileW + spacing), startY, tileW, tileH};
+        ui.tileType = btiles[i].type;
+        ui.inventoryIndex = i;
+        briefcaseTileRects.push_back(ui);
+    }
+}
+
+void UIManager::drawTileStatsTooltip(const TileStats &stats, TileType type) const
+{
+    const int screenW = GetScreenWidth();
+    const int padding = 20;
+    const int boxWidth = 180;
+    const int boxHeight = 80;
+    const int fontSize = 18;
+    const int titleFont = 20;
+    
+    Rectangle tooltipRect = {
+        (float)(screenW - boxWidth - padding),
+        (float)padding,
+        (float)boxWidth,
+        (float)boxHeight
+    };
+    
+    // Draw background
+    DrawRectangleRounded(tooltipRect, 0.15f, 8, Color{20, 25, 35, 240});
+    DrawRectangleRoundedLines(tooltipRect, 0.15f, 8, Fade(RAYWHITE, 0.6f));
+    
+    // Draw title
+    const char *title = "Tile Stats";
+    int titleWidth = MeasureText(title, titleFont);
+    DrawText(title, 
+        (int)(tooltipRect.x + tooltipRect.width * 0.5f - titleWidth * 0.5f),
+        (int)(tooltipRect.y + 10),
+        titleFont,
+        YELLOW);
+    
+    // Draw damage
+    char damageText[64];
+    snprintf(damageText, sizeof(damageText), "Damage: %.1f", stats.damage);
+    DrawText(damageText,
+        (int)(tooltipRect.x + 15),
+        (int)(tooltipRect.y + 38),
+        fontSize,
+        RAYWHITE);
+    
+    // Draw fire rate
+    char fireRateText[64];
+    snprintf(fireRateText, sizeof(fireRateText), "Fire Rate: %.2fx", stats.fireRate);
+    DrawText(fireRateText,
+        (int)(tooltipRect.x + 15),
+        (int)(tooltipRect.y + 56),
+        fontSize,
+        RAYWHITE);
 }
 
 void UIManager::drawSlotHudPreview()
@@ -197,466 +286,47 @@ void UIManager::drawSlotHudPreview()
     }
 }
 
-void UIManager::updatePauseMenu()
-{
-    ensureSlotSetup();
-    ensureSlotElements();
-    this->muim.update();
-    updateSlotElementLayout();
-
-    Rectangle resumeRect = getSmallButtonRect(0);
-    Rectangle quitRect = getSmallButtonRect(1);
-    Vector2 mousePos = GetMousePosition();
-    bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-    bool mouseReleased = IsMouseButtonReleased(MOUSE_LEFT_BUTTON);
-    
-    // Update hovered tile index
-    int newHoveredTileIndex = muim.getTileIndexAt(mousePos);
-    if (newHoveredTileIndex >= 0 && muim.isTileUsed(newHoveredTileIndex))
-    {
-        newHoveredTileIndex = -1;  // Don't hover over used tiles
-    }
-    this->hoveredTileIndex = newHoveredTileIndex;
-
-    if (mousePressed)
-    {
-        if (CheckCollisionPointRec(mousePos, resumeRect))
-        {
-            resumeRequested = true;
-        }
-        else if (CheckCollisionPointRec(mousePos, quitRect))
-        {
-            quitRequested = true;
-        }
-        // Check if clicking on a tile to select it
-        else if (newHoveredTileIndex >= 0)
-        {
-            muim.selectTileByIndex(newHoveredTileIndex);
-        }
-    }
-
-    if (!isDraggingTile && mousePressed)
-    {
-        int tileIndex = muim.getTileIndexAt(mousePos);
-        if (tileIndex >= 0)
-        {
-            beginTileDragFromHand(tileIndex, mousePos);
-        }
-        else
-        {
-            bool grabbedSlotTile = false;
-            const int slotCountLocal = static_cast<int>(attackSlots.size());
-            for (int slotIdx = 0; slotIdx < slotCountLocal && !grabbedSlotTile; ++slotIdx)
-            {
-                const auto &slot = attackSlots[slotIdx];
-                AttackSlotElement *slotElement = getSlotElement(slotIdx);
-                if (!slotElement)
-                    continue;
-                for (int tileSlot = 0; tileSlot < static_cast<int>(slot.size()); ++tileSlot)
-                {
-                    if (CheckCollisionPointRec(mousePos, slotElement->getTileRect(tileSlot)))
-                    {
-                        beginTileDragFromSlot(slotIdx, tileSlot, mousePos);
-                        grabbedSlotTile = true;
-                        break;
-                    }
-                }
-            }
-
-        }
-    }
-
-    if (isDraggingTile)
-    {
-        draggingTilePos = mousePos;
-        if (mouseReleased)
-        {
-            endTileDrag(mousePos);
-        }
-    }
-}
-
-void UIManager::drawPauseMenu()
-{
-    const int screenW = GetScreenWidth();
-    const int screenH = GetScreenHeight();
-    DrawRectangle(0, 0, screenW, screenH, Fade(BLACK, 0.65f));
-
-    Rectangle resumeRect = getSmallButtonRect(0);
-    Rectangle quitRect = getSmallButtonRect(1);
-    Vector2 mousePos = GetMousePosition();
-
-    drawSmallButton(resumeRect, "Resume", CheckCollisionPointRec(mousePos, resumeRect));
-    drawSmallButton(quitRect, "Quit", CheckCollisionPointRec(mousePos, quitRect));
-
-    const int slotCountLocal = static_cast<int>(attackSlots.size());
-    for (int i = 0; i < slotCountLocal; ++i)
-    {
-        if (AttackSlotElement *slotElement = getSlotElement(i))
-        {
-            slotElement->draw();
-        }
-    }
-
-    // Draw player hand with selection highlight
-    const auto &hand = muim.getPlayerHand();
-    int selectedIdx = muim.getSelectedTileIndex();
-    
-    for (int i = 0; i < (int)hand.size(); ++i)
-    {
-        Rectangle tileBounds = muim.getTileBounds(i);
-        
-        // Draw selected tile higher
-        if (i == selectedIdx)
-        {
-            tileBounds.y -= 15.0f;  // Raise selected tile
-            DrawRectangleLinesEx(tileBounds, 3.0f, YELLOW);
-        }
-        // Draw hover indicator
-        else if (i == this->hoveredTileIndex)
-        {
-            DrawRectangleLinesEx(tileBounds, 2.0f, Fade(WHITE, 0.7f));
-        }
-    }
-    
-    this->muim.draw();
-    
-    // Draw tile stats for hovered or selected tile (top-right)
-    int displayIndex = this->hoveredTileIndex >= 0 ? this->hoveredTileIndex : selectedIdx;
-    if (displayIndex >= 0 && displayIndex < (int)hand.size())
-    {
-        TileStats stats = muim.getTileStats(displayIndex);
-        const float boxWidth = 200.0f;
-        const float boxHeight = 100.0f;
-        const float boxX = (float)GetScreenWidth() - boxWidth - 20.0f;
-        const float boxY = 20.0f;
-        Rectangle statsBox = {boxX, boxY, boxWidth, boxHeight};
-        DrawRectangleRounded(statsBox, 0.2f, 8, Color{20, 25, 35, 230});
-        DrawRectangleRoundedLines(statsBox, 0.2f, 8, Fade(RAYWHITE, 0.8f));
-        const int fontSize = 16;
-        DrawText("TILE STATS", (int)(boxX + 10), (int)(boxY + 10), fontSize + 2, RAYWHITE);
-        char damageText[64];
-        snprintf(damageText, sizeof(damageText), "Damage: %.1f", stats.damage);
-        DrawText(damageText, (int)(boxX + 10), (int)(boxY + 35), fontSize, Fade(RAYWHITE, 0.9f));
-        char fireRateText[64];
-        snprintf(fireRateText, sizeof(fireRateText), "Fire Rate: %.2fx", stats.fireRate);
-        DrawText(fireRateText, (int)(boxX + 10), (int)(boxY + 55), fontSize, Fade(RAYWHITE, 0.9f));
-    }
-    
-    if (isDraggingTile)
-    {
-        drawDraggingTile();
-    }
-}
-
-void UIManager::updateBriefcaseUI(RewardBriefcase *briefcase)
-{
-    if (!briefcase)
-        return;
-
-    const int screenW = GetScreenWidth();
-    const int screenH = GetScreenHeight();
-
-    // Layout constants should mirror drawBriefcaseUI
-    const float briefcaseBoxX = screenW * 0.5f - 300.0f;
-    const float briefcaseBoxY = 120.0f;
-    const float briefcaseBoxW = 600.0f;
-    const float briefcaseBoxH = 200.0f;
-
-    auto &rewardTiles = briefcase->GetRewardTiles();
-
-    // Compute briefcase tile layout
-    const float tileBaseW = 44.0f;
-    const float tileBaseH = 60.0f;
-    const float caseInnerPadding = 20.0f;
-    const float caseAvailW = briefcaseBoxW - caseInnerPadding * 2.0f;
-    int caseCount = (int)rewardTiles.size();
-    float caseGap = 12.0f;
-    float caseScale = 1.0f;
-    if (caseCount > 0)
-    {
-        float maxScaleByWidth = (caseAvailW - caseGap * (caseCount - 1)) / (caseCount * tileBaseW);
-        caseScale = fminf(1.8f, fmaxf(0.6f, maxScaleByWidth));
-    }
-    const float tileSpacing = caseGap;
-    const float tileW = tileBaseW * caseScale;
-    const float tileH = tileBaseH * caseScale;
-    const float rowWidth = caseCount * tileW + (caseCount - 1) * tileSpacing;
-    const float tileStartX = briefcaseBoxX + (briefcaseBoxW - rowWidth) * 0.5f;
-    const float tileY = briefcaseBoxY + (briefcaseBoxH - tileH) * 0.5f;
-
-    // Compute hand layout
-    const float handBoxY = briefcaseBoxY + briefcaseBoxH + 60.0f;
-    const float handPadding = 24.0f;
-    const float handAvailW = briefcaseBoxW - handPadding * 2.0f;
-    const auto &hand = muim.getPlayerHand();
-    int handCount = (int)hand.size();
-    float handGap = 0.0f;
-    float handScale = 1.0f;
-    if (handCount > 0)
-    {
-        float maxScaleByWidth = (handAvailW - handGap * (handCount - 1)) / (handCount * tileBaseW);
-        handScale = fminf(1.6f, fmaxf(0.5f, maxScaleByWidth));
-    }
-    const float handTileW = tileBaseW * handScale;
-    const float handTileH = tileBaseH * handScale;
-    const float handTotalWidth = handCount * handTileW + (handCount - 1) * handGap;
-    const float handStartX = briefcaseBoxX + (briefcaseBoxW - handTotalWidth) * 0.5f;
-
-    // Mouse
-    Vector2 mousePos = GetMousePosition();
-    bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-
-    // Update hovered indices
-    hoveredBriefcaseIndex = -1;
-    hoveredHandIndex = -1;
-    for (int i = 0; i < caseCount; ++i)
-    {
-        float tileX = tileStartX + i * (tileW + tileSpacing);
-        Rectangle tileRect = {tileX, tileY, tileW, tileH};
-        if (CheckCollisionPointRec(mousePos, tileRect))
-        {
-            hoveredBriefcaseIndex = i;
-            TraceLog(LOG_DEBUG, "briefcase thing hover\n");
-        }
-    }
-    for (int i = 0; i < handCount; ++i)
-    {
-        float tileX = handStartX + i * (handTileW + handGap);
-        Rectangle tileRect = {tileX, handBoxY, handTileW, handTileH};
-        if (CheckCollisionPointRec(mousePos, tileRect))
-        {
-            hoveredHandIndex = i;
-            TraceLog(LOG_DEBUG, "hand thing hover\n");
-        }
-    }
-
-    // Handle clicks
-    if (mousePressed)
-    {
-        // Close button
-        Rectangle closeButton = {screenW * 0.5f - 70.0f, screenH - 100.0f, 140.0f, 50.0f};
-        if (CheckCollisionPointRec(mousePos, closeButton))
-        {
-            briefcase->CloseUI();
-            this->setRewardBriefcaseUIOpen(false);
-            // Clear any selection state
-            selectedBriefcaseIndex = -1;
-            hoveredBriefcaseIndex = -1;
-            hoveredHandIndex = -1;
-            TraceLog(LOG_DEBUG, "close clicked\n");
-            return;
-        }
-
-        // Select a briefcase tile
-        if (hoveredBriefcaseIndex >= 0)
-        {
-            selectedBriefcaseIndex = hoveredBriefcaseIndex;
-            TraceLog(LOG_DEBUG, "briefcase selected\n");
-        }
-        // Swap with hand tile if one is selected
-        else if (hoveredHandIndex >= 0 && selectedBriefcaseIndex >= 0 && selectedBriefcaseIndex < (int)rewardTiles.size())
-        {
-            RewardTile picked = rewardTiles[selectedBriefcaseIndex];
-            // swap types and stats
-            TileType oldHandType = hand[hoveredHandIndex];
-            TileStats oldStats = muim.getTileStats(hoveredHandIndex);
-            muim.setTileType(hoveredHandIndex, picked.type);
-            muim.setTileStats(hoveredHandIndex, picked.stats);
-            // replace briefcase slot with the discarded hand tile
-            rewardTiles[selectedBriefcaseIndex].type = oldHandType;
-            rewardTiles[selectedBriefcaseIndex].stats = oldStats;
-            // clear selection
-            selectedBriefcaseIndex = -1;
-        }
-    }
-}
-
-void UIManager::drawBriefcaseUI(RewardBriefcase *briefcase)
-{
-    if (!briefcase)
-        return;
-    
-    const int screenW = GetScreenWidth();
-    const int screenH = GetScreenHeight();
-    
-    // Draw overlay
-    DrawRectangle(0, 0, screenW, screenH, Fade(BLACK, 0.75f));
-    
-    // Draw title
-    const char *title = "REWARD BRIEFCASE";
-    const int titleSize = 32;
-    int titleWidth = MeasureText(title, titleSize);
-    DrawText(title, (screenW - titleWidth) / 2, 40, titleSize, RAYWHITE);
-    
-    // Draw briefcase contents area
-    const float briefcaseBoxX = screenW * 0.5f - 300.0f;
-    const float briefcaseBoxY = 120.0f;
-    const float briefcaseBoxW = 600.0f;
-    const float briefcaseBoxH = 200.0f;
-    
-    Rectangle briefcaseBox = {briefcaseBoxX, briefcaseBoxY, briefcaseBoxW, briefcaseBoxH};
-    DrawRectangleRounded(briefcaseBox, 0.15f, 8, Color{30, 35, 45, 240});
-    DrawRectangleRoundedLines(briefcaseBox, 0.15f, 8, Fade(RAYWHITE, 0.8f));
-    
-    const char *briefcaseLabel = "Briefcase Contents (Click to take)";
-    DrawText(briefcaseLabel, (int)briefcaseBoxX + 10, (int)briefcaseBoxY - 25, 18, Fade(RAYWHITE, 0.8f));
-    
-    // Draw reward tiles with hover stats and selection
-    auto &rewardTiles = briefcase->GetRewardTiles();
-    const float tileBaseW = 44.0f;
-    const float tileBaseH = 60.0f;
-    const float caseInnerPadding = 20.0f;
-    const float caseAvailW = briefcaseBoxW - caseInnerPadding * 2.0f;
-    int caseCount = (int)rewardTiles.size();
-    float caseGap = 12.0f;
-    float caseScale = 1.0f;
-    if (caseCount > 0)
-    {
-        float maxScaleByWidth = (caseAvailW - caseGap * (caseCount - 1)) / (caseCount * tileBaseW);
-        caseScale = fminf(1.8f, fmaxf(0.6f, maxScaleByWidth));
-    }
-    const float tileSpacing = caseGap;
-    const float tileW = tileBaseW * caseScale;
-    const float tileH = tileBaseH * caseScale;
-    const float rowWidth = caseCount * tileW + (caseCount - 1) * tileSpacing;
-    const float tileStartX = briefcaseBoxX + (briefcaseBoxW - rowWidth) * 0.5f;
-    const float tileY = briefcaseBoxY + (briefcaseBoxH - tileH) * 0.5f;
-    
-    Vector2 mousePos = GetMousePosition();
-    
-    for (int i = 0; i < (int)rewardTiles.size(); ++i)
-    {
-        float tileX = tileStartX + i * (tileW + tileSpacing);
-        Rectangle tileRect = {tileX, tileY, tileW, tileH};
-        
-        bool hovered = (hoveredBriefcaseIndex == i) || CheckCollisionPointRec(mousePos, tileRect);
-        
-        // Draw tile background
-        DrawRectangleRounded(tileRect, 0.15f, 6, hovered ? Fade(YELLOW, 0.3f) : Fade(WHITE, 0.1f));
-        Color border = (this->selectedBriefcaseIndex == i) ? ORANGE : (hovered ? YELLOW : Fade(RAYWHITE, 0.4f));
-        DrawRectangleRoundedLines(tileRect, 0.15f, 6, border);
-        
-        // Draw tile texture
-        Rectangle source = muim.getTile(rewardTiles[i].type);
-        Rectangle dest = {tileX + tileW * 0.05f, tileY + tileH * 0.05f, tileW * 0.90f, tileH * 0.90f};
-        DrawTexturePro(muim.getSpriteSheet(), source, dest, {0, 0}, 0, WHITE);
-        
-        // Draw stats below tile
-        char statsText[64];
-        snprintf(statsText, sizeof(statsText), "DMG:%.0f FR:%.1fx", rewardTiles[i].stats.damage, rewardTiles[i].stats.fireRate);
-        DrawText(statsText, (int)tileX, (int)(tileY + tileRect.height + 6), 14, Fade(RAYWHITE, 0.7f));
-        
-    }
-
-    // Draw player hand area with hover and swap target
-    const float handBoxY = briefcaseBoxY + briefcaseBoxH + 60.0f;
-    const char *handLabel = "Your Hand (Click a tile to swap)";
-    DrawText(handLabel, (int)briefcaseBoxX + 10, (int)handBoxY - 25, 18, Fade(RAYWHITE, 0.8f));
-    
-    const auto &hand = muim.getPlayerHand();
-    // Fit the entire hand on-screen with consistent look
-    const float handPadding = 24.0f;
-    const float handAvailW = briefcaseBoxW - handPadding * 2.0f;
-    int handCount = (int)hand.size();
-    float handGap = 12.0f;
-    float handScale = 1.0f;
-    if (handCount > 0)
-    {
-        float maxScaleByWidth = (handAvailW - handGap * (handCount - 1)) / (handCount * tileBaseW);
-        handScale = fminf(1.6f, fmaxf(0.5f, maxScaleByWidth));
-    }
-    const float handTileW = tileBaseW * handScale;
-    const float handTileH = tileBaseH * handScale;
-    const float handTotalWidth = handCount * handTileW + (handCount - 1) * handGap;
-    const float handStartX = briefcaseBoxX + (briefcaseBoxW - handTotalWidth) * 0.5f;
-    for (int i = 0; i < (int)hand.size(); ++i)
-    {
-        float tileX = handStartX + i * (handTileW + handGap);
-        Rectangle tileRect = {tileX, handBoxY, handTileW, handTileH};
-        bool hovered = (hoveredHandIndex == i) || CheckCollisionPointRec(mousePos, tileRect);
-        DrawRectangleRounded(tileRect, 0.15f, 6, hovered ? Fade(SKYBLUE, 0.25f) : Fade(WHITE, 0.08f));
-        DrawRectangleRoundedLines(tileRect, 0.15f, 6, hovered ? SKYBLUE : Fade(RAYWHITE, 0.4f));
-        Rectangle src = muim.getTile(hand[i]);
-        Rectangle dest = {tileX + handTileW * 0.05f, handBoxY + handTileH * 0.05f, handTileW * 0.90f, handTileH * 0.90f};
-        DrawTexturePro(muim.getSpriteSheet(), src, dest, {0,0}, 0.0f, WHITE);
-        // Hover stats (top-right overlay)
-        if (hovered)
-        {
-            TileStats stats = muim.getTileStats(i);
-            const float boxW = 180.0f;
-            const float boxH = 80.0f;
-            float boxX = (float)GetScreenWidth() - boxW - 20.0f;
-            float boxY = 20.0f;
-            Rectangle statsBox = {boxX, boxY, boxW, boxH};
-            DrawRectangleRounded(statsBox, 0.2f, 8, Color{20,25,35,230});
-            DrawRectangleRoundedLines(statsBox, 0.2f, 8, Fade(RAYWHITE, 0.8f));
-            DrawText("TILE STATS", (int)(boxX + 10), (int)(boxY + 8), 18, RAYWHITE);
-            char t1[64]; snprintf(t1, sizeof(t1), "Damage: %.1f", stats.damage);
-            DrawText(t1, (int)(boxX + 10), (int)(boxY + 30), 16, RAYWHITE);
-            char t2[64]; snprintf(t2, sizeof(t2), "Fire Rate: %.2fx", stats.fireRate);
-            DrawText(t2, (int)(boxX + 10), (int)(boxY + 48), 16, RAYWHITE);
-        }
-    }
-    
-    // Reminder: player hand drawn above
-    
-    // Draw close button
-    Rectangle closeButton = {screenW * 0.5f - 70.0f, screenH - 100.0f, 140.0f, 50.0f};
-    bool closeHovered = CheckCollisionPointRec(mousePos, closeButton);
-    DrawRectangleRounded(closeButton, 0.2f, 8, closeHovered ? Color{80, 130, 200, 220} : Color{50, 80, 120, 220});
-    DrawRectangleRoundedLines(closeButton, 0.2f, 8, Fade(RAYWHITE, 0.9f));
-    
-    const char *closeText = "Close";
-    int closeTextWidth = MeasureText(closeText, 24);
-    DrawText(closeText, (int)(closeButton.x + closeButton.width / 2 - closeTextWidth / 2), 
-             (int)(closeButton.y + 13), 24, RAYWHITE);
-    
-    // Close click handled in updateBriefcaseUI
-}
-
 Rectangle UIManager::getSmallButtonRect(int index) const
 {
-    const float width = 140.0f;
-    const float height = 36.0f;
-    const float spacing = 12.0f;
-    float startX = 20.0f;
-    float startY = 70.0f + index * (height + spacing);
-    return {startX, startY, width, height};
+    const float buttonWidth = 100.0f;
+    const float buttonHeight = 42.0f;
+    const float spacing = 14.0f;
+    float startX = (GetScreenWidth() - buttonWidth) * 0.1f;
+    float startY = GetScreenHeight() * 0.1f;
+    return {startX, startY + index * (buttonHeight + spacing), buttonWidth, buttonHeight};
 }
 
 void UIManager::drawSmallButton(const Rectangle &rect, const char *label, bool hovered) const
 {
-    Color baseColor = hovered ? Color{70, 120, 200, 220} : Color{40, 60, 90, 220};
-    DrawRectangleRounded(rect, 0.2f, 8, baseColor);
-    DrawRectangleRoundedLines(rect, 0.2f, 8, Fade(RAYWHITE, 0.9f));
-
-    const int fontSize = 24;
-    int textWidth = MeasureText(label, fontSize);
-    int textX = static_cast<int>(rect.x + rect.width / 2.0f - textWidth / 2.0f);
-    int textY = static_cast<int>(rect.y + rect.height / 2.0f - fontSize / 2.0f);
-    DrawText(label, textX, textY, fontSize, RAYWHITE);
+    Color fill = hovered ? Color{70, 120, 160, 220} : Color{30, 35, 45, 220};
+    DrawRectangleRounded(rect, 0.22f, 8, fill);
+    DrawRectangleRoundedLines(rect, 0.22f, 8, Fade(RAYWHITE, 0.9f));
+    int font = 22;
+    int tw = MeasureText(label, font);
+    DrawText(label, (int)(rect.x + rect.width * 0.5f - tw * 0.5f), (int)(rect.y + rect.height * 0.5f - font * 0.5f), font, RAYWHITE);
 }
 
 Rectangle UIManager::getSlotRect(int index) const
 {
-    const float slotWidth = 140.0f;
-    const float slotHeight = 80.0f;
-    const float spacing = 32.0f;
-    float slotCountF = static_cast<float>(attackSlots.size());
-    float totalHeight = slotHeight * slotCountF + spacing * (slotCountF - 1.0f);
+    const float slotWidth = 250.0f;
+    const float slotHeight = 88.0f;
+    const float spacing = 30.0f;
     float startX = (GetScreenWidth() - slotWidth) * 0.5f;
-    float startY = (GetScreenHeight() - totalHeight) * 0.45f;
+    float centerY = GetScreenHeight() * 0.45f;
+    float totalHeight = slotCount * slotHeight + (slotCount - 1) * spacing;
+    float startY = centerY - totalHeight * 0.5f;
     return {startX, startY + index * (slotHeight + spacing), slotWidth, slotHeight};
 }
 
 void UIManager::drawDraggingTile()
 {
-    if (draggingTile.tile == TileType::EMPTY)
+    if (!isDraggingTile || draggingTile.tile == TileType::EMPTY)
         return;
+
     Rectangle source = muim.getTile(draggingTile.tile);
-    float scale = 0.9f;
-    Rectangle dest{draggingTilePos.x - source.width * scale * 0.5f, draggingTilePos.y - source.height * scale * 0.5f, source.width * scale, source.height * scale};
+    float width = 72.0f;
+    float height = width * (source.height / source.width);
+    Rectangle dest{draggingTilePos.x - width * 0.5f, draggingTilePos.y - height * 0.5f, width, height};
     DrawTexturePro(muim.getSpriteSheet(), source, dest, {0.0f, 0.0f}, 0.0f, WHITE);
 }
 
@@ -664,147 +334,117 @@ void UIManager::ensureSlotSetup()
 {
     if (slotsInitialized)
         return;
-
-    const auto &hand = muim.getPlayerHand();
-    for (auto &slot : attackSlots)
-    {
-        slot.clear();
-        slot.reserve(slotCapacity);
-    }
-
+    for (auto &v : attackSlots)
+        v.clear();
+    for (auto &c : slotCooldowns)
+        c = 0.0f;
     slotsInitialized = true;
 }
 
 void UIManager::ensureSlotElements()
 {
-    // Lazily create the three UI widgets so we do not pay for them until the
-    // pause menu opens. Each element is persistent because it keeps its own
-    // animation state and allows UIManager to drive only the gameplay data.
     for (int i = 0; i < slotCount; ++i)
     {
         if (!slotElements[i])
         {
             slotElements[i] = new AttackSlotElement(i, slotCapacity, muim);
+            slotElements[i]->setEntries(&attackSlots[i]);
             slotElements[i]->setKeyLabel(slotKeyLabels[i]);
         }
+        slotElements[i]->setBounds(getSlotRect(i));
     }
 }
 
 void UIManager::updateSlotElementLayout()
 {
-    // Layout depends on the current screen resolution, so recompute each frame
-    // before drawing/handling input.
-    const int slotCountLocal = static_cast<int>(attackSlots.size());
-    for (int i = 0; i < slotCountLocal; ++i)
+    ensureSlotElements();
+    for (int i = 0; i < slotCount; ++i)
     {
-        AttackSlotElement *slotElement = getSlotElement(i);
-        if (!slotElement)
-            continue;
-
-        slotElement->setBounds(getSlotRect(i));
-        slotElement->setEntries(&attackSlots[i]);
-        slotElement->setActive(false);
+        slotElements[i]->setBounds(getSlotRect(i));
     }
 }
 
 AttackSlotElement *UIManager::getSlotElement(int index) const
 {
-    if (index < 0 || index >= slotCount)
+    if (!isValidSlotIndex(index))
         return nullptr;
     return slotElements[index];
 }
 
-void UIManager::beginTileDragFromHand(int tileIndex, const Vector2 &mousePos)
+void UIManager::beginTileDragFromHand(int tileIndex, TileType tileType, const Vector2 &mousePos)
 {
-    const auto &hand = muim.getPlayerHand();
-    if (tileIndex < 0 || tileIndex >= static_cast<int>(hand.size()))
-        return;
-    if (muim.isTileUsed(tileIndex))
-        return;
-
-    draggingTile = SlotTileEntry{hand[tileIndex], tileIndex};
-    draggingTilePos = mousePos;
     isDraggingTile = true;
     draggingFromHand = true;
     draggingFromSlot = -1;
-    draggingFromTileIndex = -1;
+    draggingFromTileIndex = tileIndex;
+    draggingTile = SlotTileEntry{tileType, tileIndex};
+    draggingTilePos = mousePos;
 }
 
 void UIManager::beginTileDragFromSlot(int slotIndex, int tileIndex, const Vector2 &mousePos)
 {
     if (!isValidSlotIndex(slotIndex))
         return;
-    auto &slot = attackSlots[slotIndex];
-    if (tileIndex < 0 || tileIndex >= static_cast<int>(slot.size()))
+    if (tileIndex < 0 || tileIndex >= (int)attackSlots[slotIndex].size())
         return;
-
-    draggingTile = slot[tileIndex];
-    muim.setTileUsed(draggingTile.handIndex, false);
-    slot.erase(slot.begin() + tileIndex);
-    draggingTilePos = mousePos;
     isDraggingTile = true;
     draggingFromHand = false;
     draggingFromSlot = slotIndex;
     draggingFromTileIndex = tileIndex;
-
+    draggingTile = attackSlots[slotIndex][tileIndex];
+    // Remove from slot while dragging
+    attackSlots[slotIndex].erase(attackSlots[slotIndex].begin() + tileIndex);
+    draggingTilePos = mousePos;
 }
 
 void UIManager::endTileDrag(const Vector2 &mousePos)
 {
-    bool placed = false;
+    if (!isDraggingTile)
+        return;
+
+    int targetSlot = -1;
     for (int i = 0; i < slotCount; ++i)
     {
-        AttackSlotElement *slotElement = getSlotElement(i);
-        if (slotElement && slotElement->containsPoint(mousePos) && slotHasSpace(i))
+        if (CheckCollisionPointRec(mousePos, getSlotRect(i)))
         {
-            addTileToSlot(i, draggingTile);
-            placed = true;
+            targetSlot = i;
             break;
         }
     }
 
-    bool removedFromSlot = false;
-    if (!placed && !draggingFromHand)
+    if (targetSlot >= 0 && slotHasSpace(targetSlot))
     {
-        // Dropping outside clears the slot entry so the tile becomes available
-        // in the hand again. We no longer snap the piece back to its slot.
-        removedFromSlot = true;
+        addTileToSlot(targetSlot, draggingTile);
+    }
+    else if (!draggingFromHand && draggingFromSlot >= 0)
+    {
+        // Return to original slot if not dropped on a valid target
+        addTileToSlot(draggingFromSlot, draggingTile);
     }
 
     isDraggingTile = false;
-    draggingTile = SlotTileEntry{};
     draggingFromHand = false;
     draggingFromSlot = -1;
     draggingFromTileIndex = -1;
-
+    draggingTile = SlotTileEntry{};
 }
 
 void UIManager::addTileToSlot(int slotIndex, const SlotTileEntry &entry)
 {
-    if (!isValidSlotIndex(slotIndex) || entry.tile == TileType::EMPTY || entry.handIndex < 0)
+    if (!isValidSlotIndex(slotIndex))
         return;
-
     auto &slot = attackSlots[slotIndex];
-    if (static_cast<int>(slot.size()) >= slotCapacity)
-        return;
-
-    slot.push_back(entry);
-    muim.setTileUsed(entry.handIndex, true);
+    if ((int)slot.size() < slotCapacity)
+    {
+        slot.push_back(entry);
+    }
 }
 
 bool UIManager::slotHasSpace(int slotIndex) const
 {
     if (!isValidSlotIndex(slotIndex))
         return false;
-    return static_cast<int>(attackSlots[slotIndex].size()) < slotCapacity;
-}
-
-const std::vector<SlotTileEntry> &UIManager::getSlotEntries(int slotIndex) const
-{
-    static const std::vector<SlotTileEntry> empty;
-    if (!isValidSlotIndex(slotIndex))
-        return empty;
-    return attackSlots[slotIndex];
+    return (int)attackSlots[slotIndex].size() < slotCapacity;
 }
 
 bool UIManager::isValidSlotIndex(int slotIndex) const
@@ -812,8 +452,269 @@ bool UIManager::isValidSlotIndex(int slotIndex) const
     return slotIndex >= 0 && slotIndex < slotCount;
 }
 
-
-Texture2D UIManager::loadTexture(const std::string &fileName)
+void UIManager::updatePauseMenu(Inventory &playerInventory)
 {
-    return LoadTexture(fileName.c_str());
+    ensureSlotSetup();
+    updateSlotElementLayout();
+    muim.update(playerInventory);
+
+    Vector2 mouse = GetMousePosition();
+    draggingTilePos = mouse;
+
+    // Hover hand tile
+    hoveredTileIndex = muim.getTileIndexAt(mouse);
+
+    // Start drag from hand
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredTileIndex >= 0)
+    {
+        auto &tiles = playerInventory.getTiles();
+        if (hoveredTileIndex < (int)tiles.size())
+        {
+            beginTileDragFromHand(hoveredTileIndex, tiles[hoveredTileIndex].type, mouse);
+        }
+    }
+
+    // Start drag from slot
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredTileIndex < 0)
+    {
+        for (int s = 0; s < slotCount; ++s)
+        {
+            AttackSlotElement *slotEl = getSlotElement(s);
+            if (!slotEl)
+                continue;
+            if (!slotEl->containsPoint(mouse))
+                continue;
+            // Check tile cells
+            int tileIdx = -1;
+            int tileCount = (int)attackSlots[s].size();
+            for (int i = 0; i < tileCount; ++i)
+            {
+                if (CheckCollisionPointRec(mouse, slotEl->getTileRect(i)))
+                {
+                    tileIdx = i;
+                    break;
+                }
+            }
+            if (tileIdx >= 0)
+            {
+                beginTileDragFromSlot(s, tileIdx, mouse);
+                break;
+            }
+        }
+    }
+
+    if (isDraggingTile)
+    {
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+        {
+            endTileDrag(mouse);
+        }
+    }
+
+    // Handle buttons
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+    {
+        if (CheckCollisionPointRec(mouse, getSmallButtonRect(0)))
+        {
+            resumeRequested = true;
+        }
+        else if (CheckCollisionPointRec(mouse, getSmallButtonRect(1)))
+        {
+            quitRequested = true;
+        }
+    }
+}
+
+void UIManager::drawPauseMenu(Inventory &playerInventory)
+{
+    // Dim background
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Color{0, 0, 0, 140});
+
+    // Buttons
+    Vector2 mouse = GetMousePosition();
+    drawSmallButton(getSmallButtonRect(0), "Resume", CheckCollisionPointRec(mouse, getSmallButtonRect(0)));
+    drawSmallButton(getSmallButtonRect(1), "Quit", CheckCollisionPointRec(mouse, getSmallButtonRect(1)));
+
+    // Hand
+    muim.draw();
+
+    // Slots
+    ensureSlotElements();
+    for (int i = 0; i < slotCount; ++i)
+    {
+        slotElements[i]->draw();
+    }
+
+    // Drag preview
+    drawDraggingTile();
+
+    // Show tile stats tooltip if hovering over a hand tile
+    if (hoveredTileIndex >= 0 && !isDraggingTile)
+    {
+        const auto &tiles = playerInventory.getTiles();
+        if (hoveredTileIndex < (int)tiles.size())
+        {
+            drawTileStatsTooltip(tiles[hoveredTileIndex].stat, tiles[hoveredTileIndex].type);
+        }
+    }
+}
+
+void UIManager::updateBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory, bool& gamePaused)
+{
+    // Build/update player hand elements
+    muim.createHandUI(playerInventory, GetScreenWidth(), GetScreenHeight());
+    muim.update(playerInventory);
+
+    Vector2 mouse = GetMousePosition();
+    hoveredHandIndex = muim.getTileIndexAt(mouse);
+
+    // Query scene for briefcases
+    auto briefcases = uc.scene ? uc.scene->GetRewardBriefcases() : std::vector<RewardBriefcase*>{};
+    // If menu not open, check activation (nearby + C)
+    if (!this->briefcaseUIOpen)
+    {
+        // Find nearby briefcase to activate
+        int index = -1;
+        for (int i = 0; i < (int)briefcases.size(); ++i)
+        {
+            RewardBriefcase *b = briefcases[i];
+            if (!b) continue;
+            if (b->IsPlayerNearby(uc.player->pos()))
+            {
+                index = i;
+                break;
+            }
+        }
+        if (index >= 0 && IsKeyPressed(KEY_C))
+        {
+            this->briefcaseUIOpen = true;
+            this->activeBriefcaseIndex = index;
+            if (briefcases[index]) briefcases[index]->SetActivated(true);
+            EnableCursor();
+            gamePaused = true;
+        }
+        return; // nothing else if menu closed
+    }
+
+    // Active briefcase inventory
+    Inventory *briefInv = nullptr;
+    if (this->activeBriefcaseIndex >= 0 && this->activeBriefcaseIndex < (int)briefcases.size())
+    {
+        if (briefcases[this->activeBriefcaseIndex])
+        {
+            briefInv = &briefcases[this->activeBriefcaseIndex]->GetInventory();
+        }
+    }
+    if (!briefInv)
+    {
+        // No valid briefcase, close menu
+        this->briefcaseUIOpen = false;
+        this->activeBriefcaseIndex = -1;
+        return;
+    }
+
+    // Rebuild briefcase UI elements from current inventory
+    rebuildBriefcaseUI(briefInv);
+
+    // Check hover state using cached rectangles
+    hoveredBriefcaseIndex = -1;
+    for (int i = 0; i < (int)briefcaseTileRects.size(); ++i)
+    {
+        if (CheckCollisionPointRec(mouse, briefcaseTileRects[i].rect))
+        {
+            hoveredBriefcaseIndex = i;
+            break;
+        }
+    }
+
+    // Swap logic: click briefcase tile then click hand tile to swap
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+    {
+        if (hoveredBriefcaseIndex >= 0)
+        {
+            selectedBriefcaseIndex = hoveredBriefcaseIndex;
+        }
+        else if (selectedBriefcaseIndex >= 0 && hoveredHandIndex >= 0)
+        {
+            auto &p = playerInventory.getTiles();
+            auto &b = const_cast<std::vector<Tile>&>(briefInv->getTiles());
+            if (hoveredHandIndex < (int)p.size() && selectedBriefcaseIndex < (int)b.size())
+            {
+                std::swap(p[hoveredHandIndex], b[selectedBriefcaseIndex]);
+            }
+            selectedBriefcaseIndex = -1;
+        }
+    }
+
+    // Close with C or ESC
+    if (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_ESCAPE))
+    {
+        this->briefcaseUIOpen = false;
+        if (this->activeBriefcaseIndex >= 0 && this->activeBriefcaseIndex < (int)briefcases.size() && briefcases[this->activeBriefcaseIndex])
+        {
+            briefcases[this->activeBriefcaseIndex]->SetActivated(false);
+            DisableCursor();
+            gamePaused = false;
+        }
+        this->activeBriefcaseIndex = -1;
+    }
+}
+
+void UIManager::drawBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory)
+{
+    // Dim background
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Color{0, 0, 0, 140});
+
+    // Resolve active briefcase inventory
+    Inventory *briefInv = nullptr;
+    auto briefcases = uc.scene ? uc.scene->GetRewardBriefcases() : std::vector<RewardBriefcase*>{};
+    if (this->activeBriefcaseIndex >= 0 && this->activeBriefcaseIndex < (int)briefcases.size() && briefcases[this->activeBriefcaseIndex])
+    {
+        briefInv = &briefcases[this->activeBriefcaseIndex]->GetInventory();
+    }
+    if (!briefInv)
+    {
+        return;
+    }
+
+    // Draw briefcase tiles using cached UI elements
+    for (int i = 0; i < (int)briefcaseTileRects.size(); ++i)
+    {
+        const auto &ui = briefcaseTileRects[i];
+        DrawRectangleRounded(ui.rect, 0.12f, 6, Color{20, 20, 28, 220});
+        Rectangle src = muim.getTile(ui.tileType);
+        float scale = fminf(ui.rect.width / src.width, ui.rect.height / src.height) * 0.92f;
+        Vector2 size{src.width * scale, src.height * scale};
+        Rectangle dest{ui.rect.x + ui.rect.width * 0.5f - size.x * 0.5f,
+                       ui.rect.y + ui.rect.height * 0.5f - size.y * 0.5f,
+                       size.x, size.y};
+        DrawTexturePro(muim.getSpriteSheet(), src, dest, {0, 0}, 0.0f, WHITE);
+        if (i == selectedBriefcaseIndex)
+        {
+            DrawRectangleLinesEx(ui.rect, 2.0f, YELLOW);
+        }
+    }
+
+    // Draw player hand UI at bottom
+    muim.draw();
+
+    // Show tile stats tooltip when hovering
+    if (hoveredBriefcaseIndex >= 0)
+    {
+        // Hovering over briefcase tile
+        const auto &btiles = briefInv->getTiles();
+        if (hoveredBriefcaseIndex < (int)btiles.size())
+        {
+            drawTileStatsTooltip(btiles[hoveredBriefcaseIndex].stat, btiles[hoveredBriefcaseIndex].type);
+        }
+    }
+    else if (hoveredHandIndex >= 0)
+    {
+        // Hovering over hand tile
+        const auto &ptiles = playerInventory.getTiles();
+        if (hoveredHandIndex < (int)ptiles.size())
+        {
+            drawTileStatsTooltip(ptiles[hoveredHandIndex].stat, ptiles[hoveredHandIndex].type);
+        }
+    }
 }
