@@ -571,6 +571,87 @@ public:
     void Draw() const override;
 };
 
+// Vanguard: teleporting assassin/dragoon with aerial dive attacks
+class VanguardEnemy : public Enemy
+{
+private:
+    enum class VanguardState
+    {
+        Chasing,
+        TeleportPhaseOut,
+        TeleportPhaseIn,
+        GroundComboStab,
+        GroundComboSlash,
+        AerialAscend,
+        AerialHover,
+        AerialDive,
+        AerialLanding
+    };
+
+    VanguardState state = VanguardState::Chasing;
+    float stateTimer = 0.0f;
+
+    // Teleport parameters
+    float teleportCooldownDuration = 8.0f;
+    float teleportCooldownTimer = 0.0f;
+    float teleportTriggerRange = 15.0f;     // Teleport if farther than this
+    float teleportPhaseOutTime = 0.5f;
+    float teleportPhaseInTime = 0.5f;
+    bool isInvisible = false;
+    Vector3 teleportTargetPos = {0.0f, 0.0f, 0.0f};
+
+    // Ground combo parameters
+    float comboAttackRange = 4.0f;
+    float stabWindupTime = 0.3f;
+    float stabActiveTime = 0.2f;
+    float stabRecoveryTime = 0.2f;
+    float stabWeaponLength = 3.0f;
+    float stabDamage = 20.0f;
+    float slashWindupTime = 0.1f;
+    float slashActiveTime = 0.3f;
+    float slashRecoveryTime = 1.0f;
+    float slashDamage = 25.0f;
+    float slashWidth = 3.0f;
+    float slashRange = 3.5f;
+    int comboStage = 0; // 0 = none, 1 = stab, 2 = slash
+
+    // Aerial dive parameters (focus purely on dive, no teleport)
+    float diveCooldownDuration = 6.0f;
+    float diveCooldownTimer = 0.0f;
+    float diveChancePerFrame = 0.01f;       // Chance each frame when in range
+    float diveAscendTime = 0.4f;            // Quick ascent phase (0.4s)
+    float diveHangTime = 1.5f;              // 1.5 seconds hover at peak, staring at player camera
+    float diveAscendInitialVelocity = 35.0f; // Reduced to 70% height (50 * 0.7 = 35)
+    float diveGravityDuringAscent = 56.0f;   // Reduced proportionally (80 * 0.7 = 56)
+    float diveDamage = 45.0f;
+    float diveLandingRecoveryTime = 2.0f;
+    float diveImpactSquashTime = 0.15f;      // Duration of squash effect on impact
+    Vector3 diveTargetPos = {0.0f, 0.0f, 0.0f};
+    float diveInitialSpeed = 15.0f;          // Initial horizontal speed (increased 50%)
+    float diveAcceleration = 300.0f;         // Very aggressive acceleration (increased 50%)
+    float diveMaxSpeed = 150.0f;             // Very high terminal velocity (increased 50%)
+    float diveCurrentSpeed = 0.0f;           // Track current dive speed
+    
+    // Animation state
+    Vector3 visualScale = {1.0f, 1.0f, 1.0f}; // For squash & stretch
+    float rotationTowardsPlayer = 0.0f;       // Slow rotation during hover
+
+    // Movement
+    float chaseSpeed = 6.0f;
+
+    // Helper methods
+    Vector3 CalculateBackstabPosition(UpdateContext &uc);
+    void HandleTeleport(UpdateContext &uc);
+    void HandleGroundCombo(UpdateContext &uc);
+    void HandleAerialDive(UpdateContext &uc);
+    bool CheckStabHit(UpdateContext &uc);
+    bool CheckSlashHit(UpdateContext &uc);
+
+public:
+    VanguardEnemy() : Enemy(180) { this->setMaxHealth(180); this->setTileType(TileType::DRAGON_RED); }
+    void UpdateBody(UpdateContext &uc) override;
+    void Draw() const override;
+};
 
 
 // Class representing a projectile (e.g., bullets, missiles)

@@ -1765,3 +1765,310 @@ void SupportEnemy::Draw() const
     // Draw base enemy
     Enemy::Draw();
 }
+
+// ---------------------------- VanguardEnemy ----------------------------
+
+Vector3 VanguardEnemy::CalculateBackstabPosition(UpdateContext &uc)
+{
+    // Position slightly behind the player
+    const Camera &cam = uc.player->getCamera();
+    Vector3 dir = Vector3Subtract(cam.target, cam.position);
+    dir.y = 0.0f;
+    if (Vector3LengthSqr(dir) < 0.0001f)
+        dir = {0.0f, 0.0f, 1.0f};
+    dir = Vector3Normalize(dir);
+    Vector3 pos = Vector3Add(cam.position, Vector3Scale(dir, -4.0f));
+    pos.y = this->position.y;
+    return pos;
+}
+
+void VanguardEnemy::HandleTeleport(UpdateContext &uc)
+{
+    // Teleport logic (not used, but kept for compatibility)
+}
+
+bool VanguardEnemy::CheckStabHit(UpdateContext &uc)
+{
+    // Stab is a narrow, forward reach check
+    Vector3 tip = this->position;
+    Vector3 forward = this->getFacingDirection();
+    forward.y = 0.0f;
+    if (Vector3LengthSqr(forward) < 0.0001f) forward = {0,0,1};
+    forward = Vector3Normalize(forward);
+    tip = Vector3Add(tip, Vector3Scale(forward, this->stabWeaponLength));
+    float radius = 0.6f;
+    if (CheckCollisionSphereVsOBB(tip, radius, &uc.player->obj().obb))
+    {
+        CollisionResult c = Object::collided(this->obj(), uc.player->obj());
+        DamageResult dmg(this->stabDamage, c);
+        uc.player->damage(dmg);
+        uc.player->applyKnockback(Vector3Scale(forward, 8.0f), 0.25f, 2.5f);
+        return true;
+    }
+    return false;
+}
+
+bool VanguardEnemy::CheckSlashHit(UpdateContext &uc)
+{
+    // Slash is an arc - approximate with a wider sphere in front
+    Vector3 center = this->position;
+    Vector3 forward = this->getFacingDirection();
+    forward.y = 0.0f;
+    if (Vector3LengthSqr(forward) < 0.0001f) forward = {0,0,1};
+    forward = Vector3Normalize(forward);
+    center = Vector3Add(center, Vector3Scale(forward, this->slashRange * 0.6f));
+    float radius = this->slashWidth * 0.6f;
+    if (CheckCollisionSphereVsOBB(center, radius, &uc.player->obj().obb))
+    {
+        CollisionResult c = Object::collided(this->obj(), uc.player->obj());
+        DamageResult dmg(this->slashDamage, c);
+        uc.player->damage(dmg);
+        uc.player->applyKnockback(Vector3Scale(forward, 10.0f), 0.3f, 3.5f);
+        return true;
+    }
+    return false;
+}
+
+void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
+{
+    // Ground combo logic (not used, but kept for compatibility)
+}
+
+void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    if (this->state == VanguardState::AerialAscend)
+    {
+        // Fast ascent eased to slow by strong gravity
+        this->velocity.y = fmaxf(this->velocity.y, this->diveAscendInitialVelocity);
+        this->stateTimer -= delta;
+        this->velocity.y -= this->diveGravityDuringAscent * delta;
+        this->position.y += this->velocity.y * delta;
+        this->o.pos = this->position; // Update object position
+        this->o.UpdateOBB(); // Update collision bounds
+        if (this->stateTimer <= 0.0f)
+        {
+            this->state = VanguardState::AerialHover;
+            this->stateTimer = this->diveHangTime; // 1.5 seconds
+            // Lock target to player camera position
+            const Camera &cam = uc.player->getCamera();
+            Vector3 forward = Vector3Subtract(cam.target, cam.position);
+            if (Vector3LengthSqr(forward) < 0.0001f)
+                forward = {0.0f, 0.0f, 1.0f};
+            forward = Vector3Normalize(forward);
+            this->diveTargetPos = Vector3Add(cam.position, Vector3Scale(forward, 4.0f));
+            this->diveTargetPos.y = 0.0f;
+            this->diveCurrentSpeed = this->diveInitialSpeed;
+            // Telegraph particles
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnRing(this->position, 2.5f, 14, RED, 0.6f, true);
+            }
+        }
+    }
+    else if (this->state == VanguardState::AerialHover)
+    {
+        // Hover and continuously track player camera
+        this->stateTimer -= delta;
+        this->rotationTowardsPlayer = Lerp(this->rotationTowardsPlayer, 1.0f, delta * 3.0f);
+        
+        // Continuously update facing direction to track camera in real-time
+        const Camera &cam = uc.player->getCamera();
+        Vector3 camPos = cam.position;
+        Vector3 toCam = Vector3Subtract(camPos, this->position);
+        toCam.y = 0.0f;
+        if (Vector3LengthSqr(toCam) > 0.001f)
+        {
+            this->o.setRotationFromForward(Vector3Normalize(toCam));
+        }
+        
+        if (this->stateTimer <= 0.0f)
+        {
+            this->state = VanguardState::AerialDive;
+            // Set dive direction from current position directly to player's position (including Y)
+            Vector3 playerPos = uc.player->pos();
+            Vector3 diveDirToPlayer = Vector3Subtract(playerPos, this->position);
+            
+            // Keep the full 3D direction to dive directly at the player
+            if (Vector3LengthSqr(diveDirToPlayer) < 0.001f)
+                diveDirToPlayer = {0.0f, -1.0f, 1.0f};
+            diveDirToPlayer = Vector3Normalize(diveDirToPlayer);
+            
+            this->diveCurrentSpeed = this->diveInitialSpeed;
+            this->velocity = Vector3Scale(diveDirToPlayer, this->diveCurrentSpeed);
+        }
+    }
+    else if (this->state == VanguardState::AerialDive)
+    {
+        // Very fast dive with aggressive acceleration toward player
+        float cur = Vector3Length(this->velocity);
+        cur = fmaxf(cur, 0.0001f);
+        float add = this->diveAcceleration * delta;
+        this->diveCurrentSpeed = fminf(this->diveCurrentSpeed + add, this->diveMaxSpeed);
+        
+        // Normalize current velocity direction and scale by new speed
+        Vector3 dir = Vector3Normalize(this->velocity);
+        this->velocity = Vector3Scale(dir, this->diveCurrentSpeed);
+        
+        // Update position with room bounds checking
+        Vector3 newPosition = Vector3Add(this->position, Vector3Scale(this->velocity, delta));
+        
+        // Check room bounds to prevent diving out
+        if (uc.scene)
+        {
+            Room *r = uc.scene->GetRoomContainingPosition(this->position);
+            if (r)
+            {
+                BoundingBox bounds = r->GetBounds();
+                // Clamp position to room bounds with small margin
+                float margin = 2.0f;
+                if (newPosition.x < bounds.min.x + margin || newPosition.x > bounds.max.x - margin ||
+                    newPosition.z < bounds.min.z + margin || newPosition.z > bounds.max.z - margin)
+                {
+                    // Hit wall - stop dive and land
+                    newPosition.x = Clamp(newPosition.x, bounds.min.x + margin, bounds.max.x - margin);
+                    newPosition.z = Clamp(newPosition.z, bounds.min.z + margin, bounds.max.z - margin);
+                    newPosition.y = bounds.min.y; // Force to ground
+                    this->position = newPosition;
+                    this->velocity = {0.0f, 0.0f, 0.0f};
+                    this->state = VanguardState::AerialLanding;
+                    this->stateTimer = this->diveLandingRecoveryTime;
+                    this->diveCurrentSpeed = 0.0f;
+                    this->visualScale = {1.6f, 0.6f, 1.6f};
+                    this->o.pos = this->position;
+                    this->o.UpdateOBB();
+                    
+                    // Wall impact particles
+                    if (uc.scene)
+                    {
+                        uc.scene->particles.spawnExplosion(this->position, 24, ORANGE, 0.3f, 6.0f, 1.0f);
+                    }
+                    return; // Exit early
+                }
+            }
+        }
+        
+        this->position = newPosition;
+        this->o.pos = this->position; // Update object position
+        this->o.UpdateOBB(); // Update collision bounds
+
+        // Check for player collision first (before ground impact)
+        bool hitPlayer = false;
+        if (CheckCollisionSphereVsOBB(this->position, 2.5f, &uc.player->obj().obb))
+        {
+            hitPlayer = true;
+            // Apply damage and knockback to player
+            CollisionResult c = Object::collided(this->obj(), uc.player->obj());
+            DamageResult dmg(this->diveDamage, c);
+            uc.player->damage(dmg);
+            // Knockback direction: from enemy to player
+            Vector3 knock = Vector3Normalize(Vector3Subtract(uc.player->pos(), this->position));
+            uc.player->applyKnockback(Vector3Scale(knock, 14.0f), 0.45f, 6.0f);
+        }
+
+        // Check for ground impact
+        float floorY = 0.0f;
+        if (uc.scene)
+        {
+            Room *r = uc.scene->GetRoomContainingPosition(this->position);
+            if (r)
+                floorY = r->GetBounds().min.y;
+        }
+
+        bool impacted = hitPlayer;  // End dive if hit player
+        if (this->position.y <= floorY + 0.5f)
+        {
+            impacted = true;
+            this->position.y = floorY;
+        }
+
+        if (impacted)
+        {
+            // Impact particles: play on ground impact or when hitting the player
+            if (uc.scene && (hitPlayer || this->position.y <= floorY + 0.5f))
+            {
+                // Use the same landing/explosion visual whether we hit the player mid-air or hit the ground
+                uc.scene->particles.spawnExplosion(this->position, 48, RED, 0.4f, 8.0f, 1.0f);
+                uc.scene->particles.spawnRing(this->position, 4.0f, 28, ColorAlpha(ORANGE, 220), 3.2f, true);
+                // Strong screen shake on impact (player hit or ground)
+                uc.player->addCameraShake(3.0f, 0.8f);
+            }
+
+            // Squash visual and transition to landing
+            this->visualScale = {1.6f, 0.6f, 1.6f};
+            this->state = VanguardState::AerialLanding;
+            this->stateTimer = this->diveLandingRecoveryTime;
+            this->velocity = {0.0f, 0.0f, 0.0f};
+            this->diveCurrentSpeed = 0.0f;
+            
+            // Sync position after setting to ground
+            this->o.pos = this->position;
+            this->o.UpdateOBB();
+        }
+    }
+    else if (this->state == VanguardState::AerialLanding)
+    {
+        this->stateTimer -= delta;
+        // Ease visual back to normal
+        this->visualScale.x = Lerp(this->visualScale.x, 1.0f, delta * 8.0f);
+        this->visualScale.y = Lerp(this->visualScale.y, 1.0f, delta * 8.0f);
+        this->visualScale.z = Lerp(this->visualScale.z, 1.0f, delta * 8.0f);
+        if (this->stateTimer <= 0.0f)
+        {
+            this->state = VanguardState::Chasing;
+        }
+    }
+}
+
+void VanguardEnemy::UpdateBody(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    this->diveCooldownTimer = fmaxf(0.0f, this->diveCooldownTimer - delta);
+
+    if (this->state == VanguardState::Chasing)
+    {
+        Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
+        toPlayer.y = 0.0f;
+        float dist = Vector3Length(toPlayer);
+
+        // Initiate dive when cooldown is ready and in range
+        if (this->diveCooldownTimer <= 0.0f && dist < 30.0f)
+        {
+            float chance = this->diveChancePerFrame;
+            if ((float)GetRandomValue(0, 10000) / 10000.0f < chance)
+            {
+                this->state = VanguardState::AerialAscend;
+                this->stateTimer = this->diveAscendTime;
+                this->velocity.y = this->diveAscendInitialVelocity;
+                this->diveCooldownTimer = this->diveCooldownDuration;
+                return;
+            }
+        }
+
+        // Ground chase
+        Vector3 desired = Vector3Zero();
+        if (dist > 1.5f)
+            desired = Vector3Normalize(toPlayer);
+
+        Enemy::MovementSettings ms;
+        ms.lockToGround = true;
+        ms.maxSpeed = this->chaseSpeed;
+        ms.maxAccel = MAX_ACCEL * 2.0f;
+        ms.decelGround = FRICTION;
+        ms.decelAir = AIR_DRAG;
+        ms.facingHint = toPlayer;
+        this->UpdateCommonBehavior(uc, desired, delta, ms);
+        this->UpdateDialog(uc);
+    }
+    else if (this->state == VanguardState::AerialAscend || this->state == VanguardState::AerialHover || this->state == VanguardState::AerialDive || this->state == VanguardState::AerialLanding)
+    {
+        HandleAerialDive(uc);
+    }
+}
+
+void VanguardEnemy::Draw() const
+{
+    // Don't draw anything here - the scene system draws the object model
+    // We just need to update the object's visual scale for squash/stretch
+    // which is already applied in the object rendering pipeline
+}

@@ -64,23 +64,30 @@ int main(void)
             }
         }
 
-        PlayerInput frameInput(0, 0, false, false);
+        // Always initialize frameInput to prevent input sticking
+        char sideway = 0;
+        char forward = 0;
+        bool jumpPressed = false;
+        bool crouching = false;
+        
         if (!gamePaused)
         {
             Vector2 mouseDelta = GetMouseDelta();
             player.getLookRotation().x -= mouseDelta.x * sensitivity.x;
             player.getLookRotation().y += mouseDelta.y * sensitivity.y;
 
-            char sideway = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
-            char forward = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S));
-            bool crouching = IsKeyDown(KEY_LEFT_CONTROL);
-            frameInput = PlayerInput(sideway, forward, IsKeyPressed(KEY_SPACE), crouching);
+            sideway = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
+            forward = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S));
+            jumpPressed = IsKeyPressed(KEY_SPACE);
+            crouching = IsKeyDown(KEY_LEFT_CONTROL);
         }
         else
         {
             // Consume the delta so it does not accumulate while the cursor is visible.
             GetMouseDelta();
         }
+        
+        PlayerInput frameInput(sideway, forward, jumpPressed, crouching);
 
         UpdateContext uc(&scene, &player, frameInput, &uiManager);
 

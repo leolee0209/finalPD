@@ -653,14 +653,15 @@ void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
     if (name == "Room 2")
     {
         composition = {
-            {"summoner", Vector2{-18.0f, -8.0f}},
+            {"vanguard", Vector2{-18.0f, -8.0f}},
             {"support", Vector2{8.0f, 12.0f}}};
     }
 
     else if (name == "Room 3")
     {
         composition = {
-            {"tank", Vector2{0.0f, 0.0f}}};
+            {"tank", Vector2{0.0f, 0.0f}},
+            {"vanguard", Vector2{-10.0f, 8.0f}}};
     }
     else if (name == "Room 4")
     {
@@ -697,6 +698,10 @@ void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
         else if (type == "support")
         {
             placeEnemy(new SupportEnemy(), roomCenter, offset);
+        }
+        else if (type == "vanguard")
+        {
+            placeEnemy(new VanguardEnemy(), roomCenter, offset);
         }
     }
 }
