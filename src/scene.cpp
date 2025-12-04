@@ -616,6 +616,8 @@ void Scene::CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg
     }
 
     Door *doorPtr = door.get();
+    doorPtr->roomA = this->rooms[roomA].get();
+    doorPtr->roomB = this->rooms[roomB].get();
     this->rooms[roomA]->AttachDoor(doorPtr);
     this->rooms[roomB]->AttachDoor(doorPtr);
     this->doors.push_back(std::move(door));
@@ -1437,8 +1439,7 @@ void Scene::UpdateRoomDoors(const Vector3 &playerPos)
 {
     // Determine current player room
     Room *newRoom = nullptr;
-    for (auto &room : this->rooms)
-    {
+    for (auto &room : this->rooms){
         if (room && room->IsPlayerInside(playerPos))
         {
             newRoom = room.get();
@@ -1446,17 +1447,51 @@ void Scene::UpdateRoomDoors(const Vector3 &playerPos)
         }
     }
 
-    // If player changed rooms, close doors behind them
-    if (newRoom != this->currentPlayerRoom && this->currentPlayerRoom)
+    // If player changed rooms, close door behind them (unless both rooms are cleared)
+    if (newRoom != this->currentPlayerRoom)
     {
-        for (Door *door : this->currentPlayerRoom->GetDoors())
+        if (this->currentPlayerRoom)
         {
-            if (door && !door->IsClosed())
+            for (Door *door : this->currentPlayerRoom->GetDoors())
             {
-                // Only close if the new room isn't completed yet
-                if (!newRoom || !newRoom->IsCompleted() || !this->currentPlayerRoom->IsCompleted())
+                if (door && door->IsOpen())
                 {
-                    door->Close();
+                    // Check if both connected rooms are cleared
+                    bool bothCleared = false;
+                    if (door->GetRoomA() && door->GetRoomB())
+                    {
+                        bothCleared = door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted();
+                    }
+                    
+                    // Close door unless both rooms are cleared
+                    if (!bothCleared)
+                    {
+                        door->Close();
+                    }
+                }
+            }
+        }
+        
+        // Also close any doors in the new room that shouldn't be open
+        // (in case player somehow skipped past a closed door)
+        if (newRoom)
+        {
+            for (Door *door : newRoom->GetDoors())
+            {
+                if (door && door->IsOpen())
+                {
+                    // Check if both connected rooms are cleared
+                    bool bothCleared = false;
+                    if (door->GetRoomA() && door->GetRoomB())
+                    {
+                        bothCleared = door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted();
+                    }
+                    
+                    // Close door unless both rooms are cleared
+                    if (!bothCleared)
+                    {
+                        door->Close();
+                    }
                 }
             }
         }

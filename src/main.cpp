@@ -14,6 +14,9 @@ int main(void)
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "mahjong");
     SetExitKey(KEY_NULL);
     SearchAndSetResourceDir("resources");
+    
+    // Load shared resources for enemies
+    VanguardEnemy::LoadSharedResources();
 
     Me player;
     Scene scene;
@@ -106,8 +109,32 @@ int main(void)
                         if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
                         {
                             // Check if both connected rooms are completed
-                            // For now, just open the door
-                            door->Open();
+                            bool canOpen = false;
+                            // If door knows both connected rooms and both are cleared, open permanently
+                            if (door->GetRoomA() && door->GetRoomB())
+                            {
+                                if (door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted())
+                                {
+                                    canOpen = true;
+                                }
+                                else
+                                {
+                                    // Allow opening from the current room to enter the adjacent room
+                                    // (player-initiated entry). The door will be closed by Scene::UpdateRoomDoors
+                                    // after the player transitions unless both rooms become cleared.
+                                    if (currentRoom == door->GetRoomA() || currentRoom == door->GetRoomB())
+                                        canOpen = true;
+                                }
+                            }
+                            else
+                            {
+                                // Fallback if room connections not set: allow if current room is completed
+                                canOpen = currentRoom->IsCompleted();
+                            }
+                            if (canOpen)
+                            {
+                                door->Open();
+                            }
                             break;
                         }
                     }
@@ -202,6 +229,46 @@ int main(void)
 
         uiManager.draw(uc, player.hand);
         
+        // Draw damage flash (red screen edge vignette)
+        if (player.getDamageFlashAlpha() > 0.0f)
+        {
+            float alpha = player.getDamageFlashAlpha();
+            int screenW = GetScreenWidth();
+            int screenH = GetScreenHeight();
+            Color flashColor = ColorAlpha(RED, (unsigned char)(alpha * 180));
+            
+            // Draw vignette effect from edges
+            int vignette = (int)(screenW * 0.15f);
+            DrawRectangleGradientH(0, 0, vignette, screenH, flashColor, ColorAlpha(RED, 0));  // Left edge
+            DrawRectangleGradientH(screenW - vignette, 0, vignette, screenH, ColorAlpha(RED, 0), flashColor);  // Right edge
+            DrawRectangleGradientV(0, 0, screenW, vignette, flashColor, ColorAlpha(RED, 0));  // Top edge
+            DrawRectangleGradientV(0, screenH - vignette, screenW, vignette, ColorAlpha(RED, 0), flashColor);  // Bottom edge
+        }
+        
+        // Draw damage number next to health bar
+        if (player.hasDamageNumber())
+        {
+            int screenW = GetScreenWidth();
+            float fadeAlpha = 1.0f - player.getDamageNumberAlpha();  // Fade out over time
+            float yOffset = player.getDamageNumberY();
+            
+            // Position near health bar (top left area)
+            int baseX = screenW - 220;
+            int baseY = 80 + (int)yOffset;
+            
+            const char *damageText = TextFormat("-%d", player.getLastDamageAmount());
+            int fontSize = 32;
+            Color textColor = ColorAlpha(RED, (unsigned char)(fadeAlpha * 255));
+            Color outlineColor = ColorAlpha(DARKGRAY, (unsigned char)(fadeAlpha * 200));
+            
+            // Draw with outline for visibility
+            DrawText(damageText, baseX - 1, baseY - 1, fontSize, outlineColor);
+            DrawText(damageText, baseX + 1, baseY - 1, fontSize, outlineColor);
+            DrawText(damageText, baseX - 1, baseY + 1, fontSize, outlineColor);
+            DrawText(damageText, baseX + 1, baseY + 1, fontSize, outlineColor);
+            DrawText(damageText, baseX, baseY, fontSize, textColor);
+        }
+        
         EndDrawing();
         //----------------------------------------------------------------------------------
     }
@@ -211,6 +278,10 @@ int main(void)
     // Ensure enemies are destroyed while window/context is alive
     scene.em.clear();
     uiManager.cleanup();
+    
+    // Cleanup shared resources
+    VanguardEnemy::UnloadSharedResources();
+    
     CloseWindow(); // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
 

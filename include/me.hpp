@@ -410,6 +410,14 @@ private:
     float colliderDepth = 1.2f;
     float colliderHeight = 1.8f;
     Vector3 spawnPosition = {0.0f, 0.0f, 0.0f};
+    
+    // Damage visual feedback
+    float damageFlashTimer = 0.0f;
+    float damageFlashDuration = 0.3f;
+    int lastDamageAmount = 0;
+    float damageNumberTimer = 0.0f;
+    float damageNumberDuration = 1.5f;
+    float damageNumberY = 0.0f;  // Y offset for floating animation
 
     // New: Struct to hold player input state
     
@@ -455,6 +463,13 @@ public:
     void respawn(const Vector3 &spawnPosition);
     void setSpawnPosition(const Vector3 &pos) { this->spawnPosition = pos; }
     Vector3 getSpawnPosition() const { return this->spawnPosition; }
+    
+    // Damage visual feedback getters
+    float getDamageFlashAlpha() const { return Clamp(this->damageFlashTimer / this->damageFlashDuration, 0.0f, 1.0f); }
+    bool hasDamageNumber() const { return this->damageNumberTimer > 0.0f; }
+    int getLastDamageAmount() const { return this->lastDamageAmount; }
+    float getDamageNumberAlpha() const { return 1.0f - (this->damageNumberTimer / this->damageNumberDuration); }
+    float getDamageNumberY() const { return this->damageNumberY; }
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
@@ -600,25 +615,37 @@ private:
     bool isInvisible = false;
     Vector3 teleportTargetPos = {0.0f, 0.0f, 0.0f};
 
-    // Ground combo parameters
-    float comboAttackRange = 4.0f;
-    float stabWindupTime = 0.3f;
-    float stabActiveTime = 0.2f;
-    float stabRecoveryTime = 0.2f;
-    float stabWeaponLength = 3.0f;
+    // Ground combo parameters (Piston Thrust + Crescent Sweep)
+    float comboAttackRange = 3.5f;       // Trigger range for combo
+    
+    // Stage 1: Piston Thrust (Linear Damage)
+    float stabWindupTime = 1.0f;         // Telegraph time
+    float stabActiveTime = 0.15f;        // Strike time
+    float stabRecoveryTime = 0.3f;       // Recovery before sweep
+    float stabWeaponLength = 6.0f;       // Long range stab
     float stabDamage = 20.0f;
-    float slashWindupTime = 0.1f;
-    float slashActiveTime = 0.3f;
-    float slashRecoveryTime = 1.0f;
+    float stabLungeForce = 15.0f;        // Forward slide during stab
+    
+    // Stage 2: Crescent Sweep (Area Damage)
+    float slashWindupTime = 1.2f;        // Turn & drag time
+    float slashActiveTime = 0.35f;       // Cleave time (increased for longer dash)
+    float slashRecoveryTime = 1.0f;      // Long recovery (punish window)
     float slashDamage = 25.0f;
-    float slashWidth = 3.0f;
-    float slashRange = 3.5f;
-    int comboStage = 0; // 0 = none, 1 = stab, 2 = slash
+    float slashArcDegrees = 180.0f;      // Wide semi-circle
+    float slashRange = 4.0f;             // Shorter than stab
+    
+    int comboStage = 0;                  // 0 = none, 1 = stab, 2 = slash
+    bool comboHitPlayer = false;         // Track if hit landed
+    Vector3 stabDirection = {0, 0, 1};   // Store stab direction
 
     // Aerial dive parameters (focus purely on dive, no teleport)
     float diveCooldownDuration = 6.0f;
     float diveCooldownTimer = 0.0f;
     float diveChancePerFrame = 0.01f;       // Chance each frame when in range
+    
+    // AI decision cooldown
+    float decisionCooldownDuration = 1.0f;  // Make decisions every 1 second
+    float decisionCooldownTimer = 0.0f;
     float diveAscendTime = 0.4f;            // Quick ascent phase (0.4s)
     float diveHangTime = 1.5f;              // 1.5 seconds hover at peak, staring at player camera
     float diveAscendInitialVelocity = 35.0f; // Reduced to 70% height (50 * 0.7 = 35)
@@ -632,12 +659,40 @@ private:
     float diveMaxSpeed = 150.0f;             // Very high terminal velocity (increased 50%)
     float diveCurrentSpeed = 0.0f;           // Track current dive speed
     
+    // Shockwave on dive landing
+    float shockwaveRadius = 0.0f;           // Current radius of expanding shockwave
+    float shockwaveMaxRadius = 22.0f;       // Max radius before shockwave stops
+    float shockwaveExpandSpeed = 20.0f;     // Units per second
+    Vector3 shockwaveCenter = {0.0f, 0.0f, 0.0f}; // Center of shockwave
+    bool shockwaveActive = false;           // Is shockwave currently active
+    float shockwaveDamage = 22.0f;          // Damage dealt by shockwave
+    bool shockwaveHitPlayer = false;        // Track if we hit player with this shockwave
+    
     // Animation state
     Vector3 visualScale = {1.0f, 1.0f, 1.0f}; // For squash & stretch
     float rotationTowardsPlayer = 0.0f;       // Slow rotation during hover
 
     // Movement
     float chaseSpeed = 6.0f;
+    
+    // Spear weapon visual (static shared model)
+    static Model sharedSpearModel;
+    static bool spearModelLoaded;
+    Vector3 spearOffset = {1.2f, 0.0f, 0.0f}; // Hold at side
+    Vector3 spearRotationOffset = {0, 0, 0};  // Rotation adjustment
+    float spearScale = 0.0075f;                // Scale multiplier
+    float spearThrustAmount = 0.0f;           // 0-1 for stab forward thrust
+    float spearRetractAmount = 0.0f;          // 0-1 for stab pull-back
+    float spearSwingAngle = 0.0f;             // Angle for slash swing (degrees)
+    float spearSwingStartAngle = -90.0f;      // Start angle for slash (left side)
+    float spearLingerTimer = 0.0f;            // Keep spear extended after attack
+    float spearLingerDuration = 0.4f;         // How long to hold spear visible
+    mutable Vector3 smoothedSpearPos = {0.0f, 0.0f, 0.0f};  // Smoothed position to reduce jitter
+    mutable float smoothedYRotation = 0.0f;           // Smoothed rotation
+    // Cached camera info (updated during UpdateBody)
+    Vector3 cachedCameraPos = {0.0f, 0.0f, 0.0f};
+    float cachedCameraYawDeg = 0.0f;
+    float cachedCameraPitchDeg = 0.0f;
 
     // Helper methods
     Vector3 CalculateBackstabPosition(UpdateContext &uc);
@@ -646,9 +701,12 @@ private:
     void HandleAerialDive(UpdateContext &uc);
     bool CheckStabHit(UpdateContext &uc);
     bool CheckSlashHit(UpdateContext &uc);
+    void DecideAction(UpdateContext &uc, float distanceToPlayer);
 
 public:
     VanguardEnemy() : Enemy(180) { this->setMaxHealth(180); this->setTileType(TileType::DRAGON_RED); }
+    static void LoadSharedResources();  // Load spear model once at game start
+    static void UnloadSharedResources(); // Cleanup on game end
     void UpdateBody(UpdateContext &uc) override;
     void Draw() const override;
 };

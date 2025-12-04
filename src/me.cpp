@@ -101,6 +101,20 @@ void Me::UpdateBody(UpdateContext &uc)
         float delta = GetFrameTime();
         this->meleeSwingTimer = fmaxf(0.0f, this->meleeSwingTimer - delta);
     }
+    
+    // Update damage visual timers
+    float delta = GetFrameTime();
+    if (this->damageFlashTimer > 0.0f)
+    {
+        this->damageFlashTimer = fmaxf(0.0f, this->damageFlashTimer - delta);
+    }
+    if (this->damageNumberTimer > 0.0f)
+    {
+        this->damageNumberTimer = fmaxf(0.0f, this->damageNumberTimer - delta);
+        // Animate damage number floating upward
+        this->damageNumberY += 120.0f * delta;
+    }
+    
     this->UpdateCamera(uc);
 }
 
@@ -168,6 +182,13 @@ bool Me::damage(DamageResult &dResult)
         this->health = 0;
     float shakeMagnitude = Clamp((float)appliedDamage / 40.0f, 0.1f, 0.7f);
     this->addCameraShake(shakeMagnitude, 0.25f);
+    
+    // Trigger damage visual feedback
+    this->damageFlashTimer = this->damageFlashDuration;
+    this->lastDamageAmount = appliedDamage;
+    this->damageNumberTimer = this->damageNumberDuration;
+    this->damageNumberY = 0.0f;
+    
     return this->health > 0;
 }
 

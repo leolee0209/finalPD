@@ -12,6 +12,8 @@
 #include "collidableModel.hpp"
 #include "me.hpp"
 
+class Room;  // Forward declaration
+
 class Door
 {
 public:
@@ -41,6 +43,8 @@ public:
     bool IsClosed() const { return !this->opening && this->openProgress <= 0.0f; }
     void SetLightingShader(Shader *shader);
     bool IsPlayerNearby(const Vector3 &playerPos, float maxDistance = 3.0f) const;
+    Room* GetRoomA() const { return this->roomA; }
+    Room* GetRoomB() const { return this->roomB; }
 
 private:
     Door(std::unique_ptr<CollidableModel> collider,
@@ -75,6 +79,12 @@ private:
     bool opening = false;
     bool openComplete = false;
     bool collisionEnabled = true;
+    
+    // Track which rooms this door connects
+    Room *roomA = nullptr;
+    Room *roomB = nullptr;
+    friend class Room;
+    friend class Scene;
 };
 
 enum class RoomType
