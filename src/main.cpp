@@ -23,41 +23,6 @@ int main(void)
     
     // Set player spawn position
     player.setSpawnPosition({0.0f, 0.0f, 0.0f});
-    
-    // Assign tile textures to enemies after UIManager is ready
-    scene.AssignEnemyTextures(&uiManager);
-
-    // { // Create a charging enemy (mahjong tile)
-    //     Enemy *enemy = new ChargingEnemy;
-    //     enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06); // Example size for a mahjong tile
-    //     enemy->obj().pos = {0.0f, 1.0f, 0.0f};                // Example starting position
-    //     enemy->setPosition(enemy->obj().pos);
-
-    //     // Get the mahjong texture from the UIManager
-    //     Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
-    //     enemy->obj().texture = &mahjongTexture;
-    //     enemy->obj().useTexture = true;
-    //     enemy->obj().sourceRect = uiManager.muim.getTile(TileType::BAMBOO_1); // Use entire texture
-
-    //     scene.em.addEnemy(enemy); // Add the enemy to the scene
-    // }
-
-    // { // Create a shooter enemy with single bullet (mahjong tile)
-    //     ShooterEnemy *enemy = new ShooterEnemy;
-    //     enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
-    //     enemy->obj().pos = {25.0f, 1.0f, -15.0f};
-    //     enemy->setPosition(enemy->obj().pos);
-
-    //     Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
-    //     enemy->obj().texture = &mahjongTexture;
-    //     enemy->obj().useTexture = true;
-    //     enemy->obj().sourceRect = uiManager.muim.getTile(TileType::BAMBOO_2);
-
-    //     // Single bullet pattern (default)
-    //     enemy->setBulletPattern(1, 0.0f);
-
-    //     scene.em.addEnemy(enemy);
-    // }
 
     DisableCursor();  // Limit cursor to relative movement inside the window
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second

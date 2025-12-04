@@ -10,6 +10,7 @@
 #include "collidableModel.hpp"
 #include "room.hpp"
 #include "rewardBriefcase.hpp"
+#include "particle.hpp"
 
 struct DamageIndicator
 {
@@ -116,6 +117,7 @@ public:
     void AssignEnemyTextures(UIManager *uiManager);
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
+    ParticleSystem particles; // Particle system for visual effects
     Model cubeModel; // Shared cube model used to render rotated cubes
     Model sphereModel; // Shared sphere model used to render spheres
     Texture2D glowTexture{}; // Texture for the glow effect on bullets

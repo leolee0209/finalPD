@@ -544,6 +544,12 @@ void Enemy::gatherObjects(std::vector<Object *> &out) const
     out.push_back(const_cast<Object *>(&this->o));
 }
 
+// Base draw implementation - just draws the object
+void Enemy::Draw() const
+{
+    // Default: no custom drawing, enemy is drawn via object system
+}
+
 // Update the enemy's dialog box position/text/visibility
 void Enemy::UpdateDialog(UpdateContext &uc, float verticalOffset)
 {
@@ -602,15 +608,211 @@ void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
         m->obj().sourceRect = this->obj().sourceRect;
         m->obj().useTexture = this->obj().useTexture;
         
+        // Track this minion so it can be cleaned up when summoner dies
+        this->ownedMinions.push_back(m);
         uc.scene->em.addEnemy(m);
     }
+}
+
+void SummonerEnemy::CleanupMinions(UpdateContext &uc)
+{
+    // Remove all minions from the enemy manager
+    for (MinionEnemy* minion : this->ownedMinions)
+    {
+        if (minion)
+        {
+            uc.scene->em.RemoveEnemy(minion);
+        }
+    }
+    this->ownedMinions.clear();
+}
+
+SummonerEnemy::~SummonerEnemy()
+{
+    // Texture will be cleaned up by UIManager, don't unload it here
+    if (this->spiralParticleTexture.id != 0 && IsWindowReady())
+    {
+        UnloadTexture(this->spiralParticleTexture);
+        this->spiralParticleTexture.id = 0;
+    }
+}
+
+void SummonerEnemy::OnDeath(UpdateContext &uc)
+{
+    // Cleanup owned minions when summoner dies
+    this->CleanupMinions(uc);
+}
+
+void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
+{
+    // Emit particles during animation
+    EmitSummonParticles(this->position, (summonState != SummonState::Idle) ? 1.0f : 0.0f);
+    
+    switch (summonState)
+    {
+    case SummonState::Idle:
+        // Normal countdown to next summon
+        spawnTimer += delta;
+        if (spawnTimer >= spawnInterval)
+        {
+            spawnTimer = 0.0f;
+            summonState = SummonState::Ascending;
+            animationTimer = 0.0f;
+            // Store starting position for spiral animation
+            startHeight = this->obj().pos.y;
+            startAnimX = this->obj().pos.x;
+            startAnimZ = this->obj().pos.z;
+        }
+        break;
+
+    case SummonState::Ascending:
+    {
+        animationTimer += delta;
+        float progress = animationTimer / ascendDuration;
+        
+        if (progress >= 1.0f)
+        {
+            // Transition to descending at peak
+            summonState = SummonState::Descending;
+            animationTimer = 0.0f;
+            progress = 1.0f;
+        }
+        
+        // Spiral upward: height follows arc, position spirals around center
+        float heightFactor = sinf(progress * PI * 0.5f); // Smooth easing from 0 to 1
+        float newHeight = startHeight + (jumpHeight * heightFactor);
+        float spiralAngle = progress * twirls * PI * 2.0f;
+        
+        // Calculate spiral offset from base position
+        float spiralX = cosf(spiralAngle) * spiralRadius * progress;
+        float spiralZ = sinf(spiralAngle) * spiralRadius * progress;
+        
+        // Apply animation position relative to starting position
+        Vector3 newPos = this->obj().pos;
+        newPos.x = startAnimX + spiralX;
+        newPos.y = startHeight + (jumpHeight * heightFactor);
+        newPos.z = startAnimZ + spiralZ;
+        this->obj().pos = newPos;
+        this->position = newPos;
+        
+        // Rotate during ascent (spin around Y axis)
+        Vector3 upAxis = {0.0f, 1.0f, 0.0f};
+        Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, spiralAngle);
+        this->obj().rotation = rotQuat;
+        break;
+    }
+
+    case SummonState::Descending:
+    {
+        animationTimer += delta;
+        float progress = animationTimer / descendDuration;
+        
+        if (progress >= 1.0f)
+        {
+            // Transition to summoning peak
+            summonState = SummonState::Summoning;
+            animationTimer = 0.0f;
+            this->obj().pos.y = startHeight;
+            this->position.y = startHeight;
+            this->obj().rotation = QuaternionIdentity();
+            progress = 1.0f;
+        }
+        
+        // Spiral downward: height falls from peak, continues spiral
+        float heightFactor = cosf(progress * PI * 0.5f); // Smooth easing from 1 to 0
+        float newHeight = startHeight + (jumpHeight * heightFactor);
+        float spiralAngle = (1.0f - progress) * twirls * PI * 2.0f;
+        
+        // Spiral continues during descent
+        float spiralX = cosf(spiralAngle) * spiralRadius * (1.0f - progress);
+        float spiralZ = sinf(spiralAngle) * spiralRadius * (1.0f - progress);
+        
+        // Apply animation position
+        Vector3 newPos = this->obj().pos;
+        newPos.x = startAnimX + spiralX;
+        newPos.y = startHeight + (jumpHeight * heightFactor);
+        newPos.z = startAnimZ + spiralZ;
+        this->obj().pos = newPos;
+        this->position = newPos;
+        
+        // Continue rotation
+        Vector3 upAxis = {0.0f, 1.0f, 0.0f};
+        Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, spiralAngle);
+        this->obj().rotation = rotQuat;
+        break;
+    }
+
+    case SummonState::Summoning:
+    {
+        animationTimer += delta;
+        
+        if (animationTimer >= summonPeakDuration)
+        {
+            // Spawn the minions
+            this->SpawnMinionGroup(uc);
+            
+            // Spawn explosion of purple particles when minions appear
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnExplosion(this->position, 30, PURPLE, 0.3f, 5.0f, 1.0f);
+                uc.scene->particles.spawnRing(this->position, 3.0f, 20, ColorAlpha(PURPLE, 200), 4.0f, true);
+            }
+            
+            // Return to idle
+            summonState = SummonState::Idle;
+            animationTimer = 0.0f;
+            this->obj().rotation = QuaternionIdentity();
+        }
+        else
+        {
+            // Brief pause at peak with rotation
+            float peakRotation = (animationTimer / summonPeakDuration) * 15.0f * DEG2RAD;
+            Vector3 upAxis = {0.0f, 1.0f, 0.0f};
+            Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, peakRotation);
+            this->obj().rotation = rotQuat;
+        }
+        break;
+    }
+    }
+}
+
+void SummonerEnemy::EmitSummonParticles(const Vector3 &summonPos, float intensity)
+{
+    // Load purple particle texture on first use
+    if (this->spiralParticleTexture.id == 0)
+    {
+        this->spiralParticleTexture = LoadTexture("kenney_particle-pack/PNG (Transparent)/magic_02.png");
+        if (this->spiralParticleTexture.id == 0)
+        {
+            TraceLog(LOG_WARNING, "Failed to load spiral particle texture");
+            return;
+        }
+    }
+}
+
+void SummonerEnemy::Draw() const
+{
+    // Draw base enemy
+    Enemy::Draw();
+    // Particles are now handled by the particle system in UpdateBody
 }
 
 void SummonerEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
-    spawnTimer += delta;
-
+    
+    // Always update animation (handles idle countdown and active animation states)
+    UpdateSummonAnimation(uc, delta);
+    
+    // Handle summoning animation if active
+    if (summonState != SummonState::Idle)
+    {
+        // During animation, only do basic dialog
+        this->UpdateDialog(uc);
+        return;
+    }
+    
+    // Normal idle behavior
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float dist = Vector3Length(toPlayer);
@@ -618,7 +820,7 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
 
     Enemy::MovementSettings settings;
     settings.lockToGround = true;
-    settings.maxSpeed = 3.5f;
+    settings.maxSpeed = 8.0f;
     settings.maxAccel = MAX_ACCEL;
     settings.decelGround = FRICTION;
     settings.decelAir = AIR_DRAG;
@@ -633,13 +835,6 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
     {
         desiredDir = Vector3Zero();
         settings.facingHint = toPlayer;
-    }
-
-    // Summon minions periodically
-    if (spawnTimer >= spawnInterval)
-    {
-        spawnTimer = 0.0f;
-        this->SpawnMinionGroup(uc);
     }
 
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
@@ -996,6 +1191,12 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
         bullet.position = Vector3Add(bullet.position, Vector3Scale(bullet.velocity, deltaSeconds));
         bullet.visual.pos = bullet.position;
         bullet.visual.UpdateOBB();
+        
+        // Spawn trailing particles for Minecraft look
+        if (uc.scene)
+        {
+            uc.scene->particles.spawnExplosion(bullet.position, 1, ORANGE, 0.15f, 0.5f, 0.1f);
+        }
     }
 
     auto removeIt = std::remove_if(this->bullets.begin(), this->bullets.end(), [&](Bullet &bullet) {
@@ -1011,6 +1212,12 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
             if (Vector3LengthSqr(knockDir) < 0.0001f)
                 knockDir = {0.0f, 0.0f, 1.0f};
             uc.player->applyKnockback(Vector3Scale(knockDir, 5.0f), 0.2f, 0.0f);
+            
+            // Spawn impact particles
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnExplosion(bullet.position, 15, ORANGE, 0.2f, 3.0f, 0.8f);
+            }
             return true;
         }
 
@@ -1028,6 +1235,12 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
                 if (Vector3LengthSqr(knockDir) < 0.0001f)
                     knockDir = {0.0f, 0.0f, 1.0f};
                 uc.player->applyKnockback(Vector3Scale(knockDir, 5.0f), 0.2f, 0.0f);
+                
+                // Spawn impact particles
+                if (uc.scene)
+                {
+                    uc.scene->particles.spawnExplosion(bullet.position, 15, ORANGE, 0.2f, 3.0f, 0.8f);
+                }
                 return true;
             }
 
@@ -1037,6 +1250,11 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
                 continue;
             }
 
+            // Spawn impact particles on wall/environment hit
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnExplosion(bullet.position, 10, ORANGE, 0.2f, 2.0f, 0.6f);
+            }
             return true; // hit environment or other entity
         }
 
@@ -1065,4 +1283,257 @@ void ShooterEnemy::gatherObjects(std::vector<Object *> &out) const
     {
         out.push_back(const_cast<Object *>(&bullet.visual));
     }
+}
+
+// ---------------------------- SupportEnemy ----------------------------
+
+void SupportEnemy::FindHealTarget(UpdateContext &uc)
+{
+    // Find the lowest HP ally that's below healing threshold
+    std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
+    Enemy* bestTarget = nullptr;
+    float lowestHealthPercent = 1.0f;
+    
+    for (Entity *entity : enemies)
+    {
+        if (!entity || entity == this) continue;
+        
+        Enemy *ally = dynamic_cast<Enemy*>(entity);
+        if (!ally) continue;
+        
+        // Skip minions
+        if (dynamic_cast<MinionEnemy*>(ally)) continue;
+        
+        // Check if in range
+        float dist = Vector3Distance(this->position, ally->pos());
+        if (dist > healingRange) continue;
+        
+        // Check if below healing threshold
+        float healthPercent = (float)ally->getHealth() / (float)ally->getMaxHealth();
+        if (healthPercent >= healingThreshold) continue;
+        
+        // Track lowest health ally
+        if (healthPercent < lowestHealthPercent)
+        {
+            lowestHealthPercent = healthPercent;
+            bestTarget = ally;
+        }
+    }
+    
+    this->targetAlly = bestTarget;
+}
+
+void SupportEnemy::FindHideTarget(UpdateContext &uc)
+{
+    // Find a strong enemy to hide behind (not a minion)
+    std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
+    Enemy* bestHideTarget = nullptr;
+    float closestDist = 999999.0f;
+    
+    for (Entity *entity : enemies)
+    {
+        if (!entity || entity == this) continue;
+        
+        Enemy *ally = dynamic_cast<Enemy*>(entity);
+        if (!ally) continue;
+        
+        // Skip minions - we want to hide behind stronger enemies
+        if (dynamic_cast<MinionEnemy*>(ally)) continue;
+        
+        // Prefer tanks
+        ChargingEnemy* tank = dynamic_cast<ChargingEnemy*>(ally);
+        float dist = Vector3Distance(this->position, ally->pos());
+        
+        if (tank && dist < 20.0f)
+        {
+            bestHideTarget = ally;
+            closestDist = dist;
+            break; // Tanks are priority
+        }
+        
+        // Otherwise, find closest non-minion ally
+        if (dist < closestDist && dist < 25.0f)
+        {
+            closestDist = dist;
+            bestHideTarget = ally;
+        }
+    }
+    
+    this->hideTarget = bestHideTarget;
+}
+
+void SupportEnemy::ApplyHealing(UpdateContext &uc, Enemy* target, float delta)
+{
+    if (!target) return;
+    
+    // Charge up heal glow
+    this->healGlowTimer += delta * 2.0f; // Takes 0.5 seconds to charge
+    
+    if (this->healGlowTimer >= 1.0f)
+    {
+        // Apply healing
+        float healAmount = healingRate * delta;
+        target->Heal((int)healAmount);
+        this->isHealing = true;
+        
+        // Spawn yellow/gold healing particles
+        if (uc.scene)
+        {
+            // Particles flow from support to target
+            Vector3 direction = Vector3Subtract(target->pos(), this->position);
+            Vector3 midpoint = Vector3Add(this->position, Vector3Scale(direction, 0.5f));
+            uc.scene->particles.spawnDirectional(this->position, direction, 5, GOLD, 3.0f, 0.2f);
+            uc.scene->particles.spawnExplosion(target->pos(), 3, YELLOW, 0.2f, 1.0f, 0.3f);
+        }
+        
+        // Reset if health is full or out of range
+        float healthPercent = (float)target->getHealth() / (float)target->getMaxHealth();
+        if (healthPercent >= healingThreshold)
+        {
+            this->healGlowTimer = 0.0f;
+            this->isHealing = false;
+        }
+    }
+    else
+    {
+        this->isHealing = false;
+    }
+}
+
+void SupportEnemy::ApplySpeedBuffs(UpdateContext &uc)
+{
+    // Apply speed buff to all nearby allies
+    std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
+    
+    int buffedCount = 0;
+    for (Entity *entity : enemies)
+    {
+        if (!entity || entity == this) continue;
+        
+        Enemy *ally = dynamic_cast<Enemy*>(entity);
+        if (!ally) continue;
+        
+        // Check if in range
+        float dist = Vector3Distance(this->position, ally->pos());
+        if (dist > speedBuffRange) continue;
+        
+        // Apply speed buff (would need to modify Enemy class to have speedMultiplier)
+        // Spawn blue buff particles around buffed allies
+        if (uc.scene && buffedCount < 3) // Limit particle spam
+        {
+            uc.scene->particles.spawnExplosion(ally->pos(), 2, SKYBLUE, 0.15f, 1.5f, 0.5f);
+            buffedCount++;
+        }
+    }
+}
+
+void SupportEnemy::UpdatePositioning(UpdateContext &uc, const Vector3 &toPlayer)
+{
+    // Try to stay behind Tank allies or other strong enemies
+    // For now, just retreat if player too close
+}
+
+void SupportEnemy::UpdateBody(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
+    toPlayer.y = 0.0f;
+    float dist = Vector3Length(toPlayer);
+    Vector3 desiredDir = Vector3Zero();
+
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 3.0f;  // Slower than other enemies
+    settings.maxAccel = MAX_ACCEL;
+    settings.decelGround = FRICTION;
+    settings.decelAir = AIR_DRAG;
+
+    // First, look for allies to heal
+    FindHealTarget(uc);
+    
+    // If we have a heal target, move toward it
+    if (this->targetAlly)
+    {
+        Vector3 toAlly = Vector3Subtract(this->targetAlly->pos(), this->position);
+        toAlly.y = 0.0f;
+        float allyDist = Vector3Length(toAlly);
+        
+        if (allyDist > 0.1f && allyDist > 8.0f)  // Move closer if too far
+        {
+            desiredDir = Vector3Normalize(toAlly);
+            settings.facingHint = desiredDir;
+        }
+        
+        // Apply healing
+        ApplyHealing(uc, this->targetAlly, delta);
+    }
+    else
+    {
+        // Reset heal glow when not healing
+        this->healGlowTimer = 0.0f;
+        this->isHealing = false;
+        
+        // Find an ally to hide behind
+        FindHideTarget(uc);
+        
+        if (this->hideTarget)
+        {
+            // Position ourselves so the ally is between us and the player
+            Vector3 allyPos = this->hideTarget->pos();
+            Vector3 playerToAlly = Vector3Subtract(allyPos, uc.player->pos());
+            playerToAlly.y = 0.0f;
+            
+            if (Vector3Length(playerToAlly) > 0.1f)
+            {
+                Vector3 hideSpot = Vector3Add(allyPos, Vector3Scale(Vector3Normalize(playerToAlly), 5.0f));
+                Vector3 toHideSpot = Vector3Subtract(hideSpot, this->position);
+                toHideSpot.y = 0.0f;
+                float hideSpotDist = Vector3Length(toHideSpot);
+                
+                if (hideSpotDist > 1.0f)
+                {
+                    desiredDir = Vector3Normalize(toHideSpot);
+                    settings.facingHint = toPlayer; // Face toward player while hiding
+                }
+            }
+        }
+        else if (dist < retreatDistance)
+        {
+            // No allies to hide behind, just retreat
+            desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
+            settings.facingHint = Vector3Negate(desiredDir);
+        }
+        else
+        {
+            // Idle, look at player
+            desiredDir = Vector3Zero();
+            settings.facingHint = toPlayer;
+        }
+    }
+    
+    // Apply speed buffs to nearby allies
+    ApplySpeedBuffs(uc);
+    this->buffGlowTimer += delta;
+
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->UpdateDialog(uc);
+}
+
+void SupportEnemy::DrawGlowEffect(const Vector3 &pos, Color color, float intensity) const
+{
+    // Draw expanding sphere glow
+    for (int i = 0; i < 3; i++)
+    {
+        float radius = 0.5f + (i * 0.3f) + (intensity * 0.5f);
+        float alpha = (1.0f - i * 0.3f) * intensity;
+        DrawSphere(pos, radius, ColorAlpha(color, alpha * 0.3f));
+    }
+}
+
+void SupportEnemy::Draw() const
+{
+    // Draw base enemy
+    Enemy::Draw();
+    // Particles are now handled by the particle system in UpdateBody
 }

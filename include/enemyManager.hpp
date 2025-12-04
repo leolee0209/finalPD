@@ -10,11 +10,11 @@ class EnemyManager
 {
 private:
     std::vector<Enemy *> enemies;
-    void RemoveEnemy(Enemy *e);
 public:
     ~EnemyManager();
 
     void addEnemy(Enemy *e);
+    void RemoveEnemy(Enemy *e);
     void update(UpdateContext &uc);
     void damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc);
     std::vector<Object *> getObjects() const;

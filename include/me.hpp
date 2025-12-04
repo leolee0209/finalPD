@@ -215,7 +215,13 @@ public:
     virtual void gatherObjects(std::vector<Object *> &out) const;
     int getHealth() const { return this->health; }
     int getMaxHealth() const { return MAX_HEALTH_ENEMY; }
-    void setMaxHealth(int maxHealth) { this->maxHealth = maxHealth; }
+    void setMaxHealth(int newMaxHealth) { this->maxHealth = newMaxHealth; }
+    void Heal(int amount)
+    {
+        this->health += amount;
+        if (this->health > this->maxHealth)
+            this->health = this->maxHealth;
+    }
     TileType getTileType() const { return this->tileType; }
     void setTileType(TileType type) { this->tileType = type; }
     float getHealthPercent() const
@@ -231,6 +237,9 @@ public:
     }
 
     DialogBox *getHealthDialog() { return this->healthDialog; }
+    
+    // Virtual draw method for custom enemy visuals
+    virtual void Draw() const;
 };
 
 // Minion: small, fast, low-health enemy used by Summoner
@@ -462,16 +471,85 @@ public:
 class SummonerEnemy : public Enemy
 {
 private:
+    enum class SummonState
+    {
+        Idle,       // Normal behavior, countdown to summon
+        Ascending,  // Jumping upward in spiral
+        Descending, // Falling with twirl, about to summon
+        Summoning   // Brief moment at peak spawn, visual flash
+    };
+    
+    SummonState summonState = SummonState::Idle;
     float spawnTimer = 0.0f;
-    float spawnInterval = 9.0f; // 8-10s intervals
+    float spawnInterval = 9.0f; // Seconds between summon cycles
     int groupSize = 5; // Always spawn 5 minions
-    float retreatDistance = 10.0f; // retreats if player closer than this
-
+    float retreatDistance = 20.0f; // Retreat if player closer
+    std::vector<MinionEnemy*> ownedMinions; // Track spawned minions for cleanup
+    
+    // Animation timing
+    float animationTimer = 0.0f;
+    float ascendDuration = 2.0f;      // Time to jump and spiral up
+    float descendDuration = 0.3f;     // Time to spiral down and land
+    float summonPeakDuration = 0.8f;  // Time at peak before spawning
+    
+    // Animation parameters
+    float jumpHeight = 4.0f;           // How high summoner jumps
+    float spiralRadius = 2.0f;         // Radius of spiral motion
+    float twirls = 1.0f;               // Number of rotations during animation
+    float startHeight = 0.0f;           // Height when animation starts
+    float startAnimX = 0.0f;            // X position when animation starts
+    float startAnimZ = 0.0f;            // Z position when animation starts
+    
+    // Visual effect counters
+    Texture2D spiralParticleTexture = {0};
+    float particleEmitTimer = 0.0f;
+    float particleEmitRate = 20.0f;    // Particle per frame during animation
+    
+    void UpdateSummonAnimation(UpdateContext &uc, float delta);
+    void EmitSummonParticles(const Vector3 &position, float intensity);
     void SpawnMinionGroup(UpdateContext &uc);
+    void CleanupMinions(UpdateContext &uc);
 
 public:
     SummonerEnemy() : Enemy(200) { this->setMaxHealth(200); this->setTileType(TileType::DOT_7); }
+    ~SummonerEnemy();
     void UpdateBody(UpdateContext &uc) override;
+    void OnDeath(UpdateContext &uc);
+    void Draw() const override;
+};
+
+// Support: heals and buffs nearby allies
+class SupportEnemy : public Enemy
+{
+private:
+    float healingRange = 15.0f;      // How close allies must be to heal
+    float healingRate = 20.0f;       // HP per second when healing
+    float healingThreshold = 0.4f;   // Only heal allies below 40% HP
+    float speedBuffAmount = 0.3f;    // 30% speed increase
+    float speedBuffRange = 12.0f;    // Range for speed buff
+    float retreatDistance = 10.0f;   // Retreat if player too close
+    
+    Enemy* targetAlly = nullptr;     // Current heal target
+    float healingTimer = 0.0f;       // For timing heal application
+    
+    // Visual effects
+    float healGlowTimer = 0.0f;      // Charges from 0 to 1, then bursts
+    float buffGlowTimer = 0.0f;      // For speed buff visual
+    bool isHealing = false;
+    bool isBuffing = false;
+    Enemy* hideTarget = nullptr;     // Enemy to hide behind
+    
+    void FindHealTarget(UpdateContext &uc);
+    void FindHideTarget(UpdateContext &uc);
+    void ApplyHealing(UpdateContext &uc, Enemy* target, float delta);
+    void ApplySpeedBuffs(UpdateContext &uc);
+    void UpdatePositioning(UpdateContext &uc, const Vector3 &toPlayer);
+    void DrawGlowEffect(const Vector3 &pos, Color color, float intensity) const;
+
+public:
+    SupportEnemy() : Enemy(250) { this->setMaxHealth(250); this->setTileType(TileType::CHARACTER_1); }
+    void UpdateBody(UpdateContext &uc) override;
+    void Draw() const override;
 };
 
 

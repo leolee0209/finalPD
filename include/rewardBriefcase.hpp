@@ -31,11 +31,15 @@ public:
     void UpdateBody(UpdateContext &uc) override { Update(uc); }
     EntityCategory category() const override { return ENTITY_ALL; }
     
+    // Static model shared by all briefcases
+    static Model sharedModel;
+    static bool modelLoaded;
+    static void LoadSharedModel();
+    static void UnloadSharedModel();
+    
 private:
     Vector3 position;
     Inventory inventory;
-    Model model;
-    bool modelLoaded = false;
     bool activated = false;
     float interactionRange = 3.0f;
     float bobTimer = 0.0f;
