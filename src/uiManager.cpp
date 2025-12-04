@@ -507,8 +507,15 @@ void UIManager::endTileDrag(const Vector2 &mousePos)
     }
     else if (!draggingFromHand && draggingFromSlot >= 0)
     {
-        // Return to original slot if not dropped on a valid target
-        addTileToSlot(draggingFromSlot, draggingTile);
+        // If dragged from slot and dropped outside all slots, remove the tile (don't return it)
+        // This allows players to remove tiles by dragging them out
+        // Only return to original slot if dropped on a full slot
+        if (targetSlot >= 0)
+        {
+            // Tried to drop on a slot but it was full
+            addTileToSlot(draggingFromSlot, draggingTile);
+        }
+        // Otherwise, tile is removed (not added back)
     }
 
     isDraggingTile = false;
@@ -525,6 +532,20 @@ void UIManager::addTileToSlot(int slotIndex, const SlotTileEntry &entry)
     auto &slot = attackSlots[slotIndex];
     if ((int)slot.size() < slotCapacity)
     {
+        // Check if this hand tile is already used in any slot
+        if (entry.handIndex >= 0)
+        {
+            for (int s = 0; s < slotCount; ++s)
+            {
+                for (const auto &existing : attackSlots[s])
+                {
+                    if (existing.handIndex == entry.handIndex)
+                    {
+                        return; // Don't allow duplicate
+                    }
+                }
+            }
+        }
         slot.push_back(entry);
     }
 }
@@ -539,6 +560,21 @@ bool UIManager::slotHasSpace(int slotIndex) const
 bool UIManager::isValidSlotIndex(int slotIndex) const
 {
     return slotIndex >= 0 && slotIndex < slotCount;
+}
+
+bool UIManager::isTileFromHandUsed(int handIndex) const
+{
+    for (int s = 0; s < slotCount; ++s)
+    {
+        for (const auto &entry : attackSlots[s])
+        {
+            if (entry.handIndex == handIndex)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void UIManager::updatePauseMenu(Inventory &playerInventory)
@@ -626,6 +662,16 @@ void UIManager::drawPauseMenu(Inventory &playerInventory)
 
     // Hand
     muim.draw();
+    
+    // Gray out tiles that are already used in slots
+    for (int i = 0; i < muim.getTileCount(); ++i)
+    {
+        if (isTileFromHandUsed(i))
+        {
+            Rectangle tileRect = muim.getTileRect(i);
+            DrawRectangleRec(tileRect, Fade(GRAY, 0.6f));
+        }
+    };
 
     // Slots
     ensureSlotElements();

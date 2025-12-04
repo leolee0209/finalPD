@@ -616,7 +616,13 @@ void Scene::CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg
 
 void Scene::PopulateRoomEnemies(const std::vector<Vector3> &roomCenters)
 {
-    if (roomCenters.size() <= 1)
+    // No longer spawns enemies immediately; stored for delayed spawn on room entry
+    (void)roomCenters; // Suppress unused parameter warning
+}
+
+void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
+{
+    if (!room || room->GetType() != RoomType::Enemy)
     {
         return;
     }
@@ -624,30 +630,64 @@ void Scene::PopulateRoomEnemies(const std::vector<Vector3> &roomCenters)
     const Vector3 tileSize = Vector3Scale({44.0f, 60.0f, 30.0f}, 0.06f);
     float floorY = this->GetFloorTop();
 
-    auto spawnShooter = [&](const Vector3 &center, const Vector2 &offset)
+    auto placeEnemy = [&](Enemy *enemy, const Vector3 &center, const Vector2 &offset)
     {
-        ShooterEnemy *enemy = new ShooterEnemy();
         enemy->obj().size = tileSize;
         Vector3 position = {center.x + offset.x, floorY + tileSize.y * 0.5f, center.z + offset.y};
         enemy->obj().pos = position;
         enemy->setPosition(position);
-        
         this->em.addEnemy(enemy);
     };
 
-    std::array<std::vector<Vector2>, 5> enemyOffsets;
-    enemyOffsets[0] = {};
-    enemyOffsets[1] = {Vector2{-18.0f, -8.0f}, Vector2{14.0f, 6.0f}};
-    enemyOffsets[2] = {Vector2{0.0f, 0.0f}};
-    enemyOffsets[3] = {Vector2{-12.0f, 8.0f}, Vector2{12.0f, -10.0f}};
-    enemyOffsets[4] = {Vector2{-16.0f, 10.0f}, Vector2{0.0f, -12.0f}, Vector2{16.0f, 6.0f}};
-
-    for (size_t roomIndex = 1; roomIndex < roomCenters.size() && roomIndex < enemyOffsets.size(); ++roomIndex)
+    // Determine composition based on room name
+    std::vector<std::pair<std::string, Vector2>> composition;
+    const std::string &name = room->GetName();
+    
+    if (name == "Room 2")
     {
-        const Vector3 &center = roomCenters[roomIndex];
-        for (const Vector2 &offset : enemyOffsets[roomIndex])
+        composition = {
+            {"sniper", Vector2{-18.0f, -8.0f}},
+            {"sniper", Vector2{14.0f, 6.0f}}
+        };
+    }
+    else if (name == "Room 3")
+    {
+        composition = {
+            {"tank", Vector2{0.0f, 0.0f}}
+        };
+    }
+    else if (name == "Room 4")
+    {
+        composition = {
+            {"sniper", Vector2{-12.0f, 8.0f}},
+            {"sniper", Vector2{12.0f, -10.0f}},
+            {"summoner", Vector2{0.0f, 0.0f}}
+        };
+    }
+    else if (name == "Room 5")
+    {
+        composition = {
+            {"tank", Vector2{-16.0f, 10.0f}},
+            {"summoner", Vector2{0.0f, -12.0f}},
+            {"sniper", Vector2{16.0f, 6.0f}}
+        };
+    }
+
+    for (const auto &entry : composition)
+    {
+        const std::string &type = entry.first;
+        const Vector2 &offset = entry.second;
+        if (type == "sniper")
         {
-            spawnShooter(center, offset);
+            placeEnemy(new ShooterEnemy(), roomCenter, offset);
+        }
+        else if (type == "tank")
+        {
+            placeEnemy(new ChargingEnemy(), roomCenter, offset);
+        }
+        else if (type == "summoner")
+        {
+            placeEnemy(new SummonerEnemy(), roomCenter, offset);
         }
     }
 }
@@ -657,15 +697,15 @@ void Scene::AssignEnemyTextures(UIManager *uiManager)
     if (!uiManager)
         return;
     
-    // Assign random tile textures to all enemies
+    // Assign tile textures based on each enemy's associated tile type
     std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
     for (Entity *entity : enemies)
     {
         if (Enemy *enemy = dynamic_cast<Enemy *>(entity))
         {
-            TileType randomType = (TileType)(rand() % (int)TileType::TILE_COUNT);
+            TileType type = enemy->getTileType();
             enemy->obj().texture = &uiManager->muim.getSpriteSheet();
-            enemy->obj().sourceRect = uiManager->muim.getTile(randomType);
+            enemy->obj().sourceRect = uiManager->muim.getTile(type);
             enemy->obj().useTexture = true;
         }
     }
@@ -1013,6 +1053,42 @@ void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
 void Scene::Update(UpdateContext &uc)
 {
     const float deltaSeconds = GetFrameTime();
+
+    // Check if player entered a new room and spawn enemies on first entry
+    Room *previousRoom = this->currentPlayerRoom;
+    this->currentPlayerRoom = nullptr;
+    for (auto &room : this->rooms)
+    {
+        if (room && room->IsPlayerInside(uc.player->pos()))
+        {
+            this->currentPlayerRoom = room.get();
+            break;
+        }
+    }
+    
+    // Spawn enemies when player enters an enemy room for the first time
+    if (this->currentPlayerRoom && this->currentPlayerRoom != previousRoom)
+    {
+        if (this->currentPlayerRoom->GetType() == RoomType::Enemy)
+        {
+            if (!this->currentPlayerRoom->AreEnemiesSpawned())
+            {
+                BoundingBox bounds = this->currentPlayerRoom->GetBounds();
+                Vector3 roomCenter = {
+                    (bounds.min.x + bounds.max.x) * 0.5f,
+                    (bounds.min.y + bounds.max.y) * 0.5f,
+                    (bounds.min.z + bounds.max.z) * 0.5f
+                };
+                this->SpawnEnemiesForRoom(this->currentPlayerRoom, roomCenter);
+                this->currentPlayerRoom->MarkEnemiesSpawned();
+                // Assign textures to newly spawned enemies
+                if (uc.uiManager)
+                {
+                    this->AssignEnemyTextures(uc.uiManager);
+                }
+            }
+        }
+    }
 
     // Update all entities in the scene
     this->em.update(uc);

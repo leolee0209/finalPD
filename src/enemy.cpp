@@ -8,6 +8,89 @@
 #include <cmath> // For sinf, cosf
 #include <algorithm>
 
+// ---------------------------- MinionEnemy ----------------------------
+void MinionEnemy::UpdateBody(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
+    toPlayer.y = 0.0f;
+    float dist = Vector3Length(toPlayer);
+
+    Vector3 desiredDir = Vector3Zero();
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 7.5f;
+    settings.maxAccel = MAX_ACCEL * 1.2f;
+    settings.decelGround = FRICTION * 1.1f;
+    settings.decelAir = AIR_DRAG;
+
+    if (!this->isKnockbackActive())
+    {
+        switch (this->state)
+        {
+        case AttackState::Approaching:
+            if (dist > this->attackRange)
+            {
+                // Chase player
+                desiredDir = Vector3Normalize(toPlayer);
+            }
+            else if (this->isGrounded())
+            {
+                // Launch attack when in range and grounded
+                this->state = AttackState::Launching;
+                Vector3 launchVel = Vector3Scale(Vector3Normalize(toPlayer), this->launchSpeed);
+                launchVel.y = this->launchUpwardVelocity;
+                this->setVelocity(launchVel);
+                this->appliedDamage = false;
+                desiredDir = Vector3Zero();
+            }
+            break;
+
+        case AttackState::Launching:
+            // In air - check for collision with player
+            if (!this->appliedDamage)
+            {
+                CollisionResult hitResult = GetCollisionOBBvsOBB(&this->obj().obb, &uc.player->obj().obb);
+                if (hitResult.collided)
+                {
+                    DamageResult damage(this->attackDamage, hitResult);
+                    uc.player->damage(damage);
+                    Vector3 knockDir = Vector3Normalize(toPlayer);
+                    if (Vector3LengthSqr(knockDir) < 0.0001f)
+                        knockDir = {0.0f, 0.0f, 1.0f};
+                    uc.player->applyKnockback(Vector3Scale(knockDir, 8.0f), 0.3f, 0.0f);
+                    this->appliedDamage = true;
+                }
+            }
+            
+            // Return to cooldown when grounded
+            if (this->isGrounded())
+            {
+                this->state = AttackState::Cooldown;
+                this->attackCooldown = this->cooldownDuration;
+            }
+            desiredDir = Vector3Zero();
+            break;
+
+        case AttackState::Cooldown:
+            // Wait before next attack
+            this->attackCooldown -= delta;
+            if (this->attackCooldown <= 0.0f)
+            {
+                this->state = AttackState::Approaching;
+            }
+            // Stand still during cooldown
+            desiredDir = Vector3Zero();
+            break;
+        }
+        
+        settings.facingHint = toPlayer;
+    }
+
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->UpdateDialog(uc);
+}
+
 void Enemy::UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirection, float deltaSeconds, const MovementSettings &settings)
 {
     float floory = this->computeSupportHeightForRotation(this->o.getRotation());
@@ -495,6 +578,73 @@ ShooterEnemy::ShooterEnemy() : Enemy(250)  // Sniper: 250 HP
         TraceLog(LOG_WARNING, "ShooterEnemy: Failed to load sun.png");
     }
 }
+// ---------------------------- SummonerEnemy ----------------------------
+void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
+{
+    int count = groupSize; // Fixed count of 5
+    float radius = 4.0f;
+    
+    // Calculate minion size: summoner size / 3
+    Vector3 minionSize = Vector3Scale(this->obj().size, 1.0f / 3.0f);
+    
+    for (int i = 0; i < count; ++i)
+    {
+        float angle = (2.0f * PI) * ((float)i / (float)count);
+        Vector3 offset = {cosf(angle) * radius, 0.0f, sinf(angle) * radius};
+        Vector3 spawnPos = Vector3Add(this->position, offset);
+        MinionEnemy *m = new MinionEnemy();
+        m->obj().size = minionSize;
+        m->obj().pos = spawnPos;
+        m->setPosition(spawnPos);
+        
+        // Copy texture from summoner
+        m->obj().texture = this->obj().texture;
+        m->obj().sourceRect = this->obj().sourceRect;
+        m->obj().useTexture = this->obj().useTexture;
+        
+        uc.scene->em.addEnemy(m);
+    }
+}
+
+void SummonerEnemy::UpdateBody(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    spawnTimer += delta;
+
+    Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
+    toPlayer.y = 0.0f;
+    float dist = Vector3Length(toPlayer);
+    Vector3 desiredDir = Vector3Zero();
+
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 3.5f;
+    settings.maxAccel = MAX_ACCEL;
+    settings.decelGround = FRICTION;
+    settings.decelAir = AIR_DRAG;
+
+    // Retreat if player too close
+    if (dist < retreatDistance)
+    {
+        desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
+        settings.facingHint = Vector3Negate(desiredDir);
+    }
+    else
+    {
+        desiredDir = Vector3Zero();
+        settings.facingHint = toPlayer;
+    }
+
+    // Summon minions periodically
+    if (spawnTimer >= spawnInterval)
+    {
+        spawnTimer = 0.0f;
+        this->SpawnMinionGroup(uc);
+    }
+
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->UpdateDialog(uc);
+}
 
 void ShooterEnemy::UpdateBody(UpdateContext &uc)
 {
@@ -879,6 +1029,12 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
                     knockDir = {0.0f, 0.0f, 1.0f};
                 uc.player->applyKnockback(Vector3Scale(knockDir, 5.0f), 0.2f, 0.0f);
                 return true;
+            }
+
+            // Ignore collisions with player projectiles
+            if (hit.with && hit.with->category() == ENTITY_PROJECTILE)
+            {
+                continue;
             }
 
             return true; // hit environment or other entity

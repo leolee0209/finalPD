@@ -233,6 +233,31 @@ public:
     DialogBox *getHealthDialog() { return this->healthDialog; }
 };
 
+// Minion: small, fast, low-health enemy used by Summoner
+class MinionEnemy : public Enemy
+{
+private:
+    enum class AttackState
+    {
+        Approaching,
+        Launching,
+        Cooldown
+    };
+    
+    AttackState state = AttackState::Approaching;
+    float attackCooldown = 0.0f;
+    float cooldownDuration = 1.5f;
+    float attackRange = 3.5f;
+    float launchSpeed = 25.0f;
+    float launchUpwardVelocity = 10.0f;
+    float attackDamage = 15.0f;
+    bool appliedDamage = false;
+    
+public:
+    MinionEnemy() : Enemy(30) { this->setMaxHealth(30); this->setTileType(TileType::DOT_3); }
+    void UpdateBody(UpdateContext &uc) override;
+};
+
 class ChargingEnemy : public Enemy
 {
 private:
@@ -395,7 +420,6 @@ public:
         direction = {0};
         grounded = true;
         health = MAX_HEALTH_ME;
-
         this->o.setAsBox({this->colliderWidth, this->colliderHeight, this->colliderDepth});
         this->o.pos = this->position;
         this->o.visible = false;
@@ -432,6 +456,22 @@ public:
     const Vector2 &getLookRotation() const { return this->camera.lookRotation; }
     // Identify this entity as the player
     EntityCategory category() const override;
+};
+
+// Summoner: periodically spawns MinionEnemy groups and tries to keep distance
+class SummonerEnemy : public Enemy
+{
+private:
+    float spawnTimer = 0.0f;
+    float spawnInterval = 9.0f; // 8-10s intervals
+    int groupSize = 5; // Always spawn 5 minions
+    float retreatDistance = 10.0f; // retreats if player closer than this
+
+    void SpawnMinionGroup(UpdateContext &uc);
+
+public:
+    SummonerEnemy() : Enemy(200) { this->setMaxHealth(200); this->setTileType(TileType::DOT_7); }
+    void UpdateBody(UpdateContext &uc) override;
 };
 
 

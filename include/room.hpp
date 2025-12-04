@@ -96,6 +96,8 @@ public:
     const BoundingBox &GetBounds() const { return this->bounds; }
     const std::string &GetName() const { return this->name; }
     std::vector<Door *> GetDoors() const { return this->doors; }
+    bool AreEnemiesSpawned() const { return this->enemiesSpawned; }
+    void MarkEnemiesSpawned() { this->enemiesSpawned = true; }
 
 private:
     bool ContainsEnemy(const Entity *entity) const;
@@ -106,5 +108,6 @@ private:
     RoomType type = RoomType::Enemy;
     bool hadEnemies = false;
     bool completed = false;
+    bool enemiesSpawned = false;
     std::vector<Door *> doors;
 };

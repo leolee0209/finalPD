@@ -238,7 +238,7 @@ void Projectile::UpdateBody(UpdateContext &uc)
 
     Entity::ApplyPhysics(this, uc, params);
 
-    // Do projectile-specific collision handling (damage to enemies)
+    // Do projectile-specific collision handling (damage to enemies and models)
     auto results = Object::collided(this->o, uc.scene);
     for (auto &result : results)
     {
@@ -247,6 +247,12 @@ void Projectile::UpdateBody(UpdateContext &uc)
             Enemy *e = static_cast<Enemy *>(result.with);
             auto dResult = DamageResult(10, result);
             uc.scene->em.damage(e, dResult, uc);
+        }
+        // Player projectiles also collide with static model objects (decorations)
+        else if (!result.with && result.collided)
+        {
+            // Hit a static decoration/model; projectile should stop/destroy
+            // For now, we let the physics handle it; could add removal logic here
         }
     }
 }

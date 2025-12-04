@@ -71,6 +71,8 @@ public:
     Rectangle getTileBounds(int index) const;
     bool isTileUsed(int index) const;
     void setTileUsed(int index, bool used);
+    int getTileCount() const { return static_cast<int>(tileHitboxes.size()); }
+    Rectangle getTileRect(int index) const { return (index >= 0 && index < (int)tileHitboxes.size()) ? tileHitboxes[index] : Rectangle{0,0,0,0}; }
 
     int getSelectedTileIndex() const { return selectedTileIndex; }
 
@@ -149,6 +151,7 @@ public:
 
     void updateBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory, bool& gamePaused);
     void drawBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory);
+    bool isTileFromHandUsed(int handIndex) const;
 
 private:
     void updateHud();

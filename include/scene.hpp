@@ -110,6 +110,7 @@ private:
     void BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float roomWidth, float roomLength, float wallThickness);
     void CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg, int roomA, int roomB);
     void PopulateRoomEnemies(const std::vector<Vector3> &roomCenters);
+    void SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter);
     
 public:
     void AssignEnemyTextures(UIManager *uiManager);
