@@ -586,15 +586,13 @@ public:
     void Draw() const override;
 };
 
-// Vanguard: teleporting assassin/dragoon with aerial dive attacks
+// Vanguard: Heavy dragoon with aggressive ground combo and aerial dive attacks
 class VanguardEnemy : public Enemy
 {
 private:
     enum class VanguardState
     {
         Chasing,
-        TeleportPhaseOut,
-        TeleportPhaseIn,
         GroundComboStab,
         GroundComboSlash,
         AerialAscend,
@@ -605,15 +603,6 @@ private:
 
     VanguardState state = VanguardState::Chasing;
     float stateTimer = 0.0f;
-
-    // Teleport parameters
-    float teleportCooldownDuration = 8.0f;
-    float teleportCooldownTimer = 0.0f;
-    float teleportTriggerRange = 15.0f;     // Teleport if farther than this
-    float teleportPhaseOutTime = 0.5f;
-    float teleportPhaseInTime = 0.5f;
-    bool isInvisible = false;
-    Vector3 teleportTargetPos = {0.0f, 0.0f, 0.0f};
 
     // Ground combo parameters (Piston Thrust + Crescent Sweep)
     float comboAttackRange = 3.5f;       // Trigger range for combo
@@ -646,20 +635,22 @@ private:
     // AI decision cooldown
     float decisionCooldownDuration = 1.0f;  // Make decisions every 1 second
     float decisionCooldownTimer = 0.0f;
+    
+    // Aerial Dive Attack: Quick ascent to hover, then aggressive dash dive with landing shockwave
     float diveAscendTime = 0.4f;            // Quick ascent phase (0.4s)
     float diveHangTime = 1.5f;              // 1.5 seconds hover at peak, staring at player camera
-    float diveAscendInitialVelocity = 35.0f; // Reduced to 70% height (50 * 0.7 = 35)
-    float diveGravityDuringAscent = 56.0f;   // Reduced proportionally (80 * 0.7 = 56)
-    float diveDamage = 45.0f;
-    float diveLandingRecoveryTime = 2.0f;
-    float diveImpactSquashTime = 0.15f;      // Duration of squash effect on impact
+    float diveAscendInitialVelocity = 35.0f; // Upward velocity during ascent
+    float diveGravityDuringAscent = 56.0f;   // Gravity applied during hover/descent
+    float diveDamage = 45.0f;               // Damage on direct hit
+    float diveLandingRecoveryTime = 2.0f;   // Recovery time after landing
+    float diveImpactSquashTime = 0.15f;     // Duration of squash effect on impact
     Vector3 diveTargetPos = {0.0f, 0.0f, 0.0f};
-    float diveInitialSpeed = 15.0f;          // Initial horizontal speed (increased 50%)
-    float diveAcceleration = 300.0f;         // Very aggressive acceleration (increased 50%)
-    float diveMaxSpeed = 150.0f;             // Very high terminal velocity (increased 50%)
-    float diveCurrentSpeed = 0.0f;           // Track current dive speed
+    float diveInitialSpeed = 15.0f;         // Initial horizontal speed during dive start
+    float diveAcceleration = 300.0f;        // Aggressive acceleration during descent
+    float diveMaxSpeed = 150.0f;            // Very high terminal velocity
+    float diveCurrentSpeed = 0.0f;          // Track current dive speed
     
-    // Shockwave on dive landing
+    // Shockwave: Expanding ring on dive impact that damages grounded players (can be jumped over)
     float shockwaveRadius = 0.0f;           // Current radius of expanding shockwave
     float shockwaveMaxRadius = 22.0f;       // Max radius before shockwave stops
     float shockwaveExpandSpeed = 18.0f;     // Units per second
@@ -668,40 +659,41 @@ private:
     float shockwaveDamage = 22.0f;          // Damage dealt by shockwave
     bool shockwaveHitPlayer = false;        // Track if we hit player with this shockwave
     
-    // Animation state
-    Vector3 visualScale = {1.0f, 1.0f, 1.0f}; // For squash & stretch
-    float rotationTowardsPlayer = 0.0f;       // Slow rotation during hover
+    // Animation & Visual State
+    Vector3 visualScale = {1.0f, 1.0f, 1.0f}; // For squash & stretch on landing
+    float rotationTowardsPlayer = 0.0f;       // Rotation blending during aerial states
 
     // Movement
-    float chaseSpeed = 6.0f;
+    float chaseSpeed = 6.0f;                  // Speed while chasing player
     
-    // Spear weapon visual (static shared model)
+    // Spear Weapon Visual: Animated based on attack state (Piston Thrust stab or Crescent Sweep slash)
+    // Model is shared between all Vanguard instances and animated in world space
     static Model sharedSpearModel;
     static bool spearModelLoaded;
-    Vector3 spearOffset = {1.2f, 0.0f, 0.0f}; // Hold at side
-    Vector3 spearRotationOffset = {0, 0, 0};  // Rotation adjustment
-    float spearScale = 0.0075f;                // Scale multiplier
-    float spearThrustAmount = 0.0f;           // 0-1 for stab forward thrust
-    float spearRetractAmount = 0.0f;          // 0-1 for stab pull-back
-    float spearSwingAngle = 0.0f;             // Angle for slash swing (degrees)
-    float spearSwingStartAngle = -90.0f;      // Start angle for slash (left side)
-    float spearLingerTimer = 0.0f;            // Keep spear extended after attack
-    float spearLingerDuration = 0.4f;         // How long to hold spear visible
-    mutable Vector3 smoothedSpearPos = {0.0f, 0.0f, 0.0f};  // Smoothed position to reduce jitter
-    mutable float smoothedYRotation = 0.0f;           // Smoothed rotation
-    // Cached camera info (updated during UpdateBody)
+    Vector3 spearOffset = {1.2f, 0.0f, 0.0f}; // Hold at side by default
+    Vector3 spearRotationOffset = {0, 0, 0};  // Rotation adjustment for pointing at camera
+    float spearScale = 0.0075f;                // Model scale multiplier
+    float spearThrustAmount = 0.0f;           // 0-1 for stab forward extension
+    float spearRetractAmount = 0.0f;          // 0-1 for stab pull-back (windup)
+    float spearSwingAngle = 0.0f;             // Angle for slash swing (degrees from center)
+    float spearSwingStartAngle = -90.0f;      // Start angle for slash arc (left side)
+    float spearLingerTimer = 0.0f;            // Hold spear extended after attack
+    float spearLingerDuration = 0.4f;         // Duration to hold spear visible
+    mutable Vector3 smoothedSpearPos = {0.0f, 0.0f, 0.0f};  // Smoothed position (jitter reduction)
+    mutable float smoothedYRotation = 0.0f;                 // Smoothed rotation (jitter reduction)
+    
+    // Cached camera info: Updated each frame to point weapon at camera
     Vector3 cachedCameraPos = {0.0f, 0.0f, 0.0f};
     float cachedCameraYawDeg = 0.0f;
     float cachedCameraPitchDeg = 0.0f;
 
     // Helper methods
     Vector3 CalculateBackstabPosition(UpdateContext &uc);
-    void HandleTeleport(UpdateContext &uc);
-    void HandleGroundCombo(UpdateContext &uc);
-    void HandleAerialDive(UpdateContext &uc);
-    bool CheckStabHit(UpdateContext &uc);
-    bool CheckSlashHit(UpdateContext &uc);
-    void DecideAction(UpdateContext &uc, float distanceToPlayer);
+    void HandleGroundCombo(UpdateContext &uc);  // Two-stage combo: Piston Thrust stab then Crescent Sweep slash
+    void HandleAerialDive(UpdateContext &uc);   // Ascend -> Hover -> Dive with shockwave
+    bool CheckStabHit(UpdateContext &uc);       // Collision check for stab attack
+    bool CheckSlashHit(UpdateContext &uc);      // Collision check for slash attack
+    void DecideAction(UpdateContext &uc, float distanceToPlayer);  // AI decision making based on distance
 
 public:
     VanguardEnemy() : Enemy(180) { this->setMaxHealth(180); this->setTileType(TileType::DRAGON_RED); }

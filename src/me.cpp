@@ -212,10 +212,10 @@ float Me::getMovementMultiplier() const
     return 1.0f;
 }
 
-void Me::respawn(const Vector3 &spawnPosition)
+void Me::respawn(const Vector3 &pos)
 {
     // Reset position
-    this->position = spawnPosition;
+    this->position = pos;
     this->position.y = this->getColliderHalfHeight();
     this->o.pos = this->position;
     this->o.UpdateOBB();

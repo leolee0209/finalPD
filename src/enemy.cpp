@@ -1782,11 +1782,6 @@ Vector3 VanguardEnemy::CalculateBackstabPosition(UpdateContext &uc)
     return pos;
 }
 
-void VanguardEnemy::HandleTeleport(UpdateContext &uc)
-{
-    // Teleport logic (not used, but kept for compatibility)
-}
-
 bool VanguardEnemy::CheckStabHit(UpdateContext &uc)
 {
     // Piston Thrust: Use invisible box collision for consistent hit detection
@@ -2505,6 +2500,9 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
             this->state = VanguardState::Chasing;
         }
     }
+    
+    // Update health bar position for all aerial states
+    this->UpdateDialog(uc);
 }
 
 // Static model initialization

@@ -41,7 +41,7 @@ void MahjongUIManager::createHandUI(Inventory &inventory, int screenWidth, int s
     {
         // Update existing elements with new tile types - need to recreate them
         // For simplicity, just recreate if types changed
-        auto &tiles = inventory.getTiles();
+        tiles = inventory.getTiles();
         for (int i = 0; i < tiles.size(); ++i)
         {
             Rectangle source = getTile(tiles[i].type);

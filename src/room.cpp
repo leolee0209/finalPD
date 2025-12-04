@@ -31,16 +31,16 @@ std::unique_ptr<Door> Door::Create(std::unique_ptr<CollidableModel> collider,
     return door;
 }
 
-Door::Door(std::unique_ptr<CollidableModel> collider,
-           btCollisionWorld *bulletWorld,
-           Shader *lightingShader,
+Door::Door(std::unique_ptr<CollidableModel> doorCollider,
+           btCollisionWorld *bulletWorldPtr,
+           Shader *shaderPtr,
            float openDurationSeconds,
-           float openAngleDeg)
-    : collider(std::move(collider)),
-      bulletWorld(bulletWorld),
-      lightingShader(lightingShader),
+           float openAngleDegrees)
+    : collider(std::move(doorCollider)),
+      bulletWorld(bulletWorldPtr),
+      lightingShader(shaderPtr),
       openDuration(openDurationSeconds),
-      openAngleDeg(openAngleDeg)
+      openAngleDeg(openAngleDegrees)
 {
     if (this->collider)
     {
@@ -284,10 +284,10 @@ void Door::DrawLeaf(const LeafVisual &leaf) const
 
 // ---------------- Room ----------------
 
-Room::Room(std::string name, BoundingBox bounds, RoomType type)
-    : name(std::move(name)),
-      bounds(bounds),
-      type(type)
+Room::Room(std::string roomName, BoundingBox roomBounds, RoomType roomType)
+    : name(std::move(roomName)),
+      bounds(roomBounds),
+      type(roomType)
 {
     if (this->type == RoomType::Start)
     {

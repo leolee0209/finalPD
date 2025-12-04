@@ -1128,6 +1128,16 @@ void Scene::Update(UpdateContext &uc)
                     (bounds.min.z + bounds.max.z) * 0.5f};
                 this->SpawnEnemiesForRoom(this->currentPlayerRoom, roomCenter);
                 this->currentPlayerRoom->MarkEnemiesSpawned();
+                
+                // Close all doors to this room to trap enemies inside
+                for (Door *door : this->currentPlayerRoom->GetDoors())
+                {
+                    if (door)
+                    {
+                        door->Close();
+                    }
+                }
+                
                 // Assign textures to newly spawned enemies
                 if (uc.uiManager)
                 {
