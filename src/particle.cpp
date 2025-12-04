@@ -84,7 +84,11 @@ void ParticleSystem::spawnExplosion(Vector3 center, int count, Color color, floa
         p.velocity = Vector3Scale(Vector3Normalize(randomDir), speed);
         
         p.color = color;
-        p.size = size;
+        p.size = size * this->globalSizeMultiplier;
+        // Apply global intensity to alpha (preserve existing alpha if set)
+        int alpha = (int)(p.color.a * this->globalIntensityMultiplier);
+        if (alpha > 255) alpha = 255;
+        p.color.a = (unsigned char)alpha;
         p.gravity = 2.0f; // Gravity makes them fall like debris
         p.startLife = 1.0f + (float)GetRandomValue(0, 50)/100.0f; // Random life 1.0 - 1.5s
         p.life = p.startLife;
@@ -127,7 +131,10 @@ void ParticleSystem::spawnDirectional(Vector3 center, Vector3 direction, int cou
         p.velocity = Vector3Scale(Vector3Normalize(finalDir), speed);
         
         p.color = color;
-        p.size = 0.15f + (float)GetRandomValue(0, 10) / 100.0f; // 0.15-0.25
+        p.size = (0.15f + (float)GetRandomValue(0, 10) / 100.0f) * this->globalSizeMultiplier; // 0.15-0.25
+        int alpha2 = (int)(p.color.a * this->globalIntensityMultiplier);
+        if (alpha2 > 255) alpha2 = 255;
+        p.color.a = (unsigned char)alpha2;
         p.gravity = 1.0f; // Light gravity
         p.startLife = 0.8f + (float)GetRandomValue(0, 40)/100.0f; // 0.8-1.2s
         p.life = p.startLife;
@@ -172,7 +179,10 @@ void ParticleSystem::spawnSpiral(Vector3 center, float radius, int count, Color 
         };
         
         p.color = color;
-        p.size = 0.2f;
+        p.size = 0.2f * this->globalSizeMultiplier;
+        int alpha3 = (int)(p.color.a * this->globalIntensityMultiplier);
+        if (alpha3 > 255) alpha3 = 255;
+        p.color.a = (unsigned char)alpha3;
         p.gravity = -0.5f; // Float upward
         p.startLife = 1.5f;
         p.life = p.startLife;
@@ -217,7 +227,10 @@ void ParticleSystem::spawnRing(Vector3 center, float radius, int count, Color co
         };
         
         p.color = color;
-        p.size = 0.25f;
+        p.size = 0.25f * this->globalSizeMultiplier;
+        int alpha4 = (int)(p.color.a * this->globalIntensityMultiplier);
+        if (alpha4 > 255) alpha4 = 255;
+        p.color.a = (unsigned char)alpha4;
         p.gravity = 0.5f;
         p.startLife = 1.0f;
         p.life = p.startLife;

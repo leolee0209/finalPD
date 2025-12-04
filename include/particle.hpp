@@ -45,4 +45,8 @@ public:
     
     // Spawn a ring that expands outward (good for healing/buffing)
     void spawnRing(Vector3 center, float radius, int count, Color color, float speed, bool upward);
+
+    // Global multipliers to tweak visuals at runtime
+    float globalSizeMultiplier = 1.0f;    // Multiply particle sizes
+    float globalIntensityMultiplier = 1.0f; // Multiply particle alpha/intensity
 };

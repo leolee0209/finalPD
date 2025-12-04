@@ -592,13 +592,33 @@ void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
     
     // Calculate minion size: summoner size / 3
     Vector3 minionSize = Vector3Scale(this->obj().size, 1.0f / 3.0f);
+    // Determine room bounds for summoner so spawned minions remain inside
+    Room *room = nullptr;
+    BoundingBox roomBounds{};
+    bool haveRoomBounds = false;
+    if (uc.scene)
+    {
+        room = uc.scene->GetRoomContainingPosition(this->position);
+        if (room)
+        {
+            roomBounds = room->GetBounds();
+            haveRoomBounds = true;
+        }
+    }
     
     for (int i = 0; i < count; ++i)
     {
         float angle = (2.0f * PI) * ((float)i / (float)count);
         Vector3 offset = {cosf(angle) * radius, 0.0f, sinf(angle) * radius};
         Vector3 spawnPos = Vector3Add(this->position, offset);
-        MinionEnemy *m = new MinionEnemy();
+        // Clamp spawn position into room bounds if available (keep a small margin)
+        if (haveRoomBounds)
+        {
+            const float margin = 0.5f;
+            spawnPos.x = fmaxf(roomBounds.min.x + margin, fminf(spawnPos.x, roomBounds.max.x - margin));
+            spawnPos.z = fmaxf(roomBounds.min.z + margin, fminf(spawnPos.z, roomBounds.max.z - margin));
+        }
+            MinionEnemy *m = new MinionEnemy(); // Create a new MinionEnemy instance
         m->obj().size = minionSize;
         m->obj().pos = spawnPos;
         m->setPosition(spawnPos);
@@ -611,6 +631,12 @@ void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
         // Track this minion so it can be cleaned up when summoner dies
         this->ownedMinions.push_back(m);
         uc.scene->em.addEnemy(m);
+        // Small spawn particles for each minion (helps visibility)
+        if (uc.scene)
+        {
+            uc.scene->particles.spawnExplosion(spawnPos, 8, PURPLE, 0.12f, 2.5f, 0.6f);
+            uc.scene->particles.spawnRing(spawnPos, 1.0f, 8, ColorAlpha(PURPLE, 200), 2.0f, true);
+        }
     }
 }
 
@@ -699,6 +725,12 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
         Vector3 upAxis = {0.0f, 1.0f, 0.0f};
         Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, spiralAngle);
         this->obj().rotation = rotQuat;
+        // Emit spiral particles around the summoner during ascent (denser, smaller)
+        if (uc.scene)
+        {
+            // spawnSpiral(center, radius, count, color, height, speed)
+            uc.scene->particles.spawnSpiral(this->position, spiralRadius * 0.5f, 18, PURPLE, jumpHeight * progress, 1.2f);
+        }
         break;
     }
 
@@ -739,13 +771,22 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
         Vector3 upAxis = {0.0f, 1.0f, 0.0f};
         Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, spiralAngle);
         this->obj().rotation = rotQuat;
+        // Emit spiral particles during descent as well
+        if (uc.scene)
+        {
+            uc.scene->particles.spawnSpiral(this->position, spiralRadius * 0.5f, 14, PURPLE, jumpHeight * (1.0f - progress), 1.0f);
+        }
         break;
     }
 
     case SummonState::Summoning:
     {
         animationTimer += delta;
-        
+        // Emit spiral particles while holding at peak
+        if (uc.scene)
+        {
+            uc.scene->particles.spawnSpiral(this->position, spiralRadius * 0.5f, 20, PURPLE, 0.6f, 0.6f);
+        }
         if (animationTimer >= summonPeakDuration)
         {
             // Spawn the minions
@@ -1287,12 +1328,13 @@ void ShooterEnemy::gatherObjects(std::vector<Object *> &out) const
 
 // ---------------------------- SupportEnemy ----------------------------
 
-void SupportEnemy::FindHealTarget(UpdateContext &uc)
+// ======================== SupportEnemy ========================
+
+Enemy* SupportEnemy::FindAllyToHideBehind(UpdateContext &uc)
 {
-    // Find the lowest HP ally that's below healing threshold
+    // Find allies within normal search radius
     std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
-    Enemy* bestTarget = nullptr;
-    float lowestHealthPercent = 1.0f;
+    std::vector<Enemy*> candidateAllies;
     
     for (Entity *entity : enemies)
     {
@@ -1304,30 +1346,31 @@ void SupportEnemy::FindHealTarget(UpdateContext &uc)
         // Skip minions
         if (dynamic_cast<MinionEnemy*>(ally)) continue;
         
-        // Check if in range
         float dist = Vector3Distance(this->position, ally->pos());
-        if (dist > healingRange) continue;
-        
-        // Check if below healing threshold
-        float healthPercent = (float)ally->getHealth() / (float)ally->getMaxHealth();
-        if (healthPercent >= healingThreshold) continue;
-        
-        // Track lowest health ally
-        if (healthPercent < lowestHealthPercent)
+        if (dist <= normalSearchRadius)
         {
-            lowestHealthPercent = healthPercent;
-            bestTarget = ally;
+            candidateAllies.push_back(ally);
         }
     }
     
-    this->targetAlly = bestTarget;
-}
-
-void SupportEnemy::FindHideTarget(UpdateContext &uc)
-{
-    // Find a strong enemy to hide behind (not a minion)
-    std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
-    Enemy* bestHideTarget = nullptr;
+    // Priority 1: Find a tank (ChargingEnemy)
+    for (Enemy* ally : candidateAllies)
+    {
+        if (dynamic_cast<ChargingEnemy*>(ally))
+        {
+            return ally;
+        }
+    }
+    
+    // Priority 2: Pick a random ally from candidates
+    if (!candidateAllies.empty())
+    {
+        int randomIdx = GetRandomValue(0, (int)candidateAllies.size() - 1);
+        return candidateAllies[randomIdx];
+    }
+    
+    // Priority 3: Find closest enemy (even if far)
+    Enemy* closestAlly = nullptr;
     float closestDist = 999999.0f;
     
     for (Entity *entity : enemies)
@@ -1337,187 +1380,373 @@ void SupportEnemy::FindHideTarget(UpdateContext &uc)
         Enemy *ally = dynamic_cast<Enemy*>(entity);
         if (!ally) continue;
         
-        // Skip minions - we want to hide behind stronger enemies
+        // Skip minions
         if (dynamic_cast<MinionEnemy*>(ally)) continue;
         
-        // Prefer tanks
-        ChargingEnemy* tank = dynamic_cast<ChargingEnemy*>(ally);
         float dist = Vector3Distance(this->position, ally->pos());
-        
-        if (tank && dist < 20.0f)
-        {
-            bestHideTarget = ally;
-            closestDist = dist;
-            break; // Tanks are priority
-        }
-        
-        // Otherwise, find closest non-minion ally
-        if (dist < closestDist && dist < 25.0f)
+        if (dist < closestDist)
         {
             closestDist = dist;
-            bestHideTarget = ally;
+            closestAlly = ally;
         }
     }
     
-    this->hideTarget = bestHideTarget;
+    return closestAlly;
 }
 
-void SupportEnemy::ApplyHealing(UpdateContext &uc, Enemy* target, float delta)
+Enemy* SupportEnemy::FindBestTarget(UpdateContext &uc, bool forHealing)
 {
-    if (!target) return;
+    std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
+    Enemy* bestTarget = nullptr;
     
-    // Charge up heal glow
-    this->healGlowTimer += delta * 2.0f; // Takes 0.5 seconds to charge
-    
-    if (this->healGlowTimer >= 1.0f)
+    if (forHealing)
     {
-        // Apply healing
-        float healAmount = healingRate * delta;
-        target->Heal((int)healAmount);
-        this->isHealing = true;
+        // Find lowest HP ally below healing threshold within search radius
+        float lowestHealthPercent = 1.0f;
         
-        // Spawn yellow/gold healing particles
-        if (uc.scene)
+        for (Entity *entity : enemies)
         {
-            // Particles flow from support to target
-            Vector3 direction = Vector3Subtract(target->pos(), this->position);
-            Vector3 midpoint = Vector3Add(this->position, Vector3Scale(direction, 0.5f));
-            uc.scene->particles.spawnDirectional(this->position, direction, 5, GOLD, 3.0f, 0.2f);
-            uc.scene->particles.spawnExplosion(target->pos(), 3, YELLOW, 0.2f, 1.0f, 0.3f);
-        }
-        
-        // Reset if health is full or out of range
-        float healthPercent = (float)target->getHealth() / (float)target->getMaxHealth();
-        if (healthPercent >= healingThreshold)
-        {
-            this->healGlowTimer = 0.0f;
-            this->isHealing = false;
+            if (!entity || entity == this) continue;
+            
+            Enemy *ally = dynamic_cast<Enemy*>(entity);
+            if (!ally) continue;
+            
+            // Skip minions
+            if (dynamic_cast<MinionEnemy*>(ally)) continue;
+            
+            float dist = Vector3Distance(this->position, ally->pos());
+            if (dist > actionSearchRadius) continue;
+            
+            float healthPercent = (float)ally->getHealth() / (float)ally->getMaxHealth();
+            if (healthPercent >= healingThreshold) continue;
+            
+            if (healthPercent < lowestHealthPercent)
+            {
+                lowestHealthPercent = healthPercent;
+                bestTarget = ally;
+            }
         }
     }
     else
     {
-        this->isHealing = false;
-    }
-}
-
-void SupportEnemy::ApplySpeedBuffs(UpdateContext &uc)
-{
-    // Apply speed buff to all nearby allies
-    std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
-    
-    int buffedCount = 0;
-    for (Entity *entity : enemies)
-    {
-        if (!entity || entity == this) continue;
+        // Find any ally to buff (prioritize lowest health)
+        float lowestHealthPercent = 1.0f;
         
-        Enemy *ally = dynamic_cast<Enemy*>(entity);
-        if (!ally) continue;
-        
-        // Check if in range
-        float dist = Vector3Distance(this->position, ally->pos());
-        if (dist > speedBuffRange) continue;
-        
-        // Apply speed buff (would need to modify Enemy class to have speedMultiplier)
-        // Spawn blue buff particles around buffed allies
-        if (uc.scene && buffedCount < 3) // Limit particle spam
+        for (Entity *entity : enemies)
         {
-            uc.scene->particles.spawnExplosion(ally->pos(), 2, SKYBLUE, 0.15f, 1.5f, 0.5f);
-            buffedCount++;
+            if (!entity || entity == this) continue;
+            
+            Enemy *ally = dynamic_cast<Enemy*>(entity);
+            if (!ally) continue;
+            
+            // Skip minions
+            if (dynamic_cast<MinionEnemy*>(ally)) continue;
+            
+            float dist = Vector3Distance(this->position, ally->pos());
+            if (dist > actionSearchRadius) continue;
+            
+            float healthPercent = (float)ally->getHealth() / (float)ally->getMaxHealth();
+            if (healthPercent < lowestHealthPercent)
+            {
+                lowestHealthPercent = healthPercent;
+                bestTarget = ally;
+            }
         }
     }
+    
+    return bestTarget;
 }
 
-void SupportEnemy::UpdatePositioning(UpdateContext &uc, const Vector3 &toPlayer)
+Vector3 SupportEnemy::CalculateHidePosition(UpdateContext &uc, Enemy* allyToHideBehind)
 {
-    // Try to stay behind Tank allies or other strong enemies
-    // For now, just retreat if player too close
+    if (!allyToHideBehind)
+        return this->position;
+    
+    // Calculate line from player to ally
+    Vector3 playerPos = uc.player->pos();
+    Vector3 allyPos = allyToHideBehind->pos();
+    Vector3 playerToAlly = Vector3Subtract(allyPos, playerPos);
+    playerToAlly.y = 0.0f;
+    
+    float distToAlly = Vector3Length(playerToAlly);
+    if (distToAlly < 0.1f)
+    {
+        // If player and ally are at same position, just retreat
+        return Vector3Add(allyPos, Vector3Scale({0.0f, 0.0f, 1.0f}, normalHideDistance));
+    }
+    
+    // Normalize and extend beyond ally
+    Vector3 hideDir = Vector3Normalize(playerToAlly);
+    Vector3 hidePos = Vector3Add(allyPos, Vector3Scale(hideDir, normalHideDistance));
+    
+    return hidePos;
+}
+
+void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
+{
+    float delta = GetFrameTime();
+    float playerDist = Vector3Length(toPlayer);
+    
+    Vector3 desiredDir = Vector3Zero();
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 3.0f;
+    settings.maxAccel = MAX_ACCEL;
+    settings.decelGround = FRICTION;
+    settings.decelAir = AIR_DRAG;
+    
+    // Check for targets to heal or buff
+    Enemy* healTarget = FindBestTarget(uc, true);
+    Enemy* buffTarget = FindBestTarget(uc, false);
+    
+    // Decide: heal takes priority over buff
+    if (healTarget)
+    {
+        this->targetAlly = healTarget;
+        this->mode = SupportMode::Heal;
+        this->actionTimer = 0.0f;
+        return; // Will be handled by UpdateHealMode next frame
+    }
+    else if (buffTarget)
+    {
+        this->targetAlly = buffTarget;
+        this->mode = SupportMode::Buff;
+        this->actionTimer = 0.0f;
+        return; // Will be handled by UpdateBuffMode next frame
+    }
+    
+    // Normal mode: hide behind allies or retreat
+    this->targetAlly = FindAllyToHideBehind(uc);
+    
+    if (this->targetAlly)
+    {
+        // Move toward hide position
+        Vector3 hidePos = CalculateHidePosition(uc, this->targetAlly);
+        Vector3 toHidePos = Vector3Subtract(hidePos, this->position);
+        toHidePos.y = 0.0f;
+        float hideDist = Vector3Length(toHidePos);
+        
+        if (hideDist > 0.5f)
+        {
+            desiredDir = Vector3Normalize(toHidePos);
+            settings.facingHint = toPlayer;
+        }
+    }
+    else if (playerDist < retreatDistance)
+    {
+        // No allies nearby, retreat from player
+        desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
+        settings.facingHint = Vector3Negate(desiredDir);
+    }
+    else
+    {
+        // Idle
+        desiredDir = Vector3Zero();
+        settings.facingHint = toPlayer;
+    }
+    
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->UpdateDialog(uc);
+}
+
+void SupportEnemy::UpdateHealMode(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
+    toPlayer.y = 0.0f;
+    
+    Vector3 desiredDir = Vector3Zero();
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 3.0f;
+    settings.maxAccel = MAX_ACCEL;
+    settings.decelGround = FRICTION;
+    settings.decelAir = AIR_DRAG;
+    
+    if (!this->targetAlly)
+    {
+        // Target died, go back to normal mode
+        this->mode = SupportMode::Normal;
+        this->actionTimer = 0.0f;
+        this->actionCooldownTimer = 0.0f;
+        UpdateNormalMode(uc, toPlayer);
+        return;
+    }
+    
+    // Move toward target until within stand distance
+    Vector3 toTarget = Vector3Subtract(this->targetAlly->pos(), this->position);
+    toTarget.y = 0.0f;
+    float targetDist = Vector3Length(toTarget);
+    
+    if (targetDist > actionStandDistance)
+    {
+        desiredDir = Vector3Normalize(toTarget);
+        settings.facingHint = desiredDir;
+        this->actionTimer = 0.0f; // Reset charge timer while moving
+        this->chargeParticleTimer = 0.0f;
+    }
+    else
+    {
+        // In range, charge up and heal
+        desiredDir = Vector3Zero();
+        this->actionTimer += delta;
+        // Throttle charging particles while standing still
+        if (uc.scene)
+        {
+            const float emitInterval = 0.08f; // seconds between particle emissions
+            this->chargeParticleTimer += delta;
+            if (this->chargeParticleTimer >= emitInterval)
+            {
+                Vector3 healDir = Vector3Subtract(this->targetAlly->pos(), this->position);
+                // Stronger burst toward target
+                uc.scene->particles.spawnDirectional(this->position, healDir, 2, GOLD, 1.6f, 0.18f);
+                uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 2, YELLOW, 0.16f * uc.scene->particles.globalSizeMultiplier, 0.8f, 0.14f);
+                // Multiple concentric rings around the support to be clearly visible
+                uc.scene->particles.spawnRing(this->position, 8.0f, 10, SKYBLUE, 0.9f, true);
+                uc.scene->particles.spawnRing(this->position, 12.0f, 14, SKYBLUE, 0.7f, true);
+                // Accent the target with rings
+                uc.scene->particles.spawnRing(this->targetAlly->pos(), 6.0f, 10, YELLOW, 0.8f, true);
+                this->chargeParticleTimer -= emitInterval;
+            }
+        }
+        
+        // After charging, apply heal
+        if (this->actionTimer >= actionChargeTime)
+        {
+            // Apply fixed heal amount at the instant the heal is fully charged
+            int healAmount = 200; // fixed heal per request
+            this->targetAlly->Heal(healAmount);
+            
+            // Emit heal impact particles
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 20, YELLOW, 0.25f, 3.0f, 0.8f);
+                uc.scene->particles.spawnRing(this->targetAlly->pos(), 3.0f, 16, ColorAlpha(GOLD, 200), 2.5f, true);
+            }
+            
+            // Go into cooldown
+            this->mode = SupportMode::Normal;
+            this->actionCooldownTimer = actionCooldown;
+            this->actionTimer = 0.0f;
+            this->targetAlly = nullptr;
+            this->chargeParticleTimer = 0.0f;
+        }
+    }
+    
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->UpdateDialog(uc);
+}
+
+void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
+    toPlayer.y = 0.0f;
+    
+    Vector3 desiredDir = Vector3Zero();
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 3.0f;
+    settings.maxAccel = MAX_ACCEL;
+    settings.decelGround = FRICTION;
+    settings.decelAir = AIR_DRAG;
+    
+    if (!this->targetAlly)
+    {
+        // Target died, go back to normal mode
+        this->mode = SupportMode::Normal;
+        this->actionTimer = 0.0f;
+        this->actionCooldownTimer = 0.0f;
+        UpdateNormalMode(uc, toPlayer);
+        return;
+    }
+    
+    // Move toward target until within stand distance
+    Vector3 toTarget = Vector3Subtract(this->targetAlly->pos(), this->position);
+    toTarget.y = 0.0f;
+    float targetDist = Vector3Length(toTarget);
+    
+    if (targetDist > actionStandDistance)
+    {
+        desiredDir = Vector3Normalize(toTarget);
+        settings.facingHint = desiredDir;
+        this->actionTimer = 0.0f; // Reset charge timer while moving
+        this->chargeParticleTimer = 0.0f;
+    }
+    else
+    {
+        // In range, charge up and buff
+        desiredDir = Vector3Zero();
+        this->actionTimer += delta;
+        // Throttle charging particles while standing still
+        if (uc.scene)
+        {
+            const float emitInterval = 0.08f;
+            this->chargeParticleTimer += delta;
+            if (this->chargeParticleTimer >= emitInterval)
+            {
+                // Add visible rings around support
+                uc.scene->particles.spawnRing(this->position, 10.0f, 12, SKYBLUE, 1.0f, true);
+                uc.scene->particles.spawnRing(this->position, 14.0f, 16, SKYBLUE, 0.8f, true);
+                // Accent target with rings and small explosion dots
+                uc.scene->particles.spawnRing(this->targetAlly->pos(), 6.5f, 10, SKYBLUE, 0.9f, true);
+                uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 2, SKYBLUE, 0.14f * uc.scene->particles.globalSizeMultiplier, 0.7f, 0.12f);
+                uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 2, WHITE, 0.08f * uc.scene->particles.globalSizeMultiplier, 0.5f, 0.08f);
+                this->chargeParticleTimer -= emitInterval;
+            }
+        }
+        
+        // After charging, apply buff
+        if (this->actionTimer >= actionChargeTime)
+        {
+            // Apply buff burst
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 25, SKYBLUE, 0.25f, 4.0f, 0.9f);
+                uc.scene->particles.spawnRing(this->targetAlly->pos(), 3.5f, 20, ColorAlpha(WHITE, 200), 3.0f, true);
+            }
+            
+            // Go into cooldown
+            this->mode = SupportMode::Normal;
+            this->actionCooldownTimer = actionCooldown;
+            this->actionTimer = 0.0f;
+            this->targetAlly = nullptr;
+            this->chargeParticleTimer = 0.0f;
+        }
+    }
+    
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->UpdateDialog(uc);
 }
 
 void SupportEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     
+    // Decrement cooldown timer
+    if (this->actionCooldownTimer > 0.0f)
+    {
+        this->actionCooldownTimer -= delta;
+    }
+    
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
-    float dist = Vector3Length(toPlayer);
-    Vector3 desiredDir = Vector3Zero();
-
-    Enemy::MovementSettings settings;
-    settings.lockToGround = true;
-    settings.maxSpeed = 3.0f;  // Slower than other enemies
-    settings.maxAccel = MAX_ACCEL;
-    settings.decelGround = FRICTION;
-    settings.decelAir = AIR_DRAG;
-
-    // First, look for allies to heal
-    FindHealTarget(uc);
     
-    // If we have a heal target, move toward it
-    if (this->targetAlly)
+    // Dispatch to appropriate mode handler
+    switch (this->mode)
     {
-        Vector3 toAlly = Vector3Subtract(this->targetAlly->pos(), this->position);
-        toAlly.y = 0.0f;
-        float allyDist = Vector3Length(toAlly);
-        
-        if (allyDist > 0.1f && allyDist > 8.0f)  // Move closer if too far
-        {
-            desiredDir = Vector3Normalize(toAlly);
-            settings.facingHint = desiredDir;
-        }
-        
-        // Apply healing
-        ApplyHealing(uc, this->targetAlly, delta);
+        case SupportMode::Normal:
+            UpdateNormalMode(uc, toPlayer);
+            break;
+        case SupportMode::Heal:
+            UpdateHealMode(uc);
+            break;
+        case SupportMode::Buff:
+            UpdateBuffMode(uc);
+            break;
     }
-    else
-    {
-        // Reset heal glow when not healing
-        this->healGlowTimer = 0.0f;
-        this->isHealing = false;
-        
-        // Find an ally to hide behind
-        FindHideTarget(uc);
-        
-        if (this->hideTarget)
-        {
-            // Position ourselves so the ally is between us and the player
-            Vector3 allyPos = this->hideTarget->pos();
-            Vector3 playerToAlly = Vector3Subtract(allyPos, uc.player->pos());
-            playerToAlly.y = 0.0f;
-            
-            if (Vector3Length(playerToAlly) > 0.1f)
-            {
-                Vector3 hideSpot = Vector3Add(allyPos, Vector3Scale(Vector3Normalize(playerToAlly), 5.0f));
-                Vector3 toHideSpot = Vector3Subtract(hideSpot, this->position);
-                toHideSpot.y = 0.0f;
-                float hideSpotDist = Vector3Length(toHideSpot);
-                
-                if (hideSpotDist > 1.0f)
-                {
-                    desiredDir = Vector3Normalize(toHideSpot);
-                    settings.facingHint = toPlayer; // Face toward player while hiding
-                }
-            }
-        }
-        else if (dist < retreatDistance)
-        {
-            // No allies to hide behind, just retreat
-            desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
-            settings.facingHint = Vector3Negate(desiredDir);
-        }
-        else
-        {
-            // Idle, look at player
-            desiredDir = Vector3Zero();
-            settings.facingHint = toPlayer;
-        }
-    }
-    
-    // Apply speed buffs to nearby allies
-    ApplySpeedBuffs(uc);
-    this->buffGlowTimer += delta;
-
-    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
-    this->UpdateDialog(uc);
 }
 
 void SupportEnemy::DrawGlowEffect(const Vector3 &pos, Color color, float intensity) const
@@ -1535,5 +1764,4 @@ void SupportEnemy::Draw() const
 {
     // Draw base enemy
     Enemy::Draw();
-    // Particles are now handled by the particle system in UpdateBody
 }

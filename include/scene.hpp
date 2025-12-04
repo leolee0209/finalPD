@@ -169,4 +169,7 @@ public:
     void DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const;
     std::vector<RewardBriefcase *> GetRewardBriefcases();
     Room *GetCurrentPlayerRoom() const { return this->currentPlayerRoom; }
+    // Return the room that contains the given world position, or nullptr
+    // if the position is not inside any room.
+    Room *GetRoomContainingPosition(const Vector3 &pos) const;
 };

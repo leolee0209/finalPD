@@ -758,6 +758,20 @@ void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
     }
 }
 
+Room *Scene::GetRoomContainingPosition(const Vector3 &pos) const
+{
+    for (const auto &rptr : this->rooms)
+    {
+        if (!rptr) continue;
+        const BoundingBox &b = rptr->GetBounds();
+        if (pos.x >= b.min.x && pos.x <= b.max.x && pos.y >= b.min.y && pos.y <= b.max.y && pos.z >= b.min.z && pos.z <= b.max.z)
+        {
+            return rptr.get();
+        }
+    }
+    return nullptr;
+}
+
 void Scene::DrawDoors() const
 {
     for (const auto &door : this->doors)
@@ -1157,6 +1171,9 @@ Scene::Scene()
     
     // Initialize particle system
     this->particles.init();
+    // Apply global particle tuning: half-size, more intense (brighter)
+    this->particles.globalSizeMultiplier = 0.5f;
+    this->particles.globalIntensityMultiplier = 1.5f;
 
     // const Vector3 towerSize = {16.0f, 32.0f, 16.0f}; // Size of the towers
     // const Color towerColor = {150, 200, 200, 255};   // Color of the towers

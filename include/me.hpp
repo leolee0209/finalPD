@@ -214,7 +214,7 @@ public:
     Vector3 getFacingDirection() const { return this->facingDirection; }
     virtual void gatherObjects(std::vector<Object *> &out) const;
     int getHealth() const { return this->health; }
-    int getMaxHealth() const { return MAX_HEALTH_ENEMY; }
+    int getMaxHealth() const { return this->maxHealth; }
     void setMaxHealth(int newMaxHealth) { this->maxHealth = newMaxHealth; }
     void Heal(int amount)
     {
@@ -522,28 +522,47 @@ public:
 class SupportEnemy : public Enemy
 {
 private:
-    float healingRange = 15.0f;      // How close allies must be to heal
-    float healingRate = 20.0f;       // HP per second when healing
-    float healingThreshold = 0.4f;   // Only heal allies below 40% HP
-    float speedBuffAmount = 0.3f;    // 30% speed increase
-    float speedBuffRange = 12.0f;    // Range for speed buff
-    float retreatDistance = 10.0f;   // Retreat if player too close
+    enum class SupportMode
+    {
+        Normal,  // Hide behind other enemies, evade player
+        Buff,    // Move to ally, charge up, apply buff
+        Heal     // Move to ally, charge up, apply heal
+    };
+
+    SupportMode mode = SupportMode::Normal;
     
-    Enemy* targetAlly = nullptr;     // Current heal target
-    float healingTimer = 0.0f;       // For timing heal application
+    // Mode parameters
+    float normalSearchRadius = 30.0f;  // Find nearby allies to hide behind
+    float normalHideDistance = 10.0f;   // Distance behind ally to stand
+    float actionSearchRadius = 15.0f;  // Find targets for buff/heal within this radius
+    float actionStandDistance = 8.0f;  // Move within this distance to target
+    float actionChargeTime = 3.0f;     // Time to stand and charge before applying action (3s per request)
+    float actionCooldown = 15.0f;       // Cooldown after buff/heal
+    float retreatDistance = 25.0f;     // Retreat if player closer than this
     
-    // Visual effects
-    float healGlowTimer = 0.0f;      // Charges from 0 to 1, then bursts
-    float buffGlowTimer = 0.0f;      // For speed buff visual
-    bool isHealing = false;
-    bool isBuffing = false;
-    Enemy* hideTarget = nullptr;     // Enemy to hide behind
+    // Healing parameters
+    float healingRate = 20.0f;         // HP per second when healing
+    float healingThreshold = 0.4f;     // Only heal allies below 40% HP
     
-    void FindHealTarget(UpdateContext &uc);
-    void FindHideTarget(UpdateContext &uc);
-    void ApplyHealing(UpdateContext &uc, Enemy* target, float delta);
-    void ApplySpeedBuffs(UpdateContext &uc);
-    void UpdatePositioning(UpdateContext &uc, const Vector3 &toPlayer);
+    // Buff parameters
+    float speedBuffAmount = 0.3f;      // 30% speed increase
+    float buffDuration = 5.0f;         // Buff lasts 5 seconds
+    
+    // State tracking
+    Enemy* targetAlly = nullptr;       // Current heal/buff target (or hide-behind ally)
+    float actionTimer = 0.0f;          // Timer for charging before action
+    float actionCooldownTimer = 0.0f;  // Countdown until next action possible
+    
+    // Particle emission timers
+    float chargeParticleTimer = 0.0f;
+    
+    // Helper methods
+    Enemy* FindAllyToHideBehind(UpdateContext &uc);
+    Enemy* FindBestTarget(UpdateContext &uc, bool forHealing);
+    Vector3 CalculateHidePosition(UpdateContext &uc, Enemy* allyToHideBehind);
+    void UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer);
+    void UpdateBuffMode(UpdateContext &uc);
+    void UpdateHealMode(UpdateContext &uc);
     void DrawGlowEffect(const Vector3 &pos, Color color, float intensity) const;
 
 public:
