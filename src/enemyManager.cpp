@@ -1,5 +1,6 @@
 #include "enemyManager.hpp"
 #include "me.hpp"
+#include "scene.hpp"
 void EnemyManager::RemoveEnemy(Enemy *e)
 {
     int found = -1;
@@ -31,8 +32,16 @@ void EnemyManager::addEnemy(Enemy *e)
 
 void EnemyManager::update(UpdateContext &uc)
 {
-    for (auto &e : this->enemies)
-        e->UpdateBody(uc);
+    // Iterate using an index over a snapshot of the original size
+    // to avoid iterator/reference invalidation when enemies are added
+    // (e.g., Summoner spawning Minions during UpdateBody).
+    size_t originalCount = this->enemies.size();
+    for (size_t i = 0; i < originalCount; ++i)
+    {
+        Enemy *e = this->enemies[i];
+        if (e)
+            e->UpdateBody(uc);
+    }
 }
 
 std::vector<Object *> EnemyManager::getObjects() const
@@ -47,10 +56,26 @@ std::vector<Object *> EnemyManager::getObjects() const
     return os;
 }
 
-void EnemyManager::damage(Enemy *enemy, DamageResult &dResult)
+void EnemyManager::damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc)
 {
+    if (!enemy)
+        return;
+
+    if (uc.scene)
+    {
+        uc.scene->EmitDamageIndicator(*enemy, dResult.damage);
+    }
+
     if (!enemy->damage(dResult))
+    {
+        // Call virtual OnDeath handler for special cleanup (e.g., Summoner minion cleanup)
+        SummonerEnemy *summoner = dynamic_cast<SummonerEnemy*>(enemy);
+        if (summoner)
+        {
+            summoner->OnDeath(uc);
+        }
         this->RemoveEnemy(enemy);
+    }
 }
 
 std::vector<Entity *> EnemyManager::getEntities(EntityCategory cat) const
@@ -62,4 +87,13 @@ std::vector<Entity *> EnemyManager::getEntities(EntityCategory cat) const
             r.push_back(e);
     }
     return r;
+}
+
+void EnemyManager::clear()
+{
+    for (auto &e : this->enemies)
+    {
+        delete e;
+    }
+    this->enemies.clear();
 }

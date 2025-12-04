@@ -10,6 +10,216 @@ Texture2D DotBombAttack::explosionTexture{};
 bool DotBombAttack::explosionTextureLoaded = false;
 int DotBombAttack::explosionTextureUsers = 0;
 
+// --- BambooTripleAttack: rapid-fire mode triggered by three same bamboo tiles ---
+void BambooTripleAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f)
+        return;
+
+    this->effectRemaining = effectDuration;
+    this->cooldownRemaining = cooldownDuration;
+}
+
+void BambooTripleAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+
+    if (this->cooldownRemaining > 0.0f)
+    {
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
+
+    if (this->effectRemaining > 0.0f)
+    {
+        this->effectRemaining = fmaxf(0.0f, this->effectRemaining - delta);
+    }
+}
+
+float BambooTripleAttack::getCooldownPercent() const
+{
+    if (this->cooldownRemaining <= 0.0f)
+        return 0.0f;
+    return this->cooldownRemaining / cooldownDuration;
+}
+
+float BambooTripleAttack::getReducedCooldown() const
+{
+    return this->isActive() ? reducedCooldown : normalCooldown;
+}
+
+// --- BasicTileAttack: simple horizontal shooting ---
+void BasicTileAttack::spawnProjectile(UpdateContext &uc)
+{
+    if (!uc.scene || !this->spawnedBy)
+        return;
+
+    // Check cooldown
+    if (this->cooldownRemaining > 0.0f)
+        return;
+
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    Vector3 spawnPos = this->spawnedBy->pos();
+    
+    // Get tile stats from selected tile
+    float tileDamage = projectileDamage;
+    float tileCooldown = cooldownDuration;
+    
+    if (uc.uiManager && uc.player)
+    {
+        int selectedIndex = uc.uiManager->muim.getSelectedTileIndex();
+        auto &tiles = uc.player->hand.getTiles();
+        if (selectedIndex >= 0 && selectedIndex < (int)tiles.size())
+        {
+            const TileStats &stats = tiles[selectedIndex].stat;
+            tileDamage = stats.damage;
+            tileCooldown = stats.getCooldownDuration(cooldownDuration);
+        }
+    }
+
+    // Get firing direction from spawner
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        // Get the actual look direction from camera (keep full 3D direction)
+        forward = Vector3Subtract(camera.target, camera.position);
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        spawnPos.y += 1.6f; // spawn at eye level
+    }
+    else if (this->spawnedBy->category() == ENTITY_ENEMY)
+    {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
+        forward = enemy->dir();
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        spawnPos.y += 1.0f;
+    }
+
+    Vector3 velocity = Vector3Scale(forward, shootSpeed);
+
+    // Create projectile object with same proportions as enemy tiles (44, 60, 30) but smaller
+    Vector3 tileSize = Vector3Scale({44.0f, 60.0f, 30.0f}, projectileSize);
+    Object body(tileSize, spawnPos);
+    body.setRotationFromForward(forward);
+    body.useTexture = uc.uiManager != nullptr;
+    if (uc.uiManager)
+    {
+        TileType tileType = TileType::BAMBOO_1;
+        if (uc.player)
+        {
+            tileType = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        }
+        body.texture = &uc.uiManager->muim.getSpriteSheet();
+        body.sourceRect = uc.uiManager->muim.getTile(tileType);
+        body.tint = WHITE;
+    }
+    body.UpdateOBB();
+
+    TileType tile = TileType::BAMBOO_1;
+    if (uc.uiManager && uc.player)
+    {
+        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+    }
+    Projectile projectile(
+        spawnPos,
+        velocity,
+        forward,
+        false,
+        body,
+        FRICTION,
+        AIR_DRAG,
+        tile);
+    
+    // Store the damage in the projectile (we'll need to add a field for this)
+    projectile.damage = tileDamage;
+
+    this->projectiles.push_back(projectile);
+
+    // Start cooldown (modified by active cooldown modifier and tile stats)
+    this->cooldownRemaining = tileCooldown * this->activeCooldownModifier;
+
+    // Apply movement slow to player
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        player->applyShootSlow(movementSlowFactor, movementSlowDuration);
+    }
+}
+
+void BasicTileAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    // Update cooldown
+    if (this->cooldownRemaining > 0.0f)
+    {
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+    }
+    
+    // Update all projectiles without physics (no gravity, constant velocity)
+    for (auto &p : this->projectiles)
+    {
+        // Manual position update with constant velocity
+        Vector3 newPos = p.pos();
+        newPos.x += p.vel().x * delta;
+        newPos.y += p.vel().y * delta;
+        newPos.z += p.vel().z * delta;
+        p.setPosition(newPos);
+    }
+
+    // Check for collisions and remove projectiles that hit something
+    auto shouldRemove = [&](Projectile &p) -> bool
+    {
+        // Check if hit ground
+        if (p.pos().y <= 0.1f)
+        {
+            return true;
+        }
+
+        // Check collision with static objects
+        if (uc.scene)
+        {
+            const auto worldHits = Object::collided(p.obj(), uc.scene);
+            for (const auto &hit : worldHits)
+            {
+                if (hit.collided && hit.with == nullptr) // hit static geometry
+                {
+                    return true;
+                }
+            }
+
+            // Check collision with enemies
+            for (Entity *entity : uc.scene->em.getEntities())
+            {
+                if (!entity || entity->category() != ENTITY_ENEMY)
+                    continue;
+                Enemy *enemy = static_cast<Enemy *>(entity);
+                CollisionResult result = Object::collided(p.obj(), enemy->obj());
+                if (result.collided)
+                {
+                    // Deal damage to enemy using projectile's damage value
+                    DamageResult damage(p.damage, result);
+                    uc.scene->em.damage(enemy, damage, uc);
+                    return true; // remove projectile
+                }
+            }
+        }
+
+        return false;
+    };
+
+    this->projectiles.erase(
+        std::remove_if(this->projectiles.begin(), this->projectiles.end(), shouldRemove),
+        this->projectiles.end());
+}
+
 // Helper: create quaternion that faces forward (used by setRotationFromForward / quaternion helpers already in file)
 Quaternion GetQuaternionFromForward(Vector3 forward)
 {
@@ -86,7 +296,7 @@ DotBombAttack::~DotBombAttack()
     releaseExplosionTexture();
 }
 
-bool DotBombAttack::trigger(UpdateContext &uc, MahjongTileType tile)
+bool DotBombAttack::trigger(UpdateContext &uc, TileType tile)
 {
     if (!uc.scene || !this->spawnedBy)
         return false;
@@ -377,7 +587,7 @@ void DotBombAttack::applyExplosionEffects(const Vector3 &origin, UpdateContext &
         {
             Enemy *enemy = static_cast<Enemy *>(entity);
             enemy->applyKnockback(push, explosionKnockbackDuration, explosionLift);
-            uc.scene->em.damage(enemy, damage);
+            uc.scene->em.damage(enemy, damage, uc);
         }
         else if (category == ENTITY_PLAYER)
         {
@@ -505,7 +715,7 @@ void ThousandTileAttack::update(UpdateContext &uc)
     case MODE_THOUSAND_FINAL:
         if (thousandEndFinal())
         {
-            this->mode = MODE_NORMAL;
+            this->mode = MODE_IDLE;
             this->thousandActivated = false;
             this->count = 0;
             this->thousandDest = {0};
@@ -536,13 +746,13 @@ void ThousandTileAttack::update(UpdateContext &uc)
             this->projectiles.clear();
             this->connectors.clear();
             this->connectorForward.clear();
-            this->mode = MODE_NORMAL;
+            this->mode = MODE_IDLE;
             this->count = 0;
         }
     }
     break;
     default:
-        // MODE_NORMAL etc. nothing special
+        // MODE_IDLE etc. nothing special
         break;
     }
 }
@@ -587,7 +797,11 @@ void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
     o.setRotationFromForward(forward);
     o.useTexture = true;
 
-    const auto tile = uc.uiManager->muim.getSelectedTile();
+    TileType tile = TileType::BAMBOO_1;
+    if (uc.uiManager && uc.player)
+    {
+        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+    }
     o.texture = &uc.uiManager->muim.getSpriteSheet();
     o.sourceRect = uc.uiManager->muim.getTile(tile);
 
@@ -795,7 +1009,7 @@ bool MeleePushAttack::pushEnemies(UpdateContext &uc, EffectVolume &volume)
         enemy->applyKnockback(push, knockbackDuration, verticalLift);
 
         DamageResult damage(pushDamage, collision);
-        uc.scene->em.damage(enemy, damage);
+        uc.scene->em.damage(enemy, damage, uc);
         hit = true;
     }
     return hit;
@@ -873,7 +1087,11 @@ void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
         return;
 
     Texture2D &sheet = uc.uiManager->muim.getSpriteSheet();
-    MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+    TileType tile = TileType::BAMBOO_1;
+    if (uc.uiManager && uc.player)
+    {
+        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+    }
 
     this->tileIndicator.sprite.size = {indicatorWidth, indicatorHeight, indicatorThickness};
     this->tileIndicator.sprite.useTexture = true;

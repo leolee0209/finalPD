@@ -1,7 +1,7 @@
 #pragma once
 
 #include "uiElement.hpp"
-#include "mahjongTypes.hpp"
+#include "tiles.hpp"
 #include <string>
 #include <vector>
 

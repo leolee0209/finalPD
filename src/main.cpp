@@ -6,7 +6,7 @@
 #include "uiManager.hpp"
 #include "resource_dir.hpp"
 #include "updateContext.hpp"
-#include "uiHealthBar.hpp"
+
 int main(void)
 {
     Vector2 sensitivity = {0.001f, 0.001f};
@@ -14,41 +14,18 @@ int main(void)
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "mahjong");
     SetExitKey(KEY_NULL);
     SearchAndSetResourceDir("resources");
+    
+    // Load shared resources for enemies
+    VanguardEnemy::LoadSharedResources();
 
     Me player;
     Scene scene;
     UIManager uiManager("mahjong.png", 9, 44, 60);
-
-    uiManager.muim.createPlayerHand(SCREEN_WIDTH, SCREEN_HEIGHT);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
-
-    { // Create a charging enemy (mahjong tile)
-        Enemy *enemy = new ChargingEnemy;
-        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06); // Example size for a mahjong tile
-        enemy->obj().pos = {0.0f, 1.0f, 0.0f};                // Example starting position
-
-        // Get the mahjong texture from the UIManager
-        Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
-        enemy->obj().texture = &mahjongTexture;
-        enemy->obj().useTexture = true;
-        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_1); // Use entire texture
-
-        scene.em.addEnemy(enemy); // Add the enemy to the scene
-    }
-
-    { // Create a shooter enemy (mahjong tile)
-        Enemy *enemy = new ShooterEnemy;
-        enemy->obj().size = Vector3Scale({44, 60, 30}, 0.06f);
-        enemy->obj().pos = {25.0f, 1.0f, -15.0f};
-
-        Texture2D &mahjongTexture = uiManager.muim.getSpriteSheet();
-        enemy->obj().texture = &mahjongTexture;
-        enemy->obj().useTexture = true;
-        enemy->obj().sourceRect = uiManager.muim.getTile(MahjongTileType::BAMBOO_2);
-
-        scene.em.addEnemy(enemy);
-    }
+    
+    // Set player spawn position
+    player.setSpawnPosition({0.0f, 0.0f, 0.0f});
 
     DisableCursor();  // Limit cursor to relative movement inside the window
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
@@ -65,7 +42,7 @@ int main(void)
     };
     const SlotBinding slotBindings[3] = {
         {SlotBinding::Type::Mouse, MOUSE_BUTTON_RIGHT},
-        {SlotBinding::Type::Mouse, MOUSE_BUTTON_LEFT},
+        {SlotBinding::Type::Key, KEY_R},
         {SlotBinding::Type::Key, KEY_E}};
 
     // Main game loop
@@ -90,28 +67,93 @@ int main(void)
             }
         }
 
-        PlayerInput frameInput(0, 0, false, false);
+        // Always initialize frameInput to prevent input sticking
+        char sideway = 0;
+        char forward = 0;
+        bool jumpPressed = false;
+        bool crouching = false;
+        
         if (!gamePaused)
         {
             Vector2 mouseDelta = GetMouseDelta();
             player.getLookRotation().x -= mouseDelta.x * sensitivity.x;
             player.getLookRotation().y += mouseDelta.y * sensitivity.y;
 
-            char sideway = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
-            char forward = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S));
-            bool crouching = IsKeyDown(KEY_LEFT_CONTROL);
-            frameInput = PlayerInput(sideway, forward, IsKeyPressed(KEY_SPACE), crouching);
+            sideway = (IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
+            forward = (IsKeyDown(KEY_W) - IsKeyDown(KEY_S));
+            jumpPressed = IsKeyPressed(KEY_SPACE);
+            crouching = IsKeyDown(KEY_LEFT_CONTROL);
         }
         else
         {
             // Consume the delta so it does not accumulate while the cursor is visible.
             GetMouseDelta();
         }
+        
+        PlayerInput frameInput(sideway, forward, jumpPressed, crouching);
 
         UpdateContext uc(&scene, &player, frameInput, &uiManager);
 
         if (!gamePaused)
         {
+            // Handle interaction with briefcases and doors (C key)
+            if (IsKeyPressed(KEY_C))
+            {
+                Vector3 playerPos = player.pos();
+                // Check for door interaction
+                Room *currentRoom = scene.GetCurrentPlayerRoom();
+                if (currentRoom && currentRoom->IsCompleted())
+                {
+                    for (Door *door : currentRoom->GetDoors())
+                    {
+                        if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
+                        {
+                            // Check if both connected rooms are completed
+                            bool canOpen = false;
+                            // If door knows both connected rooms and both are cleared, open permanently
+                            if (door->GetRoomA() && door->GetRoomB())
+                            {
+                                if (door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted())
+                                {
+                                    canOpen = true;
+                                }
+                                else
+                                {
+                                    // Allow opening from the current room to enter the adjacent room
+                                    // (player-initiated entry). The door will be closed by Scene::UpdateRoomDoors
+                                    // after the player transitions unless both rooms become cleared.
+                                    if (currentRoom == door->GetRoomA() || currentRoom == door->GetRoomB())
+                                        canOpen = true;
+                                }
+                            }
+                            else
+                            {
+                                // Fallback if room connections not set: allow if current room is completed
+                                canOpen = currentRoom->IsCompleted();
+                            }
+                            if (canOpen)
+                            {
+                                door->Open();
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Update room doors and player room tracking
+            scene.UpdateRoomDoors(player.pos());
+            
+            // Handle basic attack (left click)
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            {
+                BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                if (basicAttack)
+                {
+                    basicAttack->spawnProjectile(uc);
+                }
+            }
+
             for (int slotIdx = 0; slotIdx < 3; ++slotIdx)
             {
                 bool pressed = false;
@@ -135,7 +177,28 @@ int main(void)
             scene.Update(uc); // Pass the player to the scene update
         }
 
-        uiManager.update();
+        // Briefcase menu update: UIManager queries Scene for activation/state
+        // Must be outside gamePaused check so it can process clicks while menu is open
+        uiManager.updateBriefcaseMenu(uc, player.hand, gamePaused);
+
+        // Check for player death
+        if (player.getHealth() <= 0 && !uiManager.isGameOverVisible())
+        {
+            uiManager.setGameOverVisible(true);
+            EnableCursor(); // Show cursor for respawn button
+        }
+
+        // Handle respawn request
+        if (uiManager.consumeRespawnRequest())
+        {
+            player.respawn(player.getSpawnPosition());
+            uiManager.setGameOverVisible(false);
+            gamePaused = false;
+            uiManager.setPauseMenuVisible(false);
+            DisableCursor();
+        }
+
+        uiManager.update(player.hand);
 
         if (uiManager.consumeResumeRequest())
         {
@@ -157,20 +220,68 @@ int main(void)
         Camera camera = player.getCamera();
         scene.SetViewPosition(camera.position);
         BeginMode3D(camera);
-        scene.DrawScene();
+        scene.DrawScene(camera);
         EndMode3D();
 
         scene.DrawEnemyHealthDialogs(camera);
+        scene.DrawDamageIndicators(camera);
+        scene.DrawInteractionPrompts(player.pos(), camera);
 
-        uiManager.draw();
-
+        uiManager.draw(uc, player.hand);
+        
+        // Draw damage flash (red screen edge vignette)
+        if (player.getDamageFlashAlpha() > 0.0f)
+        {
+            float alpha = player.getDamageFlashAlpha();
+            int screenW = GetScreenWidth();
+            int screenH = GetScreenHeight();
+            Color flashColor = ColorAlpha(RED, (unsigned char)(alpha * 180));
+            
+            // Draw vignette effect from edges
+            int vignette = (int)(screenW * 0.15f);
+            DrawRectangleGradientH(0, 0, vignette, screenH, flashColor, ColorAlpha(RED, 0));  // Left edge
+            DrawRectangleGradientH(screenW - vignette, 0, vignette, screenH, ColorAlpha(RED, 0), flashColor);  // Right edge
+            DrawRectangleGradientV(0, 0, screenW, vignette, flashColor, ColorAlpha(RED, 0));  // Top edge
+            DrawRectangleGradientV(0, screenH - vignette, screenW, vignette, ColorAlpha(RED, 0), flashColor);  // Bottom edge
+        }
+        
+        // Draw damage number next to health bar
+        if (player.hasDamageNumber())
+        {
+            int screenW = GetScreenWidth();
+            float fadeAlpha = 1.0f - player.getDamageNumberAlpha();  // Fade out over time
+            float yOffset = player.getDamageNumberY();
+            
+            // Position near health bar (top left area)
+            int baseX = screenW - 220;
+            int baseY = 80 + (int)yOffset;
+            
+            const char *damageText = TextFormat("-%d", player.getLastDamageAmount());
+            int fontSize = 32;
+            Color textColor = ColorAlpha(RED, (unsigned char)(fadeAlpha * 255));
+            Color outlineColor = ColorAlpha(DARKGRAY, (unsigned char)(fadeAlpha * 200));
+            
+            // Draw with outline for visibility
+            DrawText(damageText, baseX - 1, baseY - 1, fontSize, outlineColor);
+            DrawText(damageText, baseX + 1, baseY - 1, fontSize, outlineColor);
+            DrawText(damageText, baseX - 1, baseY + 1, fontSize, outlineColor);
+            DrawText(damageText, baseX + 1, baseY + 1, fontSize, outlineColor);
+            DrawText(damageText, baseX, baseY, fontSize, textColor);
+        }
+        
         EndDrawing();
         //----------------------------------------------------------------------------------
     }
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
+    // Ensure enemies are destroyed while window/context is alive
+    scene.em.clear();
     uiManager.cleanup();
+    
+    // Cleanup shared resources
+    VanguardEnemy::UnloadSharedResources();
+    
     CloseWindow(); // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
 

@@ -5,25 +5,32 @@
 
 namespace
 {
-bool isCharacterTile(MahjongTileType tile)
+bool isCharacterTile(TileType tile)
 {
-    return tile >= MahjongTileType::CHARACTER_1 && tile <= MahjongTileType::CHARACTER_9;
+    return tile >= TileType::CHARACTER_1 && tile <= TileType::CHARACTER_9;
 }
 
-int getCharacterValue(MahjongTileType tile)
+int getCharacterValue(TileType tile)
 {
-    return static_cast<int>(tile) - static_cast<int>(MahjongTileType::CHARACTER_1) + 1;
+    return static_cast<int>(tile) - static_cast<int>(TileType::CHARACTER_1) + 1;
 }
 
-bool isDotTile(MahjongTileType tile)
+bool isDotTile(TileType tile)
 {
-    return tile >= MahjongTileType::DOT_1 && tile <= MahjongTileType::DOT_9;
+    return tile >= TileType::DOT_1 && tile <= TileType::DOT_9;
+}
+
+bool isBambooTile(TileType tile)
+{
+    return tile >= TileType::BAMBOO_1 && tile <= TileType::BAMBOO_9;
 }
 }
 
 // Destructor cleans up dynamically allocated ThousandAttack instances
 AttackManager::~AttackManager()
  {
+    for (auto &a : this->basicTileAttacks)
+        delete a;
     for (auto &a : this->singleTileAttack)
         delete a;
     for (auto &m : this->meleeAttacks)
@@ -32,11 +39,15 @@ AttackManager::~AttackManager()
         delete d;
     for (auto &b : this->dotBombAttacks)
         delete b;
+    for (auto &b : this->bambooTripleAttacks)
+        delete b;
 }
 
 // Updates all ThousandAttack instances
 void AttackManager::update(UpdateContext& uc)
 {
+    for (auto &a : this->basicTileAttacks)
+        a->update(uc);
     for (auto &a : this->singleTileAttack)
         a->update(uc);
     for (auto &m : this->meleeAttacks)
@@ -45,6 +56,33 @@ void AttackManager::update(UpdateContext& uc)
         d->update(uc);
     for (auto &b : this->dotBombAttacks)
         b->update(uc);
+    for (auto &b : this->bambooTripleAttacks)
+        b->update(uc);
+
+    // Update BasicTileAttack cooldown modifiers based on BambooTripleAttack state
+    for (auto &basic : this->basicTileAttacks)
+    {
+        // Find associated bamboo triple attack (same spawner)
+        BambooTripleAttack *bamboo = nullptr;
+        for (auto &b : this->bambooTripleAttacks)
+        {
+            if (b->spawnedBy == basic->spawnedBy)
+            {
+                bamboo = b;
+                break;
+            }
+        }
+        
+        // Update cooldown modifier based on effect state
+        if (bamboo && bamboo->isActive())
+        {
+            basic->setCooldownModifier(0.4f); // 40% = faster shooting
+        }
+        else
+        {
+            basic->resetCooldownModifier(); // Back to normal
+        }
+    }
 
     if (uc.uiManager)
     {
@@ -61,7 +99,11 @@ void AttackManager::recordThrow(UpdateContext &uc)
     // Record the thrown tile (spawn already done by ThousandTileAttack::spawnProjectile)
     if (uc.uiManager)
     {
-        MahjongTileType tile = uc.uiManager->muim.getSelectedTile();
+        TileType tile = TileType::BAMBOO_1;
+        if (uc.player)
+        {
+            tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        }
         Rectangle rect = uc.uiManager->muim.getTile(tile);
         this->thrownTiles.push_back({tile, rect});
     }
@@ -113,12 +155,45 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
         }
     }
 
+    bool isBambooTriple = false;
+    if (canCheckCombo && !isDotTriple)
+    {
+        const auto &first = slotEntries[0];
+        if (first.isValid() && isBambooTile(first.tile))
+        {
+            isBambooTriple = true;
+            for (int i = 1; i < 3; ++i)
+            {
+                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                {
+                    isBambooTriple = false;
+                    break;
+                }
+            }
+        }
+    }
+
     if (isDotTriple)
     {
         if (DotBombAttack *bomb = getDotBombAttack(uc.player))
         {
             if (bomb->trigger(uc, slotEntries[0].tile))
                 return true;
+        }
+        return false;
+    }
+
+    if (isBambooTriple)
+    {
+        if (BambooTripleAttack *bamboo = getBambooTripleAttack(uc.player))
+        {
+            bamboo->trigger(uc);
+            // Activate the rapid-fire effect on the BasicTileAttack
+            if (BasicTileAttack *basic = getBasicTileAttack(uc.player))
+            {
+                basic->setCooldownModifier(0.4f); // 40% of normal cooldown = faster shooting
+            }
+            return true;
         }
         return false;
     }
@@ -172,8 +247,8 @@ void AttackManager::checkActivation(Entity *player)
     int t2_val = static_cast<int>(t2);
     int t3_val = static_cast<int>(t3);
 
-    int char_1 = static_cast<int>(MahjongTileType::CHARACTER_1);
-    int char_9 = static_cast<int>(MahjongTileType::CHARACTER_9);
+    int char_1 = static_cast<int>(TileType::CHARACTER_1);
+    int char_9 = static_cast<int>(TileType::CHARACTER_9);
 
     bool combo_found = false;
 
@@ -249,8 +324,29 @@ AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vecto
         }
     }
 
+    bool isBambooTriple = false;
+    if (canCheckCombo && !isDotTriple)
+    {
+        const auto &first = slotEntries[0];
+        if (first.isValid() && isBambooTile(first.tile))
+        {
+            isBambooTriple = true;
+            for (int i = 1; i < 3; ++i)
+            {
+                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                {
+                    isBambooTriple = false;
+                    break;
+                }
+            }
+        }
+    }
+
     if (isDotTriple)
         return SlotAttackKind::DotBomb;
+
+    if (isBambooTriple)
+        return SlotAttackKind::BambooTriple;
 
     if (canCheckCombo && allValidCharacters)
     {
@@ -286,6 +382,11 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
         DotBombAttack *bomb = getDotBombAttack(uc.player);
         return bomb ? bomb->getCooldownPercent() : 0.0f;
     }
+    case SlotAttackKind::BambooTriple:
+    {
+        BambooTripleAttack *bamboo = getBambooTripleAttack(uc.player);
+        return bamboo ? bamboo->getCooldownPercent() : 0.0f;
+    }
     case SlotAttackKind::Melee:
     {
         MeleePushAttack *melee = getMeleeAttack(uc.player);
@@ -299,6 +400,18 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
     default:
         return 0.0f;
     }
+}
+
+BasicTileAttack *AttackManager::getBasicTileAttack(Entity *spawnedBy)
+{
+    for (const auto &a : this->basicTileAttacks)
+    {
+        if (a->spawnedBy == spawnedBy)
+            return a;
+    }
+    // Create a new BasicTileAttack if none exists for the entity
+    this->basicTileAttacks.push_back(new BasicTileAttack(spawnedBy));
+    return this->basicTileAttacks.back();
 }
 
 ThousandTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
@@ -335,6 +448,17 @@ DashAttack *AttackManager::getDashAttack(Entity *spawnedBy)
     return this->dashAttacks.back();
 }
 
+BambooTripleAttack *AttackManager::getBambooTripleAttack(Entity *spawnedBy)
+{
+    for (const auto &b : this->bambooTripleAttacks)
+    {
+        if (b->spawnedBy == spawnedBy)
+            return b;
+    }
+    this->bambooTripleAttacks.push_back(new BambooTripleAttack(spawnedBy));
+    return this->bambooTripleAttacks.back();
+}
+
 DotBombAttack *AttackManager::getDotBombAttack(Entity *spawnedBy)
 {
     for (const auto &b : this->dotBombAttacks)
@@ -352,6 +476,11 @@ std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
     // If caller requests projectiles or all entities, include projectiles
     if (cat == ENTITY_PROJECTILE || cat == ENTITY_ALL)
     {
+        for (const auto &a : this->basicTileAttacks)
+        {
+            auto v = a->getEntities();
+            ret.insert(ret.end(), v.begin(), v.end());
+        }
         for (const auto &a : this->singleTileAttack)
         {
             auto v = a->getEntities();
@@ -370,6 +499,11 @@ std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
 std::vector<Object *> AttackManager::getObjects() const
 {
     std::vector<Object *> ret;
+    for (const auto &a : this->basicTileAttacks)
+    {
+        auto v = a->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
     for (const auto &a : this->singleTileAttack)
     {
         auto v = a->obj();

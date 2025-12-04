@@ -3,6 +3,8 @@
 #include <constant.hpp>
 #include <vector>
 #include "object.hpp"
+class DialogBox;
+#include "Inventory.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
 #include "updateContext.hpp"
@@ -99,6 +101,12 @@ public:
     // Setters for entity properties
     void setVelocity(const Vector3 &newVel) { this->velocity = newVel; }
     void setDirection(const Vector3 &newDir) { this->direction = newDir; }
+    void setPosition(const Vector3 &newPos)
+    {
+        this->position = newPos;
+        this->o.pos = newPos;
+        this->o.UpdateOBB();
+    }
 
     /**
      * @brief Per-frame body update.
@@ -129,6 +137,9 @@ class Enemy : public Entity
 {
 private:
     int health; // Enemy's health
+    int maxHealth = MAX_HEALTH_ENEMY; // Enemy's max health
+    DialogBox *healthDialog = nullptr;
+    TileType tileType = TileType::BAMBOO_1; // Associated mahjong tile type
     
     // Animation state variables
     float runTimer;
@@ -156,6 +167,7 @@ protected:
     };
 
     void UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirection, float deltaSeconds, const MovementSettings &settings);
+    void UpdateDialog(UpdateContext &uc, float verticalOffset = 1.4f);
     bool isKnockbackActive() const { return this->knockbackTimer > 0.0f; }
     float computeSupportHeightForRotation(const Quaternion &rotation) const;
     void snapToGroundWithRotation(const Quaternion &rotation);
@@ -174,7 +186,24 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
+        // healthDialog will be created by enemy implementations (cpp) where type is complete
     }
+    
+    Enemy(int customHealth)
+    {
+        position = {0};
+        velocity = {0};
+        direction = {0};
+        grounded = true;
+        health = customHealth;
+        
+        // Initialize animation state
+        runTimer = 0.0f;
+        runLerp = 0.0f;
+        facingDirection = {0.0f, 0.0f, 1.0f};
+    }
+
+    virtual ~Enemy();
 
     // Updates the enemy's body (movement, jumping, etc.)
     void UpdateBody(UpdateContext& uc) override;
@@ -185,18 +214,57 @@ public:
     Vector3 getFacingDirection() const { return this->facingDirection; }
     virtual void gatherObjects(std::vector<Object *> &out) const;
     int getHealth() const { return this->health; }
-    int getMaxHealth() const { return MAX_HEALTH_ENEMY; }
+    int getMaxHealth() const { return this->maxHealth; }
+    void setMaxHealth(int newMaxHealth) { this->maxHealth = newMaxHealth; }
+    void Heal(int amount)
+    {
+        this->health += amount;
+        if (this->health > this->maxHealth)
+            this->health = this->maxHealth;
+    }
+    TileType getTileType() const { return this->tileType; }
+    void setTileType(TileType type) { this->tileType = type; }
     float getHealthPercent() const
     {
-        if (MAX_HEALTH_ENEMY <= 0)
+        if (this->maxHealth <= 0)
             return 0.0f;
-        float percent = static_cast<float>(this->health) / static_cast<float>(MAX_HEALTH_ENEMY);
+        float percent = static_cast<float>(this->health) / static_cast<float>(this->maxHealth);
         if (percent < 0.0f)
             percent = 0.0f;
         if (percent > 1.0f)
             percent = 1.0f;
         return percent;
     }
+
+    DialogBox *getHealthDialog() { return this->healthDialog; }
+    
+    // Virtual draw method for custom enemy visuals
+    virtual void Draw() const;
+};
+
+// Minion: small, fast, low-health enemy used by Summoner
+class MinionEnemy : public Enemy
+{
+private:
+    enum class AttackState
+    {
+        Approaching,
+        Launching,
+        Cooldown
+    };
+    
+    AttackState state = AttackState::Approaching;
+    float attackCooldown = 0.0f;
+    float cooldownDuration = 1.5f;
+    float attackRange = 3.5f;
+    float launchSpeed = 25.0f;
+    float launchUpwardVelocity = 10.0f;
+    float attackDamage = 15.0f;
+    bool appliedDamage = false;
+    
+public:
+    MinionEnemy() : Enemy(30) { this->setMaxHealth(30); this->setTileType(TileType::DOT_3); }
+    void UpdateBody(UpdateContext &uc) override;
 };
 
 class ChargingEnemy : public Enemy
@@ -235,7 +303,11 @@ private:
     bool updatePoseTowards(float targetAngleDeg, float deltaSeconds);
 
 public:
-    ChargingEnemy() = default;
+    ChargingEnemy() : Enemy(500) 
+    { 
+        this->setMaxHealth(500);  // Tank: 500 HP
+        this->setTileType(TileType::CHARACTER_9); // Tank uses Character tiles
+    }
     void UpdateBody(UpdateContext &uc) override;
 };
 
@@ -263,7 +335,15 @@ private:
         Object visual;
     };
 
+    struct BulletPattern
+    {
+        int bulletCount = 1;      // Number of bullets to fire
+        float arcDegrees = 0.0f;  // Spread arc in degrees (0 = single direction)
+    };
+
     std::vector<Bullet> bullets;
+    BulletPattern bulletPattern;  // Current bullet pattern configuration
+    Texture2D sunTexture{};       // Texture for bullets
     float fireCooldown = 0.0f;
     float fireInterval = 2.0f;
     float bulletSpeed = 25.0f;
@@ -297,9 +377,15 @@ private:
     bool SelectRepositionGoal(UpdateContext &uc, const Vector3 &planarToPlayer, float distanceToPlayer);
 
 public:
-    ShooterEnemy();
+    ShooterEnemy();  // Constructor sets 250 HP (Sniper)
+    ~ShooterEnemy();
     void UpdateBody(UpdateContext &uc) override;
     void gatherObjects(std::vector<Object *> &out) const override;
+    void setBulletPattern(int bulletCount, float arcDegrees)
+    {
+        this->bulletPattern.bulletCount = bulletCount;
+        this->bulletPattern.arcDegrees = arcDegrees;
+    }
 };
 // Class representing the player character
 /**
@@ -318,9 +404,20 @@ private:
     float meleeSwingDuration = 0.25f;
     float meleeWindupTimer = 0.0f;
     float knockbackTimer = 0.0f;
+    float shootSlowTimer = 0.0f;
+    float shootSlowFactor = 1.0f;
     float colliderWidth = 1.2f;
     float colliderDepth = 1.2f;
     float colliderHeight = 1.8f;
+    Vector3 spawnPosition = {0.0f, 0.0f, 0.0f};
+    
+    // Damage visual feedback
+    float damageFlashTimer = 0.0f;
+    float damageFlashDuration = 0.3f;
+    int lastDamageAmount = 0;
+    float damageNumberTimer = 0.0f;
+    float damageNumberDuration = 1.5f;
+    float damageNumberY = 0.0f;  // Y offset for floating animation
 
     // New: Struct to hold player input state
     
@@ -330,15 +427,16 @@ private:
     float getColliderHalfHeight() const { return this->colliderHeight * 0.5f; }
 
 public:
+    Inventory hand;
     // Default constructor initializes the player with default values
     Me()
     {
+        this->hand.CreatePlayerHand();
         position = {0.0f, this->getColliderHalfHeight(), 0.0f};
         velocity = {0};
         direction = {0};
         grounded = true;
         health = MAX_HEALTH_ME;
-
         this->o.setAsBox({this->colliderWidth, this->colliderHeight, this->colliderDepth});
         this->o.pos = this->position;
         this->o.visible = false;
@@ -360,6 +458,18 @@ public:
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
     bool damage(DamageResult &dResult);
     int getHealth() const { return this->health; }
+    void applyShootSlow(float slowFactor, float durationSeconds);
+    float getMovementMultiplier() const;
+    void respawn(const Vector3 &spawnPosition);
+    void setSpawnPosition(const Vector3 &pos) { this->spawnPosition = pos; }
+    Vector3 getSpawnPosition() const { return this->spawnPosition; }
+    
+    // Damage visual feedback getters
+    float getDamageFlashAlpha() const { return Clamp(this->damageFlashTimer / this->damageFlashDuration, 0.0f, 1.0f); }
+    bool hasDamageNumber() const { return this->damageNumberTimer > 0.0f; }
+    int getLastDamageAmount() const { return this->lastDamageAmount; }
+    float getDamageNumberAlpha() const { return 1.0f - (this->damageNumberTimer / this->damageNumberDuration); }
+    float getDamageNumberY() const { return this->damageNumberY; }
 
     // Getter for the player's camera
     const Camera &getCamera() { return this->camera.getCamera(); }
@@ -372,6 +482,226 @@ public:
     EntityCategory category() const override;
 };
 
+// Summoner: periodically spawns MinionEnemy groups and tries to keep distance
+class SummonerEnemy : public Enemy
+{
+private:
+    enum class SummonState
+    {
+        Idle,       // Normal behavior, countdown to summon
+        Ascending,  // Jumping upward in spiral
+        Descending, // Falling with twirl, about to summon
+        Summoning   // Brief moment at peak spawn, visual flash
+    };
+    
+    SummonState summonState = SummonState::Idle;
+    float spawnTimer = 0.0f;
+    float spawnInterval = 9.0f; // Seconds between summon cycles
+    int groupSize = 5; // Always spawn 5 minions
+    float retreatDistance = 20.0f; // Retreat if player closer
+    std::vector<MinionEnemy*> ownedMinions; // Track spawned minions for cleanup
+    
+    // Animation timing
+    float animationTimer = 0.0f;
+    float ascendDuration = 2.0f;      // Time to jump and spiral up
+    float descendDuration = 0.3f;     // Time to spiral down and land
+    float summonPeakDuration = 0.8f;  // Time at peak before spawning
+    
+    // Animation parameters
+    float jumpHeight = 4.0f;           // How high summoner jumps
+    float spiralRadius = 2.0f;         // Radius of spiral motion
+    float twirls = 1.0f;               // Number of rotations during animation
+    float startHeight = 0.0f;           // Height when animation starts
+    float startAnimX = 0.0f;            // X position when animation starts
+    float startAnimZ = 0.0f;            // Z position when animation starts
+    
+    // Visual effect counters
+    Texture2D spiralParticleTexture = {0};
+    float particleEmitTimer = 0.0f;
+    float particleEmitRate = 20.0f;    // Particle per frame during animation
+    
+    void UpdateSummonAnimation(UpdateContext &uc, float delta);
+    void EmitSummonParticles(const Vector3 &position, float intensity);
+    void SpawnMinionGroup(UpdateContext &uc);
+    void CleanupMinions(UpdateContext &uc);
+
+public:
+    SummonerEnemy() : Enemy(200) { this->setMaxHealth(200); this->setTileType(TileType::DOT_7); }
+    ~SummonerEnemy();
+    void UpdateBody(UpdateContext &uc) override;
+    void OnDeath(UpdateContext &uc);
+    void Draw() const override;
+};
+
+// Support: heals and buffs nearby allies
+class SupportEnemy : public Enemy
+{
+private:
+    enum class SupportMode
+    {
+        Normal,  // Hide behind other enemies, evade player
+        Buff,    // Move to ally, charge up, apply buff
+        Heal     // Move to ally, charge up, apply heal
+    };
+
+    SupportMode mode = SupportMode::Normal;
+    
+    // Mode parameters
+    float normalSearchRadius = 30.0f;  // Find nearby allies to hide behind
+    float normalHideDistance = 10.0f;   // Distance behind ally to stand
+    float actionSearchRadius = 15.0f;  // Find targets for buff/heal within this radius
+    float actionStandDistance = 8.0f;  // Move within this distance to target
+    float actionChargeTime = 3.0f;     // Time to stand and charge before applying action (3s per request)
+    float actionCooldown = 15.0f;       // Cooldown after buff/heal
+    float retreatDistance = 25.0f;     // Retreat if player closer than this
+    
+    // Healing parameters
+    float healingRate = 20.0f;         // HP per second when healing
+    float healingThreshold = 0.4f;     // Only heal allies below 40% HP
+    
+    // Buff parameters
+    float speedBuffAmount = 0.3f;      // 30% speed increase
+    float buffDuration = 5.0f;         // Buff lasts 5 seconds
+    
+    // State tracking
+    Enemy* targetAlly = nullptr;       // Current heal/buff target (or hide-behind ally)
+    float actionTimer = 0.0f;          // Timer for charging before action
+    float actionCooldownTimer = 0.0f;  // Countdown until next action possible
+    
+    // Particle emission timers
+    float chargeParticleTimer = 0.0f;
+    
+    // Helper methods
+    Enemy* FindAllyToHideBehind(UpdateContext &uc);
+    Enemy* FindBestTarget(UpdateContext &uc, bool forHealing);
+    Vector3 CalculateHidePosition(UpdateContext &uc, Enemy* allyToHideBehind);
+    void UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer);
+    void UpdateBuffMode(UpdateContext &uc);
+    void UpdateHealMode(UpdateContext &uc);
+    void DrawGlowEffect(const Vector3 &pos, Color color, float intensity) const;
+
+public:
+    SupportEnemy() : Enemy(250) { this->setMaxHealth(250); this->setTileType(TileType::CHARACTER_1); }
+    void UpdateBody(UpdateContext &uc) override;
+    void Draw() const override;
+};
+
+// Vanguard: Heavy dragoon with aggressive ground combo and aerial dive attacks
+class VanguardEnemy : public Enemy
+{
+private:
+    enum class VanguardState
+    {
+        Chasing,
+        GroundComboStab,
+        GroundComboSlash,
+        AerialAscend,
+        AerialHover,
+        AerialDive,
+        AerialLanding
+    };
+
+    VanguardState state = VanguardState::Chasing;
+    float stateTimer = 0.0f;
+
+    // Ground combo parameters (Piston Thrust + Crescent Sweep)
+    float comboAttackRange = 3.5f;       // Trigger range for combo
+    
+    // Stage 1: Piston Thrust (Linear Damage)
+    float stabWindupTime = 1.0f;         // Telegraph time
+    float stabActiveTime = 0.15f;        // Strike time
+    float stabRecoveryTime = 0.3f;       // Recovery before sweep
+    float stabWeaponLength = 6.0f;       // Long range stab
+    float stabDamage = 20.0f;
+    float stabLungeForce = 15.0f;        // Forward slide during stab
+    
+    // Stage 2: Crescent Sweep (Area Damage)
+    float slashWindupTime = 1.2f;        // Turn & drag time
+    float slashActiveTime = 0.35f;       // Cleave time (increased for longer dash)
+    float slashRecoveryTime = 1.0f;      // Long recovery (punish window)
+    float slashDamage = 25.0f;
+    float slashArcDegrees = 180.0f;      // Wide semi-circle
+    float slashRange = 4.0f;             // Shorter than stab
+    
+    int comboStage = 0;                  // 0 = none, 1 = stab, 2 = slash
+    bool comboHitPlayer = false;         // Track if hit landed
+    Vector3 stabDirection = {0, 0, 1};   // Store stab direction
+
+    // Aerial dive parameters (focus purely on dive, no teleport)
+    float diveCooldownDuration = 6.0f;
+    float diveCooldownTimer = 0.0f;
+    float diveChancePerFrame = 0.01f;       // Chance each frame when in range
+    
+    // AI decision cooldown
+    float decisionCooldownDuration = 1.0f;  // Make decisions every 1 second
+    float decisionCooldownTimer = 0.0f;
+    
+    // Aerial Dive Attack: Quick ascent to hover, then aggressive dash dive with landing shockwave
+    float diveAscendTime = 0.4f;            // Quick ascent phase (0.4s)
+    float diveHangTime = 1.5f;              // 1.5 seconds hover at peak, staring at player camera
+    float diveAscendInitialVelocity = 35.0f; // Upward velocity during ascent
+    float diveGravityDuringAscent = 56.0f;   // Gravity applied during hover/descent
+    float diveDamage = 45.0f;               // Damage on direct hit
+    float diveLandingRecoveryTime = 2.0f;   // Recovery time after landing
+    float diveImpactSquashTime = 0.15f;     // Duration of squash effect on impact
+    Vector3 diveTargetPos = {0.0f, 0.0f, 0.0f};
+    float diveInitialSpeed = 15.0f;         // Initial horizontal speed during dive start
+    float diveAcceleration = 300.0f;        // Aggressive acceleration during descent
+    float diveMaxSpeed = 150.0f;            // Very high terminal velocity
+    float diveCurrentSpeed = 0.0f;          // Track current dive speed
+    
+    // Shockwave: Expanding ring on dive impact that damages grounded players (can be jumped over)
+    float shockwaveRadius = 0.0f;           // Current radius of expanding shockwave
+    float shockwaveMaxRadius = 22.0f;       // Max radius before shockwave stops
+    float shockwaveExpandSpeed = 18.0f;     // Units per second
+    Vector3 shockwaveCenter = {0.0f, 0.0f, 0.0f}; // Center of shockwave
+    bool shockwaveActive = false;           // Is shockwave currently active
+    float shockwaveDamage = 22.0f;          // Damage dealt by shockwave
+    bool shockwaveHitPlayer = false;        // Track if we hit player with this shockwave
+    
+    // Animation & Visual State
+    Vector3 visualScale = {1.0f, 1.0f, 1.0f}; // For squash & stretch on landing
+    float rotationTowardsPlayer = 0.0f;       // Rotation blending during aerial states
+
+    // Movement
+    float chaseSpeed = 6.0f;                  // Speed while chasing player
+    
+    // Spear Weapon Visual: Animated based on attack state (Piston Thrust stab or Crescent Sweep slash)
+    // Model is shared between all Vanguard instances and animated in world space
+    static Model sharedSpearModel;
+    static bool spearModelLoaded;
+    Vector3 spearOffset = {1.2f, 0.0f, 0.0f}; // Hold at side by default
+    Vector3 spearRotationOffset = {0, 0, 0};  // Rotation adjustment for pointing at camera
+    float spearScale = 0.0075f;                // Model scale multiplier
+    float spearThrustAmount = 0.0f;           // 0-1 for stab forward extension
+    float spearRetractAmount = 0.0f;          // 0-1 for stab pull-back (windup)
+    float spearSwingAngle = 0.0f;             // Angle for slash swing (degrees from center)
+    float spearSwingStartAngle = -90.0f;      // Start angle for slash arc (left side)
+    float spearLingerTimer = 0.0f;            // Hold spear extended after attack
+    float spearLingerDuration = 0.4f;         // Duration to hold spear visible
+    mutable Vector3 smoothedSpearPos = {0.0f, 0.0f, 0.0f};  // Smoothed position (jitter reduction)
+    mutable float smoothedYRotation = 0.0f;                 // Smoothed rotation (jitter reduction)
+    
+    // Cached camera info: Updated each frame to point weapon at camera
+    Vector3 cachedCameraPos = {0.0f, 0.0f, 0.0f};
+    float cachedCameraYawDeg = 0.0f;
+    float cachedCameraPitchDeg = 0.0f;
+
+    // Helper methods
+    Vector3 CalculateBackstabPosition(UpdateContext &uc);
+    void HandleGroundCombo(UpdateContext &uc);  // Two-stage combo: Piston Thrust stab then Crescent Sweep slash
+    void HandleAerialDive(UpdateContext &uc);   // Ascend -> Hover -> Dive with shockwave
+    bool CheckStabHit(UpdateContext &uc);       // Collision check for stab attack
+    bool CheckSlashHit(UpdateContext &uc);      // Collision check for slash attack
+    void DecideAction(UpdateContext &uc, float distanceToPlayer);  // AI decision making based on distance
+
+public:
+    VanguardEnemy() : Enemy(180) { this->setMaxHealth(180); this->setTileType(TileType::DRAGON_RED); }
+    static void LoadSharedResources();  // Load spear model once at game start
+    static void UnloadSharedResources(); // Cleanup on game end
+    void UpdateBody(UpdateContext &uc) override;
+    void Draw() const override;
+};
 
 
 // Class representing a projectile (e.g., bullets, missiles)
@@ -389,7 +719,8 @@ private:
     float airDrag;  // Air drag applied to the projectile when in the air
 
 public:
-    MahjongTileType type;
+    TileType type;
+    float damage = 10.0f; // Damage dealt by this projectile
     // Default constructor initializes the projectile with default values
     Projectile()
     {
@@ -402,7 +733,7 @@ public:
     }
 
     // Parameterized constructor initializes the projectile with specific values
-    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird, MahjongTileType _type)
+    Projectile(Vector3 pos, Vector3 vel, Vector3 d, bool g, Object o1, float fric, float aird, TileType _type)
     {
         this->position = pos;
         this->velocity = vel;

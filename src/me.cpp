@@ -29,6 +29,12 @@ void Me::applyPlayerMovement(UpdateContext &uc)
         this->meleeWindupTimer = fmaxf(0.0f, this->meleeWindupTimer - delta);
     }
 
+    // Update shoot slow timer
+    if (this->shootSlowTimer > 0.0f)
+    {
+        this->shootSlowTimer = fmaxf(0.0f, this->shootSlowTimer - delta);
+    }
+
     bool lockMovement = this->meleeWindupTimer > 0.0f;
     if (knockedBack || lockMovement)
     {
@@ -77,7 +83,8 @@ void Me::applyPlayerMovement(UpdateContext &uc)
     params.gravity = GRAVITY;
     params.decelGround = FRICTION;
     params.decelAir = AIR_DRAG;
-    params.maxSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
+    float baseSpeed = (uc.playerInput.crouchHold ? CROUCH_SPEED : MAX_SPEED);
+    params.maxSpeed = baseSpeed * this->getMovementMultiplier();
     params.maxAccel = airborne ? 0.0f : MAX_ACCEL;
     params.floorY = this->getColliderHalfHeight();
     params.iterativeCollisionResolve = true;
@@ -94,6 +101,20 @@ void Me::UpdateBody(UpdateContext &uc)
         float delta = GetFrameTime();
         this->meleeSwingTimer = fmaxf(0.0f, this->meleeSwingTimer - delta);
     }
+    
+    // Update damage visual timers
+    float delta = GetFrameTime();
+    if (this->damageFlashTimer > 0.0f)
+    {
+        this->damageFlashTimer = fmaxf(0.0f, this->damageFlashTimer - delta);
+    }
+    if (this->damageNumberTimer > 0.0f)
+    {
+        this->damageNumberTimer = fmaxf(0.0f, this->damageNumberTimer - delta);
+        // Animate damage number floating upward
+        this->damageNumberY += 120.0f * delta;
+    }
+    
     this->UpdateCamera(uc);
 }
 
@@ -161,12 +182,63 @@ bool Me::damage(DamageResult &dResult)
         this->health = 0;
     float shakeMagnitude = Clamp((float)appliedDamage / 40.0f, 0.1f, 0.7f);
     this->addCameraShake(shakeMagnitude, 0.25f);
+    
+    // Trigger damage visual feedback
+    this->damageFlashTimer = this->damageFlashDuration;
+    this->lastDamageAmount = appliedDamage;
+    this->damageNumberTimer = this->damageNumberDuration;
+    this->damageNumberY = 0.0f;
+    
     return this->health > 0;
 }
 
 EntityCategory Me::category() const
 {
     return ENTITY_PLAYER;
+}
+
+void Me::applyShootSlow(float slowFactor, float durationSeconds)
+{
+    if (durationSeconds <= 0.0f)
+        return;
+    this->shootSlowTimer = fmaxf(this->shootSlowTimer, durationSeconds);
+    this->shootSlowFactor = slowFactor;
+}
+
+float Me::getMovementMultiplier() const
+{
+    if (this->shootSlowTimer > 0.0f)
+        return this->shootSlowFactor;
+    return 1.0f;
+}
+
+void Me::respawn(const Vector3 &pos)
+{
+    // Reset position
+    this->position = pos;
+    this->position.y = this->getColliderHalfHeight();
+    this->o.pos = this->position;
+    this->o.UpdateOBB();
+    
+    // Reset physics
+    this->velocity = Vector3Zero();
+    this->direction = Vector3Zero();
+    this->grounded = true;
+    
+    // Reset health
+    this->health = MAX_HEALTH_ME;
+    
+    // Reset timers
+    this->knockbackTimer = 0.0f;
+    this->meleeSwingTimer = 0.0f;
+    this->meleeWindupTimer = 0.0f;
+    this->shootSlowTimer = 0.0f;
+    
+    // Reset camera
+    this->camera.resetShake();
+    Vector3 cameraPos = this->position;
+    cameraPos.y += this->getColliderHalfHeight();
+    this->camera.setPosition(cameraPos);
 }
 
 // Updates the projectile's body (movement, gravity, etc.)
@@ -187,7 +259,7 @@ void Projectile::UpdateBody(UpdateContext &uc)
 
     Entity::ApplyPhysics(this, uc, params);
 
-    // Do projectile-specific collision handling (damage to enemies)
+    // Do projectile-specific collision handling (damage to enemies and models)
     auto results = Object::collided(this->o, uc.scene);
     for (auto &result : results)
     {
@@ -195,7 +267,13 @@ void Projectile::UpdateBody(UpdateContext &uc)
         {
             Enemy *e = static_cast<Enemy *>(result.with);
             auto dResult = DamageResult(10, result);
-            uc.scene->em.damage(e, dResult);
+            uc.scene->em.damage(e, dResult, uc);
+        }
+        // Player projectiles also collide with static model objects (decorations)
+        else if (!result.with && result.collided)
+        {
+            // Hit a static decoration/model; projectile should stop/destroy
+            // For now, we let the physics handle it; could add removal logic here
         }
     }
 }

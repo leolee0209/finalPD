@@ -29,6 +29,48 @@ public:
 };
 
 /**
+ * @brief Simple tile-based attack controller for basic shooting.
+ *
+ * Fires single projectiles horizontally from the camera/entity direction.
+ * Used for normal attacks without special combo modes.
+ */
+class BasicTileAttack : public AttackController
+{
+private:
+    std::vector<Projectile> projectiles;
+    float cooldownRemaining = 0.0f;
+    float activeCooldownModifier = 1.0f; // 1.0 = normal, 0.4 = 40% of normal (faster shooting)
+    static constexpr float shootSpeed = 70.0f;
+    static constexpr float projectileSize = 0.025f;
+    static constexpr float projectileDamage = 10.0f;
+    static constexpr float cooldownDuration = 0.5f;
+    static constexpr float movementSlowDuration = 0.3f;
+    static constexpr float movementSlowFactor = 0.4f; // Reduces speed to 40% of normal
+
+public:
+    BasicTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+    bool canShoot() const { return this->cooldownRemaining <= 0.0f; }
+    void setCooldownModifier(float modifier) { this->activeCooldownModifier = modifier; }
+    void resetCooldownModifier() { this->activeCooldownModifier = 1.0f; }
+    void update(UpdateContext &uc) override;
+    void spawnProjectile(UpdateContext &uc);
+    std::vector<Object *> obj()
+    {
+        std::vector<Object *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p.obj());
+        return ret;
+    }
+    std::vector<Entity *> getEntities() override
+    {
+        std::vector<Entity *> ret;
+        for (auto &p : this->projectiles)
+            ret.push_back(&p);
+        return ret;
+    }
+};
+
+/**
  * @brief Tile-based attack controller used by players/enemies.
  *
  * Manages a list of `Projectile` instances and supports multiple modes
@@ -46,11 +88,10 @@ private:
     enum Mode
     {
         MODE_IDLE,
-        MODE_NORMAL,
         MODE_THOUSAND_FINAL,     // converge to a dest (was ThousandAttack final)
         MODE_TRIPLET_CONNECTING, // spawn connectors (was TripletAttack connecting)
         MODE_TRIPLET_FINAL,
-    } mode = MODE_NORMAL;
+    } mode = MODE_IDLE;
 
     // Thousand-mode data (converge to dest)
     static constexpr float thousandFinalVel = 30.0f;
@@ -208,6 +249,38 @@ private:
     Vector3 computeCollisionAdjustedVelocity(Me *player, UpdateContext &uc, float desiredSpeed);
 };
 
+/**
+ * @brief Rapid-fire attack triggered by three same-number bamboo tiles.
+ *
+ * Temporarily reduces the cooldown of BasicTileAttack for a duration,
+ * allowing faster shooting. The attack itself has a longer cooldown
+ * than the effect duration.
+ */
+class BambooTripleAttack : public AttackController
+{
+public:
+    explicit BambooTripleAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    void trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+    bool isActive() const { return this->effectRemaining > 0.0f; }
+    float getReducedCooldown() const;
+
+private:
+    float cooldownRemaining = 0.0f;
+    float effectRemaining = 0.0f;
+
+    // Effect duration is 3.0s, cooldown is 5.0s (cooldown > effect)
+    static constexpr float effectDuration = 3.0f;
+    static constexpr float cooldownDuration = 5.0f;
+    
+    // Original cooldown is 0.5s, reduced to 0.2s during effect
+    static constexpr float normalCooldown = 0.5f;
+    static constexpr float reducedCooldown = 0.2f;
+};
+
 class DotBombAttack : public AttackController
 {
 public:
@@ -217,7 +290,7 @@ public:
     void update(UpdateContext &uc) override;
     std::vector<Entity *> getEntities() override;
     std::vector<Object *> obj();
-    bool trigger(UpdateContext &uc, MahjongTileType tile);
+    bool trigger(UpdateContext &uc, TileType tile);
     float getCooldownPercent() const;
 
 private:

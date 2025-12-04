@@ -17,8 +17,8 @@
 #define STAND_HEIGHT 1.0f
 #define BOTTOM_HEIGHT 0.5f
 
-#define MAX_HEALTH_ME 100
-#define MAX_HEALTH_ENEMY 100
+#define MAX_HEALTH_ME 300
+#define MAX_HEALTH_ENEMY 250
 
 #define TOWER_COLOR {150, 200, 200, 255}
 

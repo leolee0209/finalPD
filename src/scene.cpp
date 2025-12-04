@@ -1,30 +1,160 @@
 #include "scene.hpp"
 #include <raylib.h>
+#include <raymath.h>
 #include "constant.hpp"
 #include <rlgl.h>
 #include "enemyManager.hpp"
+#include "dialogBox.hpp"
 #include "rlights.hpp"
+#include "particle.hpp"
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <array>
+#include <cfloat>
+#include <string>
+#include "Inventory.hpp"
 
 namespace
 {
-btVector3 ToBtVector(const Vector3 &v)
-{
-    return btVector3(v.x, v.y, v.z);
+    constexpr char doorModelPath[] = "decorations/door.glb";
+    constexpr float doorOpenAngleDeg = 95.0f;
+    constexpr float doorOpenDuration = 1.35f;
+    constexpr float doorTargetHeight = 18.0f;
+    constexpr float boundingAxisEpsilon = 0.0001f;
+
+    float RandomRange(float minValue, float maxValue)
+    {
+        if (minValue > maxValue)
+            std::swap(minValue, maxValue);
+        int minInt = (int)floorf(minValue * 1000.0f);
+        int maxInt = (int)floorf(maxValue * 1000.0f);
+        int value = GetRandomValue(minInt, maxInt);
+        return (float)value / 1000.0f;
+    }
+
+    void DrawOutlinedText(const Font &font,
+                          const std::string &text,
+                          Vector2 position,
+                          float fontSize,
+                          float outlineThickness,
+                          float shadowOffset,
+                          Color fill,
+                          Color outline,
+                          Color shadow)
+    {
+        DrawTextEx(font, text.c_str(), {position.x + shadowOffset, position.y + shadowOffset}, fontSize, 1.0f, shadow);
+
+        const Vector2 offsets[] = {
+            {-1.0f, -1.0f}, {0.0f, -1.0f}, {1.0f, -1.0f}, {-1.0f, 0.0f}, {1.0f, 0.0f}, {-1.0f, 1.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}};
+
+        for (Vector2 off : offsets)
+        {
+            Vector2 outlinePos{position.x + off.x * outlineThickness,
+                               position.y + off.y * outlineThickness};
+            DrawTextEx(font, text.c_str(), outlinePos, fontSize, 1.0f, outline);
+        }
+
+        DrawTextEx(font, text.c_str(), position, fontSize, 1.0f, fill);
+    }
+
+    btVector3 ToBtVector(const Vector3 &v)
+    {
+        return btVector3(v.x, v.y, v.z);
+    }
+
+    btQuaternion ToBtQuaternion(const Quaternion &q)
+    {
+        return btQuaternion(q.x, q.y, q.z, q.w);
+    }
 }
 
-btQuaternion ToBtQuaternion(const Quaternion &q)
+void DamageIndicatorSystem::Spawn(const Vector3 &worldPosition, float amount)
 {
-    return btQuaternion(q.x, q.y, q.z, q.w);
+    int rounded = (int)lroundf(amount);
+    if (rounded <= 0)
+        return;
+
+    DamageIndicator indicator;
+    indicator.worldPosition = worldPosition;
+    indicator.screenOffset = {RandomRange(-18.0f, 18.0f), RandomRange(-8.0f, 8.0f)};
+    indicator.velocity = {RandomRange(-10.0f, 10.0f), RandomRange(28.0f, 46.0f)};
+    indicator.lifetime = RandomRange(0.8f, 1.05f);
+    indicator.age = 0.0f;
+    indicator.text = std::to_string(rounded);
+    this->indicators.push_back(std::move(indicator));
 }
+
+void DamageIndicatorSystem::Update(float deltaSeconds)
+{
+    if (this->indicators.empty())
+        return;
+
+    for (auto &indicator : this->indicators)
+    {
+        indicator.age += deltaSeconds;
+        indicator.screenOffset.x += indicator.velocity.x * deltaSeconds;
+        indicator.screenOffset.y += indicator.velocity.y * deltaSeconds;
+    }
+
+    this->indicators.erase(std::remove_if(this->indicators.begin(), this->indicators.end(), [](const DamageIndicator &indicator)
+                                          { return indicator.age >= indicator.lifetime; }),
+                           this->indicators.end());
 }
+
+void DamageIndicatorSystem::Draw(const Camera &camera) const
+{
+    if (this->indicators.empty())
+        return;
+
+    Font font = GetFontDefault();
+    int screenW = GetScreenWidth();
+    int screenH = GetScreenHeight();
+
+    for (const auto &indicator : this->indicators)
+    {
+        float t = indicator.lifetime > 0.0f ? indicator.age / indicator.lifetime : 1.0f;
+        float alpha = 1.0f - t;
+        if (alpha <= 0.0f)
+            continue;
+
+        Vector2 base = GetWorldToScreen(indicator.worldPosition, camera);
+        if (base.x < -96.0f || base.x > screenW + 96.0f ||
+            base.y < -96.0f || base.y > screenH + 96.0f)
+        {
+            continue;
+        }
+
+        Vector2 drawPos{base.x + indicator.screenOffset.x, base.y + indicator.screenOffset.y};
+        float fontSize = Lerp(38.0f, 26.0f, Clamp(t, 0.0f, 1.0f));
+        float outlineThickness = Clamp(fontSize * 0.08f, 1.0f, 5.0f);
+        float shadowOffset = Clamp(fontSize * 0.12f, 1.0f, 6.0f);
+
+        unsigned char alphaByte = (unsigned char)Clamp(alpha * 255.0f, 0.0f, 255.0f);
+        Color fill = {255, 235, 196, alphaByte};
+        Color outline = {40, 5, 5, alphaByte};
+        Color shadow = {0, 0, 0, (unsigned char)Clamp(alpha * 200.0f, 0.0f, 255.0f)};
+
+        DrawOutlinedText(font, indicator.text, drawPos, fontSize, outlineThickness, shadowOffset, fill, outline, shadow);
+    }
+}
+
+void DamageIndicatorSystem::Clear()
+{
+    this->indicators.clear();
+}
+
 // Destructor: unload shared model resources
 Scene::~Scene()
 {
     this->RemoveDecorationColliders();
     this->decorations.clear();
+    this->doors.clear();
+    this->rooms.clear();
+
+    // Unload shared briefcase model
+    RewardBriefcase::UnloadSharedModel();
+
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
@@ -41,7 +171,14 @@ Scene::~Scene()
         this->ReleaseDecorationModels();
         this->ShutdownLighting();
         UnloadModel(this->cubeModel);
+        UnloadModel(this->sphereModel);
+        if (this->glowTexture.id != 0)
+        {
+            UnloadTexture(this->glowTexture);
+            this->glowTexture.id = 0;
+        }
     }
+    this->damageIndicators.Clear();
     this->ShutdownBulletWorld();
 }
 
@@ -110,39 +247,39 @@ btCollisionShape *Scene::CreateShapeFromObject(const Object &obj)
 
 namespace
 {
-struct DecorationContactCallback : public btCollisionWorld::ContactResultCallback
-{
-    explicit DecorationContactCallback(std::vector<CollisionResult> &results) : hits(results)
+    struct DecorationContactCallback : public btCollisionWorld::ContactResultCallback
     {
-        this->m_closestDistanceThreshold = 0.0f;
-    }
-
-    btScalar addSingleResult(btManifoldPoint &cp,
-                             const btCollisionObjectWrapper *, int, int,
-                             const btCollisionObjectWrapper *, int, int) override
-    {
-        if (cp.getDistance() > 0.0f)
+        explicit DecorationContactCallback(std::vector<CollisionResult> &results) : hits(results)
         {
+            this->m_closestDistanceThreshold = 0.0f;
+        }
+
+        btScalar addSingleResult(btManifoldPoint &cp,
+                                 const btCollisionObjectWrapper *, int, int,
+                                 const btCollisionObjectWrapper *, int, int) override
+        {
+            if (cp.getDistance() > 0.0f)
+            {
+                return 0.0f;
+            }
+
+            CollisionResult result{};
+            result.with = nullptr;
+            result.collided = true;
+            result.penetration = -cp.getDistance();
+            btVector3 normal = cp.m_normalWorldOnB;
+            Vector3 raylibNormal = {normal.x(), normal.y(), normal.z()};
+            if (Vector3Length(raylibNormal) > 0.0f)
+            {
+                raylibNormal = Vector3Normalize(raylibNormal);
+            }
+            result.normal = raylibNormal;
+            this->hits.push_back(result);
             return 0.0f;
         }
 
-        CollisionResult result{};
-        result.with = nullptr;
-        result.collided = true;
-        result.penetration = -cp.getDistance();
-        btVector3 normal = cp.m_normalWorldOnB;
-        Vector3 raylibNormal = {normal.x(), normal.y(), normal.z()};
-        if (Vector3Length(raylibNormal) > 0.0f)
-        {
-            raylibNormal = Vector3Normalize(raylibNormal);
-        }
-        result.normal = raylibNormal;
-        this->hits.push_back(result);
-        return 0.0f;
-    }
-
-    std::vector<CollisionResult> &hits;
-};
+        std::vector<CollisionResult> &hits;
+    };
 }
 
 void Scene::AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const
@@ -234,53 +371,6 @@ float Scene::GetFloorTop() const
     return floorPos.y + floorSize.y * 0.5f;
 }
 
-void Scene::DrawPlanarShadow(const Object &o, float floorY) const
-{
-    if (!o.isVisible())
-    {
-        return;
-    }
-
-    const Vector3 &objPos = o.getPos();
-    if (objPos.y < floorY - 0.05f)
-    {
-        return;
-    }
-
-    float heightAboveFloor = std::max(0.0f, objPos.y - floorY);
-    float fade = std::clamp(1.0f - heightAboveFloor * 0.05f, this->shadowMinAlpha, 1.0f);
-    float baseAlpha = static_cast<float>(this->shadowColor.a) / 255.0f;
-    float finalAlpha = std::clamp(baseAlpha * fade, this->shadowMinAlpha, 1.0f);
-    Color finalColor = this->shadowColor;
-    finalColor.a = static_cast<unsigned char>(finalAlpha * 255.0f);
-
-    Vector3 shadowPos = {objPos.x, floorY - (this->shadowThickness * 0.5f) - 0.005f, objPos.z};
-
-    if (o.isSphere())
-    {
-        float radius = o.getSphereRadius() * this->shadowInflation;
-        DrawCylinder(shadowPos, radius, radius, this->shadowThickness, 16, finalColor);
-    }
-    else
-    {
-        Vector3 size = o.getSize();
-        float width = std::max(0.1f, size.x * this->shadowInflation);
-        float length = std::max(0.1f, size.z * this->shadowInflation);
-        DrawCube(shadowPos, width, this->shadowThickness, length, finalColor);
-    }
-}
-
-void Scene::DrawShadowCollection(const std::vector<Object *> &items, float floorY) const
-{
-    for (auto *obj : items)
-    {
-        if (obj)
-        {
-            this->DrawPlanarShadow(*obj, floorY);
-        }
-    }
-}
-
 Model *Scene::AcquireDecorationModel(const std::string &relativePath)
 {
     auto found = this->decorationModelCache.find(relativePath);
@@ -328,12 +418,12 @@ void Scene::ReleaseDecorationModels()
     this->decorationModelCache.clear();
 }
 
-void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg)
+CollidableModel *Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float targetHeight, float rotationYDeg, bool addCollision)
 {
     Model *model = this->AcquireDecorationModel(modelPath);
     if (model == nullptr)
     {
-        return;
+        return nullptr;
     }
 
     BoundingBox box = GetModelBoundingBox(*model);
@@ -347,16 +437,357 @@ void Scene::AddDecoration(const char *modelPath, Vector3 desiredPosition, float 
     auto decoration = CollidableModel::Create(model, desiredPosition, scale, {0.0f, 1.0f, 0.0f}, rotationYDeg);
     if (!decoration)
     {
+        return nullptr;
+    }
+
+    if (addCollision)
+    {
+        auto *bulletObject = decoration->GetBulletObject();
+        if (this->bulletWorld && bulletObject)
+        {
+            this->bulletWorld->addCollisionObject(bulletObject);
+        }
+    }
+
+    auto *decorationPtr = decoration.get();
+    this->decorations.push_back(std::move(decoration));
+    return decorationPtr;
+}
+
+std::unique_ptr<CollidableModel> Scene::DetachDecoration(CollidableModel *target)
+{
+    if (!target)
+    {
+        return nullptr;
+    }
+
+    for (auto iter = this->decorations.begin(); iter != this->decorations.end(); ++iter)
+    {
+        if (iter->get() == target)
+        {
+            std::unique_ptr<CollidableModel> owned = std::move(*iter);
+            this->decorations.erase(iter);
+            return owned;
+        }
+    }
+    return nullptr;
+}
+
+void Scene::ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredCenter)
+{
+    if (!door)
+    {
         return;
     }
 
-    auto *bulletObject = decoration->GetBulletObject();
-    if (this->bulletWorld && bulletObject)
+    Model *doorModel = door->GetModel();
+    if (!doorModel)
     {
-        this->bulletWorld->addCollisionObject(bulletObject);
+        return;
     }
 
-    this->decorations.push_back(std::move(decoration));
+    BoundingBox bounds = GetModelBoundingBox(*doorModel);
+    Vector3 scale = door->GetScale();
+
+    Vector3 localCenter = {
+        (bounds.min.x + bounds.max.x) * 0.5f,
+        (bounds.min.y + bounds.max.y) * 0.5f,
+        (bounds.min.z + bounds.max.z) * 0.5f};
+
+    Vector3 scaledCenter = {
+        localCenter.x * scale.x,
+        localCenter.y * scale.y,
+        localCenter.z * scale.z};
+
+    Vector3 axis = door->GetRotationAxis();
+    float angle = door->GetRotationAngleDeg();
+    if (Vector3Length(axis) > 0.0001f && fabsf(angle) > 0.0001f)
+    {
+        axis = Vector3Normalize(axis);
+        Quaternion rotation = QuaternionFromAxisAngle(axis, angle * DEG2RAD);
+        scaledCenter = Vector3RotateByQuaternion(scaledCenter, rotation);
+    }
+
+    Vector3 worldPosition = Vector3Subtract(desiredCenter, scaledCenter);
+    door->SetPosition(worldPosition);
+}
+
+void Scene::InitializeRooms(float roomWidth, float roomLength, float wallHeight,
+                            const std::vector<Vector3> &centers)
+{
+    this->rooms.clear();
+    this->rooms.reserve(centers.size());
+
+    for (size_t i = 0; i < centers.size(); ++i)
+    {
+        const Vector3 &center = centers[i];
+        BoundingBox bounds;
+        bounds.min = {center.x - roomWidth * 0.5f, 0.0f, center.z - roomLength * 0.5f};
+        bounds.max = {center.x + roomWidth * 0.5f, wallHeight, center.z + roomLength * 0.5f};
+        RoomType type = (i == 0) ? RoomType::Start : RoomType::Enemy;
+        std::string name = (i == 0) ? "Spawn Room" : "Room " + std::to_string(i + 1);
+        this->rooms.push_back(std::make_unique<Room>(name, bounds, type));
+    }
+}
+
+void Scene::BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float roomWidth, float roomLength, float wallThickness)
+{
+    if (roomCenters.size() < 5)
+    {
+        return;
+    }
+
+    float halfWidth = roomWidth * 0.5f;
+    float halfLength = roomLength * 0.5f;
+    float doorCenterY = this->GetFloorTop() + doorTargetHeight * 0.5f;
+
+    struct DoorLink
+    {
+        Vector3 center;
+        float rotationDeg;
+        int roomA;
+        int roomB;
+    };
+
+    std::vector<DoorLink> doorLinks;
+    doorLinks.reserve(4);
+    doorLinks.push_back({{roomCenters[0].x,
+                          doorCenterY,
+                          roomCenters[0].z + halfLength - wallThickness * 0.5f},
+                         0.0f,
+                         0,
+                         1});
+    doorLinks.push_back({{roomCenters[1].x - halfWidth + wallThickness * 0.5f,
+                          doorCenterY,
+                          roomCenters[1].z},
+                         90.0f,
+                         1,
+                         2});
+    doorLinks.push_back({{roomCenters[1].x + halfWidth - wallThickness * 0.5f,
+                          doorCenterY,
+                          roomCenters[1].z},
+                         90.0f,
+                         1,
+                         3});
+    doorLinks.push_back({{roomCenters[3].x,
+                          doorCenterY,
+                          roomCenters[3].z + halfLength - wallThickness * 0.5f},
+                         0.0f,
+                         3,
+                         4});
+
+    for (const DoorLink &link : doorLinks)
+    {
+        this->CreateDoorBetweenRooms(link.center, link.rotationDeg, link.roomA, link.roomB);
+    }
+}
+
+void Scene::CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg, int roomA, int roomB)
+{
+    if (roomA < 0 || roomB < 0)
+    {
+        return;
+    }
+
+    if (roomA >= static_cast<int>(this->rooms.size()) || roomB >= static_cast<int>(this->rooms.size()))
+    {
+        return;
+    }
+
+    CollidableModel *doorDecoration = this->AddDecoration(doorModelPath, doorCenter, doorTargetHeight, rotationYDeg, true);
+    if (!doorDecoration)
+    {
+        return;
+    }
+
+    auto owned = this->DetachDecoration(doorDecoration);
+    if (!owned)
+    {
+        return;
+    }
+
+    this->ConfigureDoorPlacement(owned.get(), doorCenter);
+
+    Shader *shaderPtr = (this->lightingShader.id != 0) ? &this->lightingShader : nullptr;
+    auto door = Door::Create(std::move(owned), this->bulletWorld.get(), shaderPtr, doorOpenDuration, doorOpenAngleDeg);
+    if (!door)
+    {
+        return;
+    }
+
+    Door *doorPtr = door.get();
+    doorPtr->roomA = this->rooms[roomA].get();
+    doorPtr->roomB = this->rooms[roomB].get();
+    this->rooms[roomA]->AttachDoor(doorPtr);
+    this->rooms[roomB]->AttachDoor(doorPtr);
+    this->doors.push_back(std::move(door));
+}
+
+void Scene::PopulateRoomEnemies(const std::vector<Vector3> &roomCenters)
+{
+    // No longer spawns enemies immediately; stored for delayed spawn on room entry
+    (void)roomCenters; // Suppress unused parameter warning
+}
+
+void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
+{
+    if (!room || room->GetType() != RoomType::Enemy)
+    {
+        return;
+    }
+
+    const Vector3 tileSize = Vector3Scale({44.0f, 60.0f, 30.0f}, 0.06f);
+    float floorY = this->GetFloorTop();
+
+    auto placeEnemy = [&](Enemy *enemy, const Vector3 &center, const Vector2 &offset)
+    {
+        enemy->obj().size = tileSize;
+        Vector3 position = {center.x + offset.x, floorY + tileSize.y * 0.5f, center.z + offset.y};
+        enemy->obj().pos = position;
+        enemy->setPosition(position);
+        this->em.addEnemy(enemy);
+    };
+
+    // Determine composition based on room name
+    std::vector<std::pair<std::string, Vector2>> composition;
+    const std::string &name = room->GetName();
+
+    if (name == "Room 2")
+    {
+        composition = {
+            {"vanguard", Vector2{-18.0f, -8.0f}},
+            {"support", Vector2{8.0f, 12.0f}}};
+    }
+
+    else if (name == "Room 3")
+    {
+        composition = {
+            {"tank", Vector2{0.0f, 0.0f}},
+            {"vanguard", Vector2{-10.0f, 8.0f}}};
+    }
+    else if (name == "Room 4")
+    {
+        composition = {
+            {"sniper", Vector2{-12.0f, 8.0f}},
+            {"sniper", Vector2{12.0f, -10.0f}},
+            {"summoner", Vector2{0.0f, 0.0f}}};
+    }
+    else if (name == "Room 5")
+    {
+        composition = {
+            {"tank", Vector2{-16.0f, 10.0f}},
+            {"summoner", Vector2{0.0f, -12.0f}},
+            {"sniper", Vector2{16.0f, 6.0f}},
+            {"support", Vector2{8.0f, 12.0f}}}; // Phase 4: Add support enemy
+    }
+
+    for (const auto &entry : composition)
+    {
+        const std::string &type = entry.first;
+        const Vector2 &offset = entry.second;
+        if (type == "sniper")
+        {
+            placeEnemy(new ShooterEnemy(), roomCenter, offset);
+        }
+        else if (type == "tank")
+        {
+            placeEnemy(new ChargingEnemy(), roomCenter, offset);
+        }
+        else if (type == "summoner")
+        {
+            placeEnemy(new SummonerEnemy(), roomCenter, offset);
+        }
+        else if (type == "support")
+        {
+            placeEnemy(new SupportEnemy(), roomCenter, offset);
+        }
+        else if (type == "vanguard")
+        {
+            placeEnemy(new VanguardEnemy(), roomCenter, offset);
+        }
+    }
+}
+
+void Scene::AssignEnemyTextures(UIManager *uiManager)
+{
+    if (!uiManager)
+        return;
+
+    // Assign tile textures based on each enemy's associated tile type
+    std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    for (Entity *entity : enemies)
+    {
+        if (Enemy *enemy = dynamic_cast<Enemy *>(entity))
+        {
+            TileType type = enemy->getTileType();
+            enemy->obj().texture = &uiManager->muim.getSpriteSheet();
+            enemy->obj().sourceRect = uiManager->muim.getTile(type);
+            enemy->obj().useTexture = true;
+        }
+    }
+}
+
+void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
+{
+    for (auto &room : this->rooms)
+    {
+        if (room)
+        {
+            bool wasCompleted = room->IsCompleted();
+            room->Update(enemies);
+
+            // Spawn briefcase when room is newly completed
+            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy)
+            {
+                // Calculate room center
+                BoundingBox bounds = room->GetBounds();
+                Vector3 center = {
+                    (bounds.min.x + bounds.max.x) * 0.5f,
+                    bounds.min.y + 1.0f, // Spawn slightly above floor
+                    (bounds.min.z + bounds.max.z) * 0.5f};
+
+                // Generate 3-5 reward tiles with random stats
+                Inventory inv;
+                auto &tiles = inv.getTiles();
+                int tileCount = 3 + (rand() % 3); // 3-5 tiles
+                for (int i = 0; i < tileCount; ++i)
+                {
+                    TileType type = (TileType)(rand() % (int)TileType::TILE_COUNT);
+                    float damage = 10.0f + (float)(rand() % 8);
+                    float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);
+                    tiles.emplace_back(TileStats(damage, fireRate), type);
+                }
+
+                // Create briefcase
+                this->rewardBriefcases.push_back(std::make_unique<RewardBriefcase>(center, std::move(inv)));
+            }
+        }
+    }
+}
+
+Room *Scene::GetRoomContainingPosition(const Vector3 &pos) const
+{
+    for (const auto &rptr : this->rooms)
+    {
+        if (!rptr) continue;
+        const BoundingBox &b = rptr->GetBounds();
+        if (pos.x >= b.min.x && pos.x <= b.max.x && pos.y >= b.min.y && pos.y <= b.max.y && pos.z >= b.min.z && pos.z <= b.max.z)
+        {
+            return rptr.get();
+        }
+    }
+    return nullptr;
+}
+
+void Scene::DrawDoors() const
+{
+    for (const auto &door : this->doors)
+    {
+        if (door)
+        {
+            door->Draw();
+        }
+    }
 }
 
 void Scene::DrawDecorations() const
@@ -373,6 +804,9 @@ void Scene::DrawDecorations() const
 
 void Scene::InitializeLighting()
 {
+    // Reset the global light counter before creating new lights
+    ResetLights();
+
     this->lightingShader = LoadShader("shaders/lighting.vs", "shaders/lighting.fs");
     if (this->lightingShader.id == 0)
     {
@@ -387,9 +821,15 @@ void Scene::InitializeLighting()
     this->viewPosLoc = GetShaderLocation(this->lightingShader, "viewPos");
     this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
 
+    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d", this->viewPosLoc, this->ambientLoc);
+
     if (this->cubeModel.materialCount > 0)
     {
         this->cubeModel.materials[0].shader = this->lightingShader;
+    }
+    if (this->sphereModel.materialCount > 0)
+    {
+        this->sphereModel.materials[0].shader = this->lightingShader;
     }
 
     if (this->ambientLoc >= 0)
@@ -399,6 +839,14 @@ void Scene::InitializeLighting()
     if (this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
+
+    for (auto &door : this->doors)
+    {
+        if (door)
+        {
+            door->SetLightingShader(&this->lightingShader);
+        }
     }
 }
 
@@ -418,7 +866,7 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
     };
 
     Color scaledColor = {scaleComponent(color.r), scaleComponent(color.g), scaleComponent(color.b), color.a};
-    CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
+    Light light = CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
 }
 
 void Scene::ShutdownLighting()
@@ -479,44 +927,45 @@ void Scene::DrawRectangle(const Object &o) const
 void Scene::DrawSphereObject(const Object &o) const
 {
     float radius = o.getSphereRadius();
+    // Draw textured or solid sphere using the sphere model
+    Vector3 scale = {radius * 2.0f, radius * 2.0f, radius * 2.0f};
+
     if (o.useTexture && o.texture != nullptr)
     {
-        this->DrawTexturedSphere(*o.texture, o.sourceRect, o.pos, radius, o.tint);
+        // Create a temporary material with the texture for this draw call
+        Material tempMat = this->sphereModel.materials[0];
+        tempMat.maps[MATERIAL_MAP_DIFFUSE].texture = *o.texture;
+
+        // Temporarily replace material, draw, then restore
+        Material originalMat = this->sphereModel.materials[0];
+        const_cast<Scene *>(this)->sphereModel.materials[0] = tempMat;
+        DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
+        const_cast<Scene *>(this)->sphereModel.materials[0] = originalMat;
     }
     else
     {
-        DrawSphereEx(o.pos, radius, 24, 32, o.tint);
-        DrawSphereWires(o.pos, radius, 16, 16, DARKBLUE);
+        // Use the shared sphere model with the lighting shader
+        DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
     }
 }
 
 // Draws the entire scene, including the floor, objects, entities, and attacks
-void Scene::DrawScene() const
+void Scene::DrawScene(Camera camera) const
 {
     const float floorTop = this->GetFloorTop();
     auto enemyObjects = this->em.getObjects();
     auto projectileObjects = this->am.getObjects();
 
-    if (this->lightingShader.id != 0)
-    {
-        BeginShaderMode(this->lightingShader);
-        DrawRectangle(this->floor);
-        EndShaderMode();
-    }
-    else
-    {
-        DrawRectangle(this->floor);
-    }
-
-    this->DrawShadowCollection(enemyObjects, floorTop);
-    this->DrawShadowCollection(projectileObjects, floorTop);
-
+    // Begin shader mode once for all lit objects
     if (this->lightingShader.id != 0)
     {
         BeginShaderMode(this->lightingShader);
     }
 
-    // Draw all static objects in the scene
+    // Draw floor
+    DrawRectangle(this->floor);
+
+    // Draw all static objects in the scene (walls)
     for (auto &o : this->objects)
     {
         if (o && o->isVisible())
@@ -524,6 +973,16 @@ void Scene::DrawScene() const
     }
 
     this->DrawDecorations();
+    this->DrawDoors();
+
+    // Draw all reward briefcases
+    for (const auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase)
+        {
+            briefcase->Draw();
+        }
+    }
 
     int debugBulletCount = 0;
     for (auto *obj : enemyObjects)
@@ -535,20 +994,61 @@ void Scene::DrawScene() const
         DrawRectangle(*obj);
     }
 
-    // Draw all projectiles managed by the AttackManager
+    // Draw custom enemy visuals (particles, glows, etc.)
+    std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    for (Entity *entity : enemies)
+    {
+        if (entity)
+        {
+            Enemy *enemy = dynamic_cast<Enemy *>(entity);
+            if (enemy)
+            {
+                enemy->Draw();
+            }
+        }
+    }
+
+    // Draw all projectiles managed by the AttackManager (solid core)
     for (const auto &o : projectileObjects)
     {
         if (o && o->isVisible())
             DrawRectangle(*o);
     }
 
+    // End shader mode
     if (this->lightingShader.id != 0)
     {
         EndShaderMode();
     }
 
+    // Draw glow billboards for bullets using additive blending
+    if (this->glowTexture.id != 0)
+    {
+        BeginBlendMode(BLEND_ADDITIVE);
+        for (const auto &o : projectileObjects)
+        {
+            if (o && o->isVisible() && o->isSphere())
+            {
+                // Draw a billboard slightly larger than the projectile
+                DrawBillboard(camera, this->glowTexture, o->getPos(), 1.2f, Color{255, 150, 100, 200});
+            }
+        }
+        // Also draw glow for enemy bullets
+        for (auto *obj : enemyObjects)
+        {
+            if (obj && obj->isVisible() && obj->isSphere())
+            {
+                DrawBillboard(camera, this->glowTexture, obj->getPos(), 1.2f, Color{255, 150, 100, 200});
+            }
+        }
+        EndBlendMode();
+    }
+
     // Draw a red sun in the sky
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
+    
+    // Draw particles (after all other 3D elements)
+    this->particles.draw(camera);
 }
 
 void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
@@ -556,40 +1056,6 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
     const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
     if (enemies.empty())
         return;
-
-    Vector3 camForward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-    if (Vector3LengthSqr(camForward) < 0.0001f)
-    {
-        camForward = {0.0f, 0.0f, -1.0f};
-    }
-    Vector3 camRight = Vector3CrossProduct(camForward, {0.0f, 1.0f, 0.0f});
-    if (Vector3LengthSqr(camRight) < 0.0001f)
-    {
-        camRight = {1.0f, 0.0f, 0.0f};
-    }
-    else
-    {
-        camRight = Vector3Normalize(camRight);
-    }
-    Vector3 camUp = Vector3CrossProduct(camRight, camForward);
-    if (Vector3LengthSqr(camUp) < 0.0001f)
-    {
-        camUp = {0.0f, 1.0f, 0.0f};
-    }
-    else
-    {
-        camUp = Vector3Normalize(camUp);
-    }
-
-    const float worldBarWidth = 1.7f;
-    const float worldBarHeight = 0.32f;
-    const float barVisibleDistance = 55.0f;
-    const float numbersVisibleDistance = 32.0f;
-    const float verticalOffset = 1.4f;
-    const Color barOutline{0, 0, 0, 220};
-    const Color barBackground{30, 30, 36, 220};
-    const Color barFill{230, 41, 55, 255};
-
     for (Entity *entity : enemies)
     {
         if (!entity || entity->category() != ENTITY_ENEMY)
@@ -599,89 +1065,133 @@ void Scene::DrawEnemyHealthDialogs(const Camera &camera) const
         if (!enemy)
             continue;
 
-        const int currentHealth = enemy->getHealth();
-        const int maxHealth = enemy->getMaxHealth();
-        if (maxHealth <= 0 || currentHealth <= 0)
+        DialogBox *dlg = enemy->getHealthDialog();
+        if (!dlg)
             continue;
 
-        Vector3 headPos = enemy->obj().getPos();
-        headPos.y += enemy->obj().getSize().y * 0.5f + verticalOffset;
-
-        Vector3 toEnemy = Vector3Subtract(headPos, camera.position);
-        float distSq = Vector3LengthSqr(toEnemy);
-        if (distSq < 0.0001f)
-            continue;
-        float dist = sqrtf(distSq);
-        if (dist > barVisibleDistance)
-            continue;
-        Vector3 toEnemyDir = Vector3Scale(toEnemy, 1.0f / sqrtf(distSq));
-        if (Vector3DotProduct(camForward, toEnemyDir) <= 0.0f)
-            continue;
-
-        Vector2 screenPos = GetWorldToScreen(headPos, camera);
-        if (screenPos.x < 0.0f || screenPos.x > static_cast<float>(GetScreenWidth()) ||
-            screenPos.y < 0.0f || screenPos.y > static_cast<float>(GetScreenHeight()))
-        {
-            continue;
-        }
-
-        Vector3 barCenter = headPos;
-        Vector3 halfRight = Vector3Scale(camRight, worldBarWidth * 0.5f);
-        Vector3 halfUp = Vector3Scale(camUp, worldBarHeight * 0.5f);
-
-        Vector2 screenLeft = GetWorldToScreen(Vector3Subtract(barCenter, halfRight), camera);
-        Vector2 screenRight = GetWorldToScreen(Vector3Add(barCenter, halfRight), camera);
-        Vector2 screenTop = GetWorldToScreen(Vector3Add(barCenter, halfUp), camera);
-        Vector2 screenBottom = GetWorldToScreen(Vector3Subtract(barCenter, halfUp), camera);
-
-        float pixelWidth = Vector2Distance(screenLeft, screenRight);
-        float pixelHeight = fabsf(screenTop.y - screenBottom.y);
-        if (pixelWidth < 4.0f || pixelHeight < 2.0f)
-            continue;
-
-        Rectangle barBack{screenPos.x - pixelWidth * 0.5f,
-                          screenPos.y - pixelHeight,
-                          pixelWidth,
-                          pixelHeight};
-        DrawRectangleRounded(barBack, 0.45f, 6, barBackground);
-        DrawRectangleRoundedLines(barBack, 0.45f, 6, barOutline);
-
-        float fillPercent = enemy->getHealthPercent();
-        if (fillPercent > 0.0f)
-        {
-            Rectangle barFillRect = barBack;
-            barFillRect.width = barBack.width * fillPercent;
-            DrawRectangleRounded(barFillRect, 0.4f, 6, barFill);
-        }
-
-        if (dist <= numbersVisibleDistance)
-        {
-            const char *healthText = TextFormat("%d / %d", currentHealth, maxHealth);
-            int fontSize = static_cast<int>(Clamp(pixelHeight * 0.75f, 10.0f, 30.0f));
-            if (fontSize < 10)
-                fontSize = 10;
-            int textWidth = MeasureText(healthText, fontSize);
-            float textX = barBack.x + barBack.width * 0.5f - textWidth * 0.5f;
-            float textY = barBack.y + barBack.height * 0.5f - fontSize * 0.5f;
-            DrawText(healthText, static_cast<int>(textX), static_cast<int>(textY), fontSize, RAYWHITE);
-        }
+        dlg->Draw(camera);
     }
+}
+
+void Scene::DrawDamageIndicators(const Camera &camera) const
+{
+    this->damageIndicators.Draw(camera);
+}
+
+void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
+{
+    if (damageAmount <= 0.0f)
+        return;
+
+    const Object &body = enemy.obj();
+    Vector3 halfSize = Vector3Scale(body.getSize(), 0.5f);
+
+    Vector3 spawn = body.getPos();
+    spawn.x += RandomRange(-halfSize.x, halfSize.x);
+    spawn.y += halfSize.y + RandomRange(-halfSize.y * 0.2f, halfSize.y * 0.6f);
+    spawn.z += RandomRange(-halfSize.z, halfSize.z);
+
+    this->damageIndicators.Spawn(spawn, damageAmount);
 }
 
 // Updates all entities and attacks in the scene
 void Scene::Update(UpdateContext &uc)
 {
+    const float deltaSeconds = GetFrameTime();
+    
+    // Update particle system
+    this->particles.update(deltaSeconds);
+
+    // Check if player entered a new room and spawn enemies on first entry
+    Room *previousRoom = this->currentPlayerRoom;
+    this->currentPlayerRoom = nullptr;
+    for (auto &room : this->rooms)
+    {
+        if (room && room->IsPlayerInside(uc.player->pos()))
+        {
+            this->currentPlayerRoom = room.get();
+            break;
+        }
+    }
+
+    // Spawn enemies when player enters an enemy room for the first time
+    if (this->currentPlayerRoom && this->currentPlayerRoom != previousRoom)
+    {
+        if (this->currentPlayerRoom->GetType() == RoomType::Enemy)
+        {
+            if (!this->currentPlayerRoom->AreEnemiesSpawned())
+            {
+                BoundingBox bounds = this->currentPlayerRoom->GetBounds();
+                Vector3 roomCenter = {
+                    (bounds.min.x + bounds.max.x) * 0.5f,
+                    (bounds.min.y + bounds.max.y) * 0.5f,
+                    (bounds.min.z + bounds.max.z) * 0.5f};
+                this->SpawnEnemiesForRoom(this->currentPlayerRoom, roomCenter);
+                this->currentPlayerRoom->MarkEnemiesSpawned();
+                
+                // Close all doors to this room to trap enemies inside
+                for (Door *door : this->currentPlayerRoom->GetDoors())
+                {
+                    if (door)
+                    {
+                        door->Close();
+                    }
+                }
+                
+                // Assign textures to newly spawned enemies
+                if (uc.uiManager)
+                {
+                    this->AssignEnemyTextures(uc.uiManager);
+                }
+            }
+        }
+    }
+
     // Update all entities in the scene
     this->em.update(uc);
 
+    // Monitor room completion after enemies update so door logic is in sync
+    const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
+    this->UpdateRooms(enemies);
+
+    // Advance any active door animations
+    for (auto &door : this->doors)
+    {
+        if (door)
+        {
+            door->Update(deltaSeconds);
+        }
+    }
+
+    // Update all reward briefcases
+    for (auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase)
+        {
+            briefcase->Update(uc);
+        }
+    }
+
     // Update all attacks managed by the AttackManager
     this->am.update(uc);
+
+    this->damageIndicators.Update(deltaSeconds);
 }
 
 // Constructor initializes the scene with default objects
 Scene::Scene()
 {
     this->InitializeBulletWorld();
+
+    // Load shared briefcase model once
+    RewardBriefcase::LoadSharedModel();
+    
+    // Initialize particle system
+    this->particles.init();
+    // Apply global particle tuning: half-size, more intense (brighter)
+    this->particles.globalSizeMultiplier = 0.5f;
+    this->particles.globalIntensityMultiplier = 1.5f;
+
     // const Vector3 towerSize = {16.0f, 32.0f, 16.0f}; // Size of the towers
     // const Color towerColor = {150, 200, 200, 255};   // Color of the towers
 
@@ -699,11 +1209,57 @@ Scene::Scene()
     this->wallTexture = LoadTexture("rough_pine_door_4k.blend/textures/rough_pine_door_diff_4k.jpg");
     this->floorTexture = LoadTexture("wood_cabinet_worn_long_4k.blend/textures/wood_cabinet_worn_long_diff_4k.jpg");
 
-    const float roomWidth = 120.0f;
-    const float roomLength = 100.0f;
+    const float roomWidth = 72.0f;  // Reduced to 60% of original (120.0f)
+    const float roomLength = 60.0f; // Reduced to 60% of original (100.0f)
     const float wallThickness = 1.0f;
     const float wallHeight = 30.0f;
     const float floorThickness = 0.5f;
+    float doorWidth = 12.0f;
+
+    if (Model *doorSample = this->AcquireDecorationModel(doorModelPath))
+    {
+        BoundingBox sourceBounds = GetModelBoundingBox(*doorSample);
+        float sourceHeight = sourceBounds.max.y - sourceBounds.min.y;
+        if (sourceHeight > boundingAxisEpsilon)
+        {
+            float uniformScale = doorTargetHeight / sourceHeight;
+            doorWidth = (sourceBounds.max.x - sourceBounds.min.x) * uniformScale;
+        }
+    }
+
+    const float sharedWidthSpacing = roomWidth - wallThickness;
+    const float sharedLengthSpacing = roomLength - wallThickness;
+
+    std::vector<Vector3> roomCenters;
+    roomCenters.reserve(5);
+    roomCenters.push_back({0.0f, 0.0f, 0.0f});                                                 // Spawn room
+    roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                                  // Hub room
+    roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});                      // West branch
+    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                       // East branch
+    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
+
+    Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
+    Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
+    for (const Vector3 &center : roomCenters)
+    {
+        minBounds.x = std::min(minBounds.x, center.x - roomWidth * 0.5f);
+        maxBounds.x = std::max(maxBounds.x, center.x + roomWidth * 0.5f);
+        minBounds.z = std::min(minBounds.z, center.z - roomLength * 0.5f);
+        maxBounds.z = std::max(maxBounds.z, center.z + roomLength * 0.5f);
+    }
+
+    Vector3 floorSize = {(maxBounds.x - minBounds.x) + wallThickness,
+                         floorThickness,
+                         (maxBounds.z - minBounds.z) + wallThickness};
+    Vector3 floorCenter = {(minBounds.x + maxBounds.x) * 0.5f,
+                           -floorThickness / 2.0f,
+                           (minBounds.z + maxBounds.z) * 0.5f};
+
+    this->floor = Object(floorSize, floorCenter);
+    if (this->floorTexture.id != 0)
+    {
+        this->ApplyFullTexture(this->floor, this->floorTexture);
+    }
 
     auto createWall = [&](Vector3 size, Vector3 pos)
     {
@@ -715,32 +1271,133 @@ Scene::Scene()
         this->objects.push_back(wall);
     };
 
-    createWall({roomWidth, wallHeight, wallThickness}, {0.0f, wallHeight / 2.0f, roomLength / 2.0f - wallThickness / 2.0f});
-    createWall({roomWidth, wallHeight, wallThickness}, {0.0f, wallHeight / 2.0f, -roomLength / 2.0f + wallThickness / 2.0f});
-    createWall({wallThickness, wallHeight, roomLength}, {roomWidth / 2.0f - wallThickness / 2.0f, wallHeight / 2.0f, 0.0f});
-    createWall({wallThickness, wallHeight, roomLength}, {-roomWidth / 2.0f + wallThickness / 2.0f, wallHeight / 2.0f, 0.0f});
-
-    this->floor = Object({roomWidth - wallThickness, floorThickness, roomLength - wallThickness},
-                         {0.0f, -floorThickness / 2.0f, 0.0f});
-    if (this->floorTexture.id != 0)
+    struct RoomDoorConfig
     {
-        this->ApplyFullTexture(this->floor, this->floorTexture);
+        bool north = false;
+        bool south = false;
+        bool east = false;
+        bool west = false;
+    };
+
+    std::array<RoomDoorConfig, 5> doorConfigs{};
+    doorConfigs[0].north = true; // Room 1 -> Room 2
+    doorConfigs[1].south = true; // Room 2 -> Room 1
+    doorConfigs[1].west = true;  // Room 2 -> Room 3
+    doorConfigs[1].east = true;  // Room 2 -> Room 4
+    doorConfigs[2].east = true;  // Room 3 -> Room 2
+    doorConfigs[3].west = true;  // Room 4 -> Room 2
+    doorConfigs[3].north = true; // Room 4 -> Room 5
+    doorConfigs[4].south = true; // Room 5 -> Room 4
+
+    auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
+    {
+        float halfWidth = roomWidth * 0.5f;
+        float halfLength = roomLength * 0.5f;
+        float wallY = wallHeight / 2.0f;
+
+        auto addWallStrip = [&](float zPos, bool hasDoor)
+        {
+            bool canAddDoor = (doorWidth < roomWidth - 1.0f);
+            if (hasDoor && canAddDoor)
+            {
+                float sideWidth = (roomWidth - doorWidth) * 0.5f;
+                float doorHalf = doorWidth * 0.5f;
+                float segmentHalf = sideWidth * 0.5f;
+                if (sideWidth > 0.1f)
+                {
+                    createWall({sideWidth, wallHeight, wallThickness},
+                               {center.x - (doorHalf + segmentHalf), wallY, zPos});
+                    createWall({sideWidth, wallHeight, wallThickness},
+                               {center.x + (doorHalf + segmentHalf), wallY, zPos});
+                }
+            }
+            else
+            {
+                createWall({roomWidth, wallHeight, wallThickness}, {center.x, wallY, zPos});
+            }
+        };
+
+        addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorConfig.north);
+        addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorConfig.south);
+
+        auto addWallColumn = [&](float xPos, bool hasDoor)
+        {
+            bool canAddDoor = (doorWidth < roomLength - 1.0f);
+            if (hasDoor && canAddDoor)
+            {
+                float sideLength = (roomLength - doorWidth) * 0.5f;
+                float doorHalf = doorWidth * 0.5f;
+                float segmentHalf = sideLength * 0.5f;
+                if (sideLength > 0.1f)
+                {
+                    createWall({wallThickness, wallHeight, sideLength},
+                               {xPos, wallY, center.z - (doorHalf + segmentHalf)});
+                    createWall({wallThickness, wallHeight, sideLength},
+                               {xPos, wallY, center.z + (doorHalf + segmentHalf)});
+                }
+            }
+            else
+            {
+                createWall({wallThickness, wallHeight, roomLength}, {xPos, wallY, center.z});
+            }
+        };
+
+        float eastX = center.x + halfWidth - wallThickness / 2.0f;
+        float westX = center.x - halfWidth + wallThickness / 2.0f;
+        addWallColumn(eastX, doorConfig.east);
+        addWallColumn(westX, doorConfig.west);
+    };
+
+    for (size_t i = 0; i < roomCenters.size(); ++i)
+    {
+        const RoomDoorConfig &config = (i < doorConfigs.size()) ? doorConfigs[i] : RoomDoorConfig{};
+        buildRoom(roomCenters[i], config);
     }
+
+    this->InitializeRooms(roomWidth, roomLength, wallHeight, roomCenters);
+    this->doors.clear();
+    this->BuildDoorNetwork(roomCenters, roomWidth, roomLength, wallThickness);
 
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     this->cubeModel = LoadModelFromMesh(cubeMesh);
 
+    // Create a shared unit sphere model (unit diameter) for rendering spheres
+    Mesh sphereMesh = GenMeshSphere(0.5f, 16, 16);
+    this->sphereModel = LoadModelFromMesh(sphereMesh);
+
+    // Generate a soft radial gradient texture for the glow effect
+    // Center is White (Hot), Edge is Black (Transparent in Additive Mode)
+    Image glowImg = GenImageGradientRadial(64, 64, 0.0f, WHITE, BLACK);
+    this->glowTexture = LoadTextureFromImage(glowImg);
+    UnloadImage(glowImg);
+
     this->InitializeLighting();
+
+    // Apply lighting shader to walls after InitializeLighting
+    if (this->lightingShader.id != 0)
+    {
+        for (auto *wall : this->objects)
+        {
+            if (wall && wall->useTexture && wall->texture != nullptr)
+            {
+                // Walls don't use the model system, but floor uses cubeModel
+                // which already has shader applied in InitializeLighting
+            }
+        }
+    }
 
     if (this->lightingShader.id != 0)
     {
-        this->CreatePointLight({0.0f, 3, 0.0f}, {255, 214, 170, 255}, 0.2f);
-        // this->CreatePointLight({0.0f, wallHeight - 2.0f, 0.0f}, {255, 214, 170, 255}, 0.35f);
-        // this->CreatePointLight({roomWidth / 2.5f, wallHeight * 0.8f, roomLength / 2.5f}, {255, 190, 140, 255}, 0.3f);
-        // this->CreatePointLight({-roomWidth / 2.5f, wallHeight * 0.8f, -roomLength / 2.5f}, {255, 220, 190, 255}, 0.25f);
+        for (const Vector3 &center : roomCenters)
+        {
+            this->CreatePointLight({center.x, 3.0f, center.z}, {255, 214, 180, 255}, 0.24f);
+        }
     }
 
+    this->PopulateRoomEnemies(roomCenters);
+
+    // Load decorations directly
     this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
     this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
     this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
@@ -772,6 +1429,130 @@ void Scene::SetViewPosition(const Vector3 &viewPosition)
     if (this->lightingShader.id != 0 && this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
+}
+
+std::vector<RewardBriefcase *> Scene::GetRewardBriefcases()
+{
+    std::vector<RewardBriefcase *> result;
+    for (auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase)
+        {
+            result.push_back(briefcase.get());
+        }
+    }
+    return result;
+}
+
+void Scene::UpdateRoomDoors(const Vector3 &playerPos)
+{
+    // Determine current player room
+    Room *newRoom = nullptr;
+    for (auto &room : this->rooms){
+        if (room && room->IsPlayerInside(playerPos))
+        {
+            newRoom = room.get();
+            break;
+        }
+    }
+
+    // If player changed rooms, close door behind them (unless both rooms are cleared)
+    if (newRoom != this->currentPlayerRoom)
+    {
+        if (this->currentPlayerRoom)
+        {
+            for (Door *door : this->currentPlayerRoom->GetDoors())
+            {
+                if (door && door->IsOpen())
+                {
+                    // Check if both connected rooms are cleared
+                    bool bothCleared = false;
+                    if (door->GetRoomA() && door->GetRoomB())
+                    {
+                        bothCleared = door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted();
+                    }
+                    
+                    // Close door unless both rooms are cleared
+                    if (!bothCleared)
+                    {
+                        door->Close();
+                    }
+                }
+            }
+        }
+        
+        // Also close any doors in the new room that shouldn't be open
+        // (in case player somehow skipped past a closed door)
+        if (newRoom)
+        {
+            for (Door *door : newRoom->GetDoors())
+            {
+                if (door && door->IsOpen())
+                {
+                    // Check if both connected rooms are cleared
+                    bool bothCleared = false;
+                    if (door->GetRoomA() && door->GetRoomB())
+                    {
+                        bothCleared = door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted();
+                    }
+                    
+                    // Close door unless both rooms are cleared
+                    if (!bothCleared)
+                    {
+                        door->Close();
+                    }
+                }
+            }
+        }
+    }
+
+    this->currentPlayerRoom = newRoom;
+}
+
+void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const
+{
+    const int screenW = GetScreenWidth();
+    const int screenH = GetScreenHeight();
+    const int fontSize = 22;
+    int y = screenH - 50;
+
+    // Briefcase prompt (if any nearby and UI not open)
+    bool briefcaseNearby = false;
+    for (const auto &briefcase : this->rewardBriefcases)
+    {
+        if (briefcase && briefcase->IsPlayerNearby(playerPos) && !briefcase->IsActivated())
+        {
+            briefcaseNearby = true;
+            break;
+        }
+    }
+    if (briefcaseNearby)
+    {
+        const char *text = "Press C to Open Briefcase";
+        int tw = MeasureText(text, fontSize);
+        DrawText(text, (screenW - tw) / 2, y, fontSize, YELLOW);
+        y -= 26;
+    }
+
+    // Door prompt (if near a closed door in a completed room)
+    if (this->currentPlayerRoom && this->currentPlayerRoom->IsCompleted())
+    {
+        bool doorNearby = false;
+        for (Door *door : this->currentPlayerRoom->GetDoors())
+        {
+            if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
+            {
+                doorNearby = true;
+                break;
+            }
+        }
+        if (doorNearby)
+        {
+            const char *text = "Press C to Open Door";
+            int tw = MeasureText(text, fontSize);
+            DrawText(text, (screenW - tw) / 2, y, fontSize, GREEN);
+        }
     }
 }
 

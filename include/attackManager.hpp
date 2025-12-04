@@ -20,15 +20,18 @@ private:
         DefaultThrow,
         DotBomb,
         Melee,
-        Dash
+        Dash,
+        BambooTriple
     };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
+    std::vector<BasicTileAttack *> basicTileAttacks;
     std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<DashAttack *> dashAttacks;
     std::vector<DotBombAttack *> dotBombAttacks;
-    std::vector<std::pair<MahjongTileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
+    std::vector<BambooTripleAttack *> bambooTripleAttacks;
+    std::vector<std::pair<TileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
     void checkActivation(Entity *player);
@@ -49,6 +52,11 @@ public:
     void recordThrow(UpdateContext &uc);
 
     /**
+     * @brief Retrieve or create a `BasicTileAttack` bound to `spawnedBy`.
+     */
+    BasicTileAttack *getBasicTileAttack(Entity *spawnedBy);
+
+    /**
      * @brief Retrieve or create a `ThousandTileAttack` bound to `spawnedBy`.
      */
     ThousandTileAttack *getSingleTileAttack(Entity *spawnedBy);
@@ -59,6 +67,7 @@ public:
     MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
     DashAttack *getDashAttack(Entity *spawnedBy);
     DotBombAttack *getDotBombAttack(Entity *spawnedBy);
+    BambooTripleAttack *getBambooTripleAttack(Entity *spawnedBy);
     bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**
