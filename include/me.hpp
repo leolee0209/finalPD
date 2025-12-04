@@ -662,7 +662,7 @@ private:
     // Shockwave on dive landing
     float shockwaveRadius = 0.0f;           // Current radius of expanding shockwave
     float shockwaveMaxRadius = 22.0f;       // Max radius before shockwave stops
-    float shockwaveExpandSpeed = 20.0f;     // Units per second
+    float shockwaveExpandSpeed = 18.0f;     // Units per second
     Vector3 shockwaveCenter = {0.0f, 0.0f, 0.0f}; // Center of shockwave
     bool shockwaveActive = false;           // Is shockwave currently active
     float shockwaveDamage = 22.0f;          // Damage dealt by shockwave
