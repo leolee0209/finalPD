@@ -123,6 +123,7 @@ public:
     void draw(UpdateContext &uc, Inventory &playerInventory);
     void addElement(UIElement *element);
     void setSlotCooldownPercent(int slotIndex, float percent);
+    void setSlotValidity(int slotIndex, bool valid);
 
     void setPauseMenuVisible(bool visible);
     bool isPauseMenuVisible() const { return pauseMenuVisible; }
@@ -200,6 +201,7 @@ private:
     std::array<std::vector<SlotTileEntry>, slotCount> attackSlots;
     std::array<AttackSlotElement *, slotCount> slotElements{}; // Owned UI wrappers for each slot
     std::array<float, slotCount> slotCooldowns{};
+    std::array<bool, slotCount> slotValid{};
     static const char *slotKeyLabels[slotCount];
     bool slotsInitialized = false;
     bool isDraggingTile = false;
@@ -208,4 +210,10 @@ private:
     int draggingFromTileIndex = -1;
     SlotTileEntry draggingTile;
     Vector2 draggingTilePos{0.0f, 0.0f};
+    // Left-click drag detection (selection on click, drag on move)
+    bool leftMousePressed = false;
+    Vector2 leftMouseDownPos{0.0f, 0.0f};
+    int leftMouseDownHandIndex = -1;
+    int leftMouseDownSlot = -1;
+    int leftMouseDownSlotTileIndex = -1;
 };

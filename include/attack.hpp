@@ -287,11 +287,11 @@ private:
     static constexpr float reducedCooldown = 0.2f;
 };
 
-class DotBombAttack : public AttackController
+class BambooBombAttack : public AttackController
 {
 public:
-    explicit DotBombAttack(Entity *_spawnedBy);
-    ~DotBombAttack() override;
+    explicit BambooBombAttack(Entity *_spawnedBy);
+    ~BambooBombAttack() override;
 
     void update(UpdateContext &uc) override;
     std::vector<Entity *> getEntities() override;
@@ -306,6 +306,7 @@ private:
         bool exploded = false;
         float flightTimeRemaining = 4.0f;
         float explosionTimer = 0.0f;
+        float tumbleRotation = 0.0f;  // Current tumble angle
         Object explosionFx;
         bool fxActive = false;
         Vector3 explosionOrigin{0.0f, 0.0f, 0.0f};
@@ -324,6 +325,7 @@ private:
     static constexpr float projectileRadius = 0.45f;
     static constexpr float projectileHeight = 1.4f;
     static constexpr float projectileLength = 3.5f;
+    static constexpr float tumbleSpeed = 720.0f;  // Heavy end-over-end tumbling (degrees/sec)
 
     static constexpr float explosionLifetime = 0.35f;
     static constexpr float explosionStartRadius = 3.0f;
@@ -349,6 +351,43 @@ private:
     static bool explosionTextureLoaded;
     static int explosionTextureUsers;
     static constexpr const char *explosionTexturePath = "wabbit_alpha.png";
+};
+
+/**
+ * @brief Fan Shot shotgun-style attack - fires 5 projectiles in horizontal spread.
+ */
+class FanShotAttack : public AttackController
+{
+public:
+    explicit FanShotAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override;
+    std::vector<Object *> obj();
+    bool trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+
+private:
+    std::vector<Projectile> projectiles;
+    float cooldownRemaining = 0.0f;
+
+    // Camera recoil state
+    bool recoilActive = false;
+    float recoilTimer = 0.0f;
+    float originalPitch = 0.0f;
+
+    static constexpr int spreadCount = 5;           // Number of projectiles
+    static constexpr float spreadAngle = 40.0f;     // Total spread angle in degrees
+    static constexpr float projectileSpeed = 65.0f; // Fast shotgun pellets
+    static constexpr float projectileDamage = 8.0f; // Lower damage per pellet
+    static constexpr float projectileSize = 0.022f; // Slightly smaller than normal
+    static constexpr float muzzleHeight = 1.6f;
+    static constexpr float cooldownDuration = 1.2f; // Longer cooldown for shotgun
+    static constexpr float recoilPitchKick = 0.3f;  // Camera pitch recoil
+    static constexpr float recoilDuration = 0.3f;   // Total recoil time
+    static constexpr float recoilKickTime = 0.1f;   // Fast upward kick
+        static constexpr float recoilKickSpeed = 8.0f;      // Speed of upward recoil kick
+        static constexpr float recoilRecoverySpeed = 4.0f;  // Speed of camera recovery (slower)
 };
 
 /**
@@ -457,6 +496,7 @@ private:
     Vector3 evalArcTangent(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right) const;
     void resetArcDefaults();
     void nudgeArc(int comboIndex, const Vector3 &deltaP1, const Vector3 &deltaP2);
+    void nudgeArcPoint(int comboIndex, int pointIndex, const Vector3 &delta);
     bool saveArcCurves() const;
     bool loadArcCurves();
 public:
@@ -520,4 +560,120 @@ private:
     Entity *findNearestEnemy(UpdateContext &uc, const Vector3 &position, float searchRadius) const;
     void updateOrbMovement(OrbProjectile &orb, UpdateContext &uc, float deltaSeconds);
     void checkOrbHits(OrbProjectile &orb, UpdateContext &uc);
+};
+
+/** @brief Seismic Slam - leap and ground pound with arc motion and camera control.
+ *
+ * Player follows a Bézier arc, faces tangent direction, slams ground with shockwave.
+ * Uses same tweak framework as Dragon Claw for arc editing.
+ */
+class SeismicSlamAttack : public AttackController
+{
+public:
+    explicit SeismicSlamAttack(Entity *_spawnedBy);
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj();
+    bool trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+
+    // Tweak helpers (callable from main loop)
+    void handleTweakHotkeys();
+    void refreshDebugArc(const Vector3 &forward, const Vector3 &right, const Vector3 &basePos);
+    static bool isTweakModeEnabled() { return tweakModeEnabled; }
+    static void toggleTweakMode() { tweakModeEnabled = !tweakModeEnabled; }
+    static void setTweakMode(bool enabled) { tweakModeEnabled = enabled; }
+    static void applyTweakCamera(const Me &player, Camera &cam);
+    static void drawTweakHud(const Me &player);
+
+    struct ArcCurve
+    {
+        Vector3 p0; // Start (ground)
+        Vector3 p1; // First control (upward arc)
+        Vector3 p2; // Second control (apex)
+        Vector3 p3; // End (landing)
+    };
+
+private:
+
+    enum SlamState
+    {
+        SLAM_IDLE,
+        SLAM_LEAP,      // Player follows arc upward
+        SLAM_DESCEND,   // Player descends to ground
+        SLAM_IMPACT,    // Ground impact and shockwave
+        SLAM_RECOVERY   // Brief recovery period
+    };
+
+    SlamState state = SLAM_IDLE;
+    float stateTimer = 0.0f;
+    float animationProgress = 0.0f; // 0 to 1 for arc interpolation
+    Vector3 leapStartPos = {0.0f, 0.0f, 0.0f};
+    Vector3 savedVelocity = {0.0f, 0.0f, 0.0f};
+    Vector3 lastForward = {0.0f, 0.0f, -1.0f};
+    Vector3 lastRight = {1.0f, 0.0f, 0.0f};
+    Vector3 lastBasePos = {0.0f, 0.0f, 0.0f};
+    Object shockwaveRing;
+    bool shockwaveActive = false;
+    float shockwaveTimer = 0.0f;
+    std::vector<Object> debugArcPoints;
+
+    ArcCurve arcCurve;
+    ArcCurve defaultArcCurve;
+    float cooldownRemaining = 0.0f;
+
+    // Timing parameters
+    static constexpr float leapDuration = 0.6f;      // Time to reach apex
+    static constexpr float descendDuration = 0.4f;   // Time to fall to ground
+    static constexpr float impactDuration = 0.3f;    // Shockwave expansion time
+    static constexpr float recoveryDuration = 0.2f;  // Brief lock after landing
+    static constexpr float cooldownDuration = 3.0f;  // Long cooldown for ultimate
+
+    // Damage and physics
+    static constexpr float slamDamage = 40.0f;
+    static constexpr float slamKnockback = 60.0f;
+    static constexpr float slamKnockbackDuration = 0.8f;
+    static constexpr float slamLift = 35.0f;
+    static constexpr float shockwaveStartRadius = 2.0f;
+    static constexpr float shockwaveEndRadius = 12.0f;
+    static constexpr float shockwaveHeight = 1.5f;
+    static constexpr float stunDuration = 1.0f;
+
+    // Camera control
+    static constexpr float windupLookUpAngle = 45.0f * DEG2RAD;  // Look up during leap
+    static constexpr float impactLookDownAngle = 60.0f * DEG2RAD; // Look down at impact
+    static constexpr float cameraTransitionSpeed = 3.0f;          // How fast camera tilts
+    static constexpr float cameraRecoverySpeed = 1.5f;            // Slower recovery to neutral
+    static constexpr float cameraShakeMagnitude = 1.2f;           // Strong shake on impact
+    static constexpr float cameraShakeDuration = 0.4f;
+
+    // Arc parameters (local space: x=right, y=up, z=forward)
+    static constexpr float arcForwardDistance = 8.0f;  // How far forward to leap
+    static constexpr float arcApexHeight = 5.0f;       // Peak height of leap
+    static constexpr float gravityShape = 1.0f;        // 0 = linear speed, 1 = fast start/end, slow apex
+
+    // Tweak system
+    static constexpr int arcDebugSamples = 32;
+    static constexpr float debugParticleRadius = 0.12f;
+    static constexpr const char *arcSaveFilename = "seismic_slam_arc.txt";
+    static bool tweakModeEnabled;
+
+    void performLeap(UpdateContext &uc);
+    void updateLeap(UpdateContext &uc, float delta);
+    void updateDescend(UpdateContext &uc, float delta);
+    void performImpact(UpdateContext &uc);
+    void updateImpact(UpdateContext &uc, float delta);
+    void updateRecovery(UpdateContext &uc, float delta);
+    void applyShockwaveDamage(UpdateContext &uc);
+    void updateCameraLook(UpdateContext &uc, float targetPitch);
+    void restoreCameraControl(UpdateContext &uc);
+
+    Vector3 evalArcPoint(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right, const Vector3 &basePos) const;
+    Vector3 evalArcTangent(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right) const;
+    void resetArcDefaults();
+    void nudgeArc(const Vector3 &deltaP1, const Vector3 &deltaP2);
+    void nudgeArcPoint(int pointIndex, const Vector3 &delta);
+    bool saveArcCurve() const;
+    bool loadArcCurve();
 };

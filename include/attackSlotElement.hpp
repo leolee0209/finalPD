@@ -22,7 +22,7 @@ public:
     ~AttackSlotElement() override = default;
 
     void setEntries(const std::vector<SlotTileEntry> *entries); // Pointer stays owned by UIManager
-    void setActive(bool active);                                // Highlights the slot when it is selected
+    void setValid(bool valid) { isValidCombo = valid; }
     void setKeyLabel(const std::string &label);                 // Displays "1/2/3" labels above the frame
     void setBounds(const Rectangle &rect);                      // UIManager drives layout each frame
     Rectangle getTileRect(int tileIndex) const;                 // Used for drag/drop hit testing
@@ -36,7 +36,7 @@ private:
     MahjongUIManager &mahjongUI;
     int slotIndex = 0;
     int capacity = 0;
-    bool isActive = false;
+    bool isValidCombo = true;
     std::string keyLabel;
     float padding = 5.0f;
     float spacing = 10.0f;

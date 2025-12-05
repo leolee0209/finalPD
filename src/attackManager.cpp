@@ -2,6 +2,7 @@
 #include <array>
 #include <algorithm>
 #include <iostream>
+#include <string>
 
 namespace
 {
@@ -13,6 +14,11 @@ bool isCharacterTile(TileType tile)
 int getCharacterValue(TileType tile)
 {
     return static_cast<int>(tile) - static_cast<int>(TileType::CHARACTER_1) + 1;
+}
+
+int getBambooValue(TileType tile)
+{
+    return static_cast<int>(tile) - static_cast<int>(TileType::BAMBOO_1) + 1;
 }
 
 bool isDotTile(TileType tile)
@@ -81,7 +87,7 @@ AttackManager::~AttackManager()
         delete m;
     for (auto &d : this->dashAttacks)
         delete d;
-    for (auto &b : this->dotBombAttacks)
+    for (auto &b : this->bambooBombAttacks)
         delete b;
     for (auto &b : this->bambooTripleAttacks)
         delete b;
@@ -89,6 +95,10 @@ AttackManager::~AttackManager()
         delete d;
     for (auto &a : this->arcaneOrbAttacks)
         delete a;
+    for (auto &f : this->fanShotAttacks)
+        delete f;
+    for (auto &s : this->seismicSlamAttacks)
+        delete s;
 }
 
 // Updates all ThousandAttack instances
@@ -102,7 +112,7 @@ void AttackManager::update(UpdateContext& uc)
         m->update(uc);
     for (auto &d : this->dashAttacks)
         d->update(uc);
-    for (auto &b : this->dotBombAttacks)
+    for (auto &b : this->bambooBombAttacks)
         b->update(uc);
     for (auto &b : this->bambooTripleAttacks)
         b->update(uc);
@@ -110,6 +120,10 @@ void AttackManager::update(UpdateContext& uc)
         d->update(uc);
     for (auto &a : this->arcaneOrbAttacks)
         a->update(uc);
+    for (auto &f : this->fanShotAttacks)
+        f->update(uc);
+    for (auto &s : this->seismicSlamAttacks)
+        s->update(uc);
 
     // Update BasicTileAttack cooldown modifiers based on BambooTripleAttack state
     for (auto &basic : this->basicTileAttacks)
@@ -140,6 +154,27 @@ void AttackManager::update(UpdateContext& uc)
     {
         for (int slotIdx = 0; slotIdx < UIManager::slotCount; ++slotIdx)
         {
+            const auto &slotEntries = uc.uiManager->getSlotEntries(slotIdx);
+            
+            // Empty slots are valid (no red outline)
+            if (slotEntries.empty())
+            {
+                uc.uiManager->setSlotValidity(slotIdx, true);
+            }
+            // Single tile or two tiles are invalid for skill slots
+            else if (slotEntries.size() < 3)
+            {
+                uc.uiManager->setSlotValidity(slotIdx, false);
+            }
+            // Three or more tiles: check if they form a valid combo
+            else
+            {
+                SlotAttackKind kind = classifySlotAttack(slotEntries);
+                // Only DefaultThrow and None are invalid for 3+ tiles
+                bool valid = (kind != SlotAttackKind::None && kind != SlotAttackKind::DefaultThrow);
+                uc.uiManager->setSlotValidity(slotIdx, valid);
+            }
+
             float percent = computeSlotCooldownPercent(slotIdx, uc);
             uc.uiManager->setSlotCooldownPercent(slotIdx, percent);
         }
@@ -227,7 +262,7 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
 
     if (isDotTriple)
     {
-        if (DotBombAttack *bomb = getDotBombAttack(uc.player))
+        if (BambooBombAttack *bomb = getBambooBombAttack(uc.player))
         {
             if (bomb->trigger(uc, slotEntries[0].tile))
                 return true;
@@ -250,8 +285,46 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
         return false;
     }
 
+    // Check for FanShot combo (Bamboo 1-2-3 sequence)
+    if (canCheckCombo)
+    {
+        if (slotEntries[0].isValid() && slotEntries[1].isValid() && slotEntries[2].isValid())
+        {
+            if (isBambooTile(slotEntries[0].tile) && isBambooTile(slotEntries[1].tile) && isBambooTile(slotEntries[2].tile))
+            {
+                int val0 = getBambooValue(slotEntries[0].tile);
+                int val1 = getBambooValue(slotEntries[1].tile);
+                int val2 = getBambooValue(slotEntries[2].tile);
+                
+                std::array<int, 3> sortedBamboo = {val0, val1, val2};
+                std::sort(sortedBamboo.begin(), sortedBamboo.end());
+                
+                if (sortedBamboo[0] == 1 && sortedBamboo[1] == 2 && sortedBamboo[2] == 3)
+                {
+                    if (FanShotAttack *fanShot = getFanShotAttack(uc.player))
+                    {
+                        if (fanShot->trigger(uc))
+                            return true;
+                    }
+                    return false;
+                }
+            }
+        }
+    }
+
     if (canCheckCombo && allValidCharacters)
     {
+        // Check for SeismicSlam combo (Character 2-2-2)
+        if (characterValues[0] == 2 && characterValues[1] == 2 && characterValues[2] == 2)
+        {
+            if (SeismicSlamAttack *slam = getSeismicSlamAttack(uc.player))
+            {
+                if (slam->trigger(uc))
+                    return true;
+            }
+            return false;
+        }
+        
         bool isMeleeCombo = (characterValues[0] == characterValues[1]) && (characterValues[1] == characterValues[2]);
         bool isDashCombo = false;
         if (!isMeleeCombo)
@@ -263,7 +336,7 @@ bool AttackManager::triggerSlotAttack(int slotIndex, UpdateContext &uc)
 
         if (isMeleeCombo)
         {
-            if (MeleePushAttack *melee = getMeleeAttack(uc.player))
+            if (MeleePushAttack *melee = getMeleePushAttack(uc.player))
             {
                 melee->trigger(uc);
                 return true;
@@ -336,19 +409,19 @@ void AttackManager::checkActivation(Entity *player)
     }
 }
 
-AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vector<SlotTileEntry> &slotEntries) const
+std::string AttackManager::classifyAttackType(const std::vector<SlotTileEntry> &tiles)
 {
-    if (slotEntries.empty())
-        return SlotAttackKind::None;
+    if (tiles.empty())
+        return "NA";
 
-    bool canCheckCombo = slotEntries.size() >= 3;
+    bool canCheckCombo = tiles.size() >= 3;
     std::array<int, 3> characterValues{};
     bool allValidCharacters = canCheckCombo;
     if (canCheckCombo)
     {
         for (int i = 0; i < 3; ++i)
         {
-            const auto &entry = slotEntries[i];
+            const auto &entry = tiles[i];
             if (!entry.isValid() || !isCharacterTile(entry.tile))
             {
                 allValidCharacters = false;
@@ -358,16 +431,17 @@ AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vecto
         }
     }
 
+    // Check Dot Triple (e.g., Dot 5-5-5)
     bool isDotTriple = false;
     if (canCheckCombo)
     {
-        const auto &first = slotEntries[0];
+        const auto &first = tiles[0];
         if (first.isValid() && isDotTile(first.tile))
         {
             isDotTriple = true;
             for (int i = 1; i < 3; ++i)
             {
-                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                if (!tiles[i].isValid() || tiles[i].tile != first.tile)
                 {
                     isDotTriple = false;
                     break;
@@ -376,16 +450,20 @@ AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vecto
         }
     }
 
+    if (isDotTriple)
+        return "DotBomb";
+
+    // Check Bamboo Triple (e.g., Bamboo 3-3-3)
     bool isBambooTriple = false;
     if (canCheckCombo && !isDotTriple)
     {
-        const auto &first = slotEntries[0];
+        const auto &first = tiles[0];
         if (first.isValid() && isBambooTile(first.tile))
         {
             isBambooTriple = true;
             for (int i = 1; i < 3; ++i)
             {
-                if (!slotEntries[i].isValid() || slotEntries[i].tile != first.tile)
+                if (!tiles[i].isValid() || tiles[i].tile != first.tile)
                 {
                     isBambooTriple = false;
                     break;
@@ -394,29 +472,70 @@ AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vecto
         }
     }
 
-    if (isDotTriple)
-        return SlotAttackKind::DotBomb;
-
     if (isBambooTriple)
-        return SlotAttackKind::BambooTriple;
+        return "BambooTriple";
 
+    // Check for Bamboo FanShot combo (1-2-3 in any order)
+    if (canCheckCombo)
+    {
+        if (tiles[0].isValid() && tiles[1].isValid() && tiles[2].isValid())
+        {
+            if (isBambooTile(tiles[0].tile) && isBambooTile(tiles[1].tile) && isBambooTile(tiles[2].tile))
+            {
+                int val0 = getBambooValue(tiles[0].tile);
+                int val1 = getBambooValue(tiles[1].tile);
+                int val2 = getBambooValue(tiles[2].tile);
+                
+                std::array<int, 3> sortedBamboo = {val0, val1, val2};
+                std::sort(sortedBamboo.begin(), sortedBamboo.end());
+                
+                if (sortedBamboo[0] == 1 && sortedBamboo[1] == 2 && sortedBamboo[2] == 3)
+                    return "FanShot";
+            }
+        }
+    }
+
+    // Check Character combos
     if (canCheckCombo && allValidCharacters)
     {
+        // Seismic Slam: Character 2-2-2
+        if (characterValues[0] == 2 && characterValues[1] == 2 && characterValues[2] == 2)
+            return "SeismicSlam";
+        
+        // Melee: All same value
         bool isMeleeCombo = (characterValues[0] == characterValues[1]) && (characterValues[1] == characterValues[2]);
 
+        // Dash: Sequential values in any order (e.g., 1-2-3, 3-4-5)
         auto sortedValues = characterValues;
         std::sort(sortedValues.begin(), sortedValues.end());
         bool isDashCombo = (sortedValues[0] + 1 == sortedValues[1]) && (sortedValues[1] + 1 == sortedValues[2]);
 
         if (isMeleeCombo)
-            return SlotAttackKind::Melee;
+            return "Melee";
         if (isDashCombo)
-            return SlotAttackKind::Dash;
+            return "Dash";
     }
 
-    if (slotEntries.front().isValid())
-        return SlotAttackKind::DefaultThrow;
+    // Default throw for single valid tile
+    if (tiles.front().isValid())
+        return "DefaultThrow";
 
+    return "NA";
+}
+
+AttackManager::SlotAttackKind AttackManager::classifySlotAttack(const std::vector<SlotTileEntry> &slotEntries) const
+{
+    // Use the static function and convert back to enum
+    std::string attackType = classifyAttackType(slotEntries);
+    
+    if (attackType == "DotBomb") return SlotAttackKind::DotBomb;
+    if (attackType == "BambooTriple") return SlotAttackKind::BambooTriple;
+    if (attackType == "FanShot") return SlotAttackKind::FanShot;
+    if (attackType == "SeismicSlam") return SlotAttackKind::SeismicSlam;
+    if (attackType == "Melee") return SlotAttackKind::Melee;
+    if (attackType == "Dash") return SlotAttackKind::Dash;
+    if (attackType == "DefaultThrow") return SlotAttackKind::DefaultThrow;
+    
     return SlotAttackKind::None;
 }
 
@@ -431,7 +550,7 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
     {
     case SlotAttackKind::DotBomb:
     {
-        DotBombAttack *bomb = getDotBombAttack(uc.player);
+        BambooBombAttack *bomb = getBambooBombAttack(uc.player);
         return bomb ? bomb->getCooldownPercent() : 0.0f;
     }
     case SlotAttackKind::BambooTriple:
@@ -441,7 +560,7 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
     }
     case SlotAttackKind::Melee:
     {
-        MeleePushAttack *melee = getMeleeAttack(uc.player);
+        MeleePushAttack *melee = getMeleePushAttack(uc.player);
         return melee ? melee->getCooldownPercent() : 0.0f;
     }
     case SlotAttackKind::Dash:
@@ -449,8 +568,21 @@ float AttackManager::computeSlotCooldownPercent(int slotIndex, UpdateContext &uc
         DashAttack *dash = getDashAttack(uc.player);
         return dash ? dash->getCooldownPercent() : 0.0f;
     }
+    case SlotAttackKind::FanShot:
+    {
+        FanShotAttack *fanShot = getFanShotAttack(uc.player);
+        return fanShot ? fanShot->getCooldownPercent() : 0.0f;
+    }
+    case SlotAttackKind::SeismicSlam:
+    {
+        SeismicSlamAttack *slam = getSeismicSlamAttack(uc.player);
+        return slam ? slam->getCooldownPercent() : 0.0f;
+    }
+    case SlotAttackKind::None:
+    case SlotAttackKind::DefaultThrow:
     default:
-        return 0.0f;
+        // Empty slots or default throws should show as ready (not gray)
+        return 1.0f;
     }
 }
 
@@ -478,7 +610,7 @@ ThousandTileAttack *AttackManager::getSingleTileAttack(Entity *spawnedBy)
     return this->singleTileAttack.back();
 }
 
-MeleePushAttack *AttackManager::getMeleeAttack(Entity *spawnedBy)
+MeleePushAttack *AttackManager::getMeleePushAttack(Entity *spawnedBy)
 {
     for (const auto &m : this->meleeAttacks)
     {
@@ -511,15 +643,15 @@ BambooTripleAttack *AttackManager::getBambooTripleAttack(Entity *spawnedBy)
     return this->bambooTripleAttacks.back();
 }
 
-DotBombAttack *AttackManager::getDotBombAttack(Entity *spawnedBy)
+BambooBombAttack *AttackManager::getBambooBombAttack(Entity *spawnedBy)
 {
-    for (const auto &b : this->dotBombAttacks)
+    for (const auto &b : this->bambooBombAttacks)
     {
         if (b->spawnedBy == spawnedBy)
             return b;
     }
-    this->dotBombAttacks.push_back(new DotBombAttack(spawnedBy));
-    return this->dotBombAttacks.back();
+    this->bambooBombAttacks.push_back(new BambooBombAttack(spawnedBy));
+    return this->bambooBombAttacks.back();
 }
 
 std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
@@ -538,9 +670,14 @@ std::vector<Entity *> AttackManager::getEntities(EntityCategory cat)
             auto v = a->getEntities();
             ret.insert(ret.end(), v.begin(), v.end());
         }
-        for (const auto &b : this->dotBombAttacks)
+        for (const auto &b : this->bambooBombAttacks)
         {
             auto v = b->getEntities();
+            ret.insert(ret.end(), v.begin(), v.end());
+        }
+        for (const auto &f : this->fanShotAttacks)
+        {
+            auto v = f->getEntities();
             ret.insert(ret.end(), v.begin(), v.end());
         }
     }
@@ -566,7 +703,7 @@ std::vector<Object *> AttackManager::getObjects() const
         auto v = m->obj();
         ret.insert(ret.end(), v.begin(), v.end());
     }
-    for (const auto &b : this->dotBombAttacks)
+    for (const auto &b : this->bambooBombAttacks)
     {
         auto v = b->obj();
         ret.insert(ret.end(), v.begin(), v.end());
@@ -579,6 +716,16 @@ std::vector<Object *> AttackManager::getObjects() const
     for (const auto &a : this->arcaneOrbAttacks)
     {
         auto v = a->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &f : this->fanShotAttacks)
+    {
+        auto v = f->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &s : this->seismicSlamAttacks)
+    {
+        auto v = s->obj();
         ret.insert(ret.end(), v.begin(), v.end());
     }
     // dash attack currently has no objects to render
@@ -628,4 +775,26 @@ ArcaneOrbAttack *AttackManager::getArcaneOrbAttack(Entity *spawnedBy)
     }
     this->arcaneOrbAttacks.push_back(new ArcaneOrbAttack(spawnedBy));
     return this->arcaneOrbAttacks.back();
+}
+
+FanShotAttack *AttackManager::getFanShotAttack(Entity *spawnedBy)
+{
+    for (const auto &f : this->fanShotAttacks)
+    {
+        if (f->spawnedBy == spawnedBy)
+            return f;
+    }
+    this->fanShotAttacks.push_back(new FanShotAttack(spawnedBy));
+    return this->fanShotAttacks.back();
+}
+
+SeismicSlamAttack *AttackManager::getSeismicSlamAttack(Entity *spawnedBy)
+{
+    for (const auto &s : this->seismicSlamAttacks)
+    {
+        if (s->spawnedBy == spawnedBy)
+            return s;
+    }
+    this->seismicSlamAttacks.push_back(new SeismicSlamAttack(spawnedBy));
+    return this->seismicSlamAttacks.back();
 }

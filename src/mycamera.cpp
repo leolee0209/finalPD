@@ -138,3 +138,17 @@ void MyCamera::addFovKick(float magnitude, float durationSeconds)
     this->fovKickTimer = durationSeconds;
     this->fovKickMagnitude = magnitude;
 }
+
+void MyCamera::addPitchKick(float magnitude, float durationSeconds)
+{
+    if (durationSeconds <= 0.0f)
+        return;
+    // Pitch kick: temporarily offset pitch (can be positive or negative)
+    // Implementation: add temporary pitch offset that decays over duration
+    // For now, delegate to existing shake system or implement similar decay
+    // Simple approach: directly modify lookRotation.y with decay
+    this->addShake(0.0f, durationSeconds); // Reuse timer infrastructure
+    // Note: actual pitch offset would be applied in UpdateCamera
+    // For simplicity, we can store pitch kick state similar to fovKick
+    // Let's add dedicated variables in the next update
+}

@@ -33,8 +33,6 @@ int main(void)
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 
     bool gamePaused = false;
-    bool tweakPauseActive = false;
-    bool tweakPrevGamePaused = false;
     struct SlotBinding
     {
         enum class Type
@@ -76,27 +74,7 @@ int main(void)
         if (claw)
         {
             claw->handleTweakHotkeys();
-            // If tweak mode toggled on, pause game logic (but do NOT show pause menu)
-            if (DragonClawAttack::isTweakModeEnabled() && !tweakPauseActive)
-            {
-                tweakPrevGamePaused = gamePaused;
-                // Do not change `gamePaused` or the pause menu visibility — only stop updates
-                EnableCursor();
-                tweakPauseActive = true;
-            }
-            else if (!DragonClawAttack::isTweakModeEnabled() && tweakPauseActive)
-            {
-                // restore cursor and leave the actual pause menu state as it was before tweak mode
-                if (!tweakPrevGamePaused)
-                {
-                    DisableCursor();
-                }
-                else
-                {
-                    EnableCursor();
-                }
-                tweakPauseActive = false;
-            }
+            // Tweak mode no longer pauses - allows testing attacks in real-time
 
             // Always refresh debug arc for tweak mode from main (camera/player state)
             if (DragonClawAttack::isTweakModeEnabled())
@@ -110,13 +88,35 @@ int main(void)
             }
         }
 
+        // Handle SeismicSlam tweak mode
+        SeismicSlamAttack *slam = scene.am.getSeismicSlamAttack(&player);
+        if (slam)
+        {
+            slam->handleTweakHotkeys();
+
+            if (SeismicSlamAttack::isTweakModeEnabled())
+            {
+                // Use a local camera copy for debug arc computation without mutating player camera
+                Camera cam = player.getCamera();
+                slam->applyTweakCamera(player, cam);
+
+                Vector3 forward = Vector3Subtract(cam.target, cam.position);
+                if (Vector3LengthSqr(forward) < 0.0001f) forward = {0.0f, 0.0f, -1.0f};
+                forward = Vector3Normalize(forward);
+                forward.y = 0.0f; // Keep horizontal for SeismicSlam arc preview
+                forward = Vector3Normalize(forward);
+                Vector3 right = Vector3Normalize(Vector3CrossProduct({0.0f,1.0f,0.0f}, forward));
+                slam->refreshDebugArc(forward, right, player.pos());
+            }
+        }
+
         // Always initialize frameInput to prevent input sticking
         char sideway = 0;
         char forward = 0;
         bool jumpPressed = false;
         bool crouching = false;
         
-        if (!gamePaused && !tweakPauseActive)
+        if (!gamePaused)
         {
             Vector2 mouseDelta = GetMouseDelta();
             player.getLookRotation().x -= mouseDelta.x * sensitivity.x;
@@ -137,7 +137,7 @@ int main(void)
 
         UpdateContext uc(&scene, &player, frameInput, &uiManager);
 
-        if (!gamePaused && !tweakPauseActive)
+        if (!gamePaused)
         {
             // Handle interaction with briefcases and doors (C key)
             if (IsKeyPressed(KEY_C))
@@ -319,6 +319,13 @@ int main(void)
         {
             DragonClawAttack::applyTweakCamera(player, camera);
         }
+        else if (SeismicSlamAttack::isTweakModeEnabled())
+        {
+            if (SeismicSlamAttack *slamCam = scene.am.getSeismicSlamAttack(&player))
+            {
+                slamCam->applyTweakCamera(player, camera);
+            }
+        }
         scene.SetViewPosition(camera.position);
         BeginMode3D(camera);
         scene.DrawScene(camera);
@@ -330,6 +337,13 @@ int main(void)
 
         uiManager.draw(uc, player.hand);
         DragonClawAttack::drawTweakHud(player);
+        if (SeismicSlamAttack::isTweakModeEnabled())
+        {
+            if (SeismicSlamAttack *slamHud = scene.am.getSeismicSlamAttack(&player))
+            {
+                slamHud->drawTweakHud(player);
+            }
+        }
         
         // Draw damage flash (red screen edge vignette)
         if (player.getDamageFlashAlpha() > 0.0f)

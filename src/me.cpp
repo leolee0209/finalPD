@@ -160,6 +160,11 @@ void Me::addCameraFovKick(float magnitude, float durationSeconds)
     this->camera.addFovKick(magnitude, durationSeconds);
 }
 
+void Me::addCameraPitchKick(float magnitude, float durationSeconds)
+{
+    this->camera.addPitchKick(magnitude, durationSeconds);
+}
+
 void Me::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift)
 {
     this->velocity.x += pushVelocity.x;
