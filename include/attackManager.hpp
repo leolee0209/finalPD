@@ -30,12 +30,11 @@ private:
     };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
-    std::vector<BasicTileAttack *> basicTileAttacks;
-    std::vector<ThousandTileAttack *> singleTileAttack;
+    std::vector<BambooBasicAttack *> basicTileAttacks;
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<DashAttack *> dashAttacks;
     std::vector<BambooBombAttack *> bambooBombAttacks;
-    std::vector<BambooTripleAttack *> bambooTripleAttacks;
+    std::vector<BambooBasicBuffAttack *> bambooTripleAttacks;
     std::vector<DragonClawAttack *> dragonClawAttacks;
     std::vector<ArcaneOrbAttack *> arcaneOrbAttacks;
     std::vector<FanShotAttack *> fanShotAttacks;
@@ -46,7 +45,6 @@ private:
     std::vector<std::pair<TileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
-    void checkActivation(Entity *player);
     SlotAttackKind classifySlotAttack(const std::vector<SlotTileEntry> &slotEntries) const;
     float computeSlotCooldownPercent(int slotIndex, UpdateContext &uc);
 
@@ -69,19 +67,9 @@ public:
     void update(UpdateContext& uc);
 
     /**
-     * @brief Record a thrown tile into history for combo detection.
+     * @brief Retrieve or create a `BambooBasicAttack` bound to `spawnedBy`.
      */
-    void recordThrow(UpdateContext &uc);
-
-    /**
-     * @brief Retrieve or create a `BasicTileAttack` bound to `spawnedBy`.
-     */
-    BasicTileAttack *getBasicTileAttack(Entity *spawnedBy);
-
-    /**
-     * @brief Retrieve or create a `ThousandTileAttack` bound to `spawnedBy`.
-     */
-    ThousandTileAttack *getSingleTileAttack(Entity *spawnedBy);
+    BambooBasicAttack *getBasicTileAttack(Entity *spawnedBy);
 
     /**
      * @brief Retrieve or create a melee push attack controller for `spawnedBy`.
@@ -89,7 +77,7 @@ public:
     MeleePushAttack *getMeleePushAttack(Entity *spawnedBy);
     DashAttack *getDashAttack(Entity *spawnedBy);
     BambooBombAttack *getBambooBombAttack(Entity *spawnedBy);
-    BambooTripleAttack *getBambooTripleAttack(Entity *spawnedBy);
+    BambooBasicBuffAttack *getBambooTripleAttack(Entity *spawnedBy);
     DragonClawAttack *getDragonClawAttack(Entity *spawnedBy);
     ArcaneOrbAttack *getArcaneOrbAttack(Entity *spawnedBy);
     FanShotAttack *getFanShotAttack(Entity *spawnedBy);

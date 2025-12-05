@@ -177,7 +177,7 @@ protected:
     bool isStunned() const { return this->stunTimer > 0.0f; }
     float computeSupportHeightForRotation(const Quaternion &rotation) const;
     void snapToGroundWithRotation(const Quaternion &rotation);
-    bool updateStun(UpdateContext &uc, float deltaSeconds);
+    bool updateStun(UpdateContext &uc);
     bool updateElectrocute(float deltaSeconds);
     void tickStatusTimers(float deltaSeconds);
 

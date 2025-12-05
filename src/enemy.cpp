@@ -13,13 +13,8 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
-    {
-        this->updateElectrocute(delta);
-        this->UpdateDialog(uc);
-        return;
-    }
-    this->updateElectrocute(delta);
+    bool isStunned = this->updateStun(uc);
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float dist = Vector3Length(toPlayer);
@@ -31,8 +26,9 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
     settings.maxAccel = MAX_ACCEL * 1.2f;
     settings.decelGround = FRICTION * 1.1f;
     settings.decelAir = AIR_DRAG;
+    settings.facingHint = toPlayer;
 
-    if (!this->isKnockbackActive())
+    if (!this->isKnockbackActive() && !isStunned && !this->isMovementDisabled())
     {
         switch (this->state)
         {
@@ -91,11 +87,9 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
             desiredDir = Vector3Zero();
             break;
         }
-        
-        settings.facingHint = toPlayer;
     }
 
-    if (this->isMovementDisabled())
+    if (this->isMovementDisabled() || isStunned)
     {
         desiredDir = Vector3Zero();
         settings.maxSpeed = 0.0f;
@@ -103,6 +97,7 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
     }
 
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->updateElectrocute(delta);
     this->UpdateDialog(uc);
 }
 
@@ -297,13 +292,8 @@ void Enemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
-    {
-        this->updateElectrocute(delta);
-        this->UpdateDialog(uc);
-        return;
-    }
-    this->updateElectrocute(delta);
+    bool isStunned = this->updateStun(uc);
+
     Vector3 directionToPlayer = Vector3Subtract(uc.player->pos(), this->position);
     directionToPlayer.y = 0.0f;
 
@@ -311,7 +301,7 @@ void Enemy::UpdateBody(UpdateContext &uc)
     settings.maxSpeed = 3.0f;
     settings.facingHint = directionToPlayer;
 
-    if (this->isMovementDisabled())
+    if (this->isMovementDisabled() || isStunned)
     {
         directionToPlayer = Vector3Zero();
         settings.maxSpeed = 0.0f;
@@ -319,6 +309,7 @@ void Enemy::UpdateBody(UpdateContext &uc)
     }
 
     this->UpdateCommonBehavior(uc, directionToPlayer, delta, settings);
+    this->updateElectrocute(delta);
     // Update health dialog owned by this enemy (position/text/orientation)
     this->UpdateDialog(uc);
 }
@@ -327,13 +318,8 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
-    {
-        this->updateElectrocute(delta);
-        this->UpdateDialog(uc);
-        return;
-    }
-    this->updateElectrocute(delta);
+    bool isStunned = this->updateStun(uc);
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float distanceToPlayer = Vector3Length(toPlayer);
@@ -344,51 +330,54 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
     bool usesStateTimer = false;
     bool timerWaitsForPose = false;
 
-    switch (this->state)
+    if (!isStunned && !this->isMovementDisabled())
     {
-    case ChargeState::Approaching:
-        if (distanceToPlayer > 0.1f && distanceToPlayer <= this->stopDistance)
+        switch (this->state)
         {
-            this->state = ChargeState::Windup;
-            this->stateTimer = this->windupDuration;
-            this->poseAngularVelocityDegPerSec = 0.0f;
-            if (Vector3LengthSqr(toPlayer) > 0.001f)
+        case ChargeState::Approaching:
+            if (distanceToPlayer > 0.1f && distanceToPlayer <= this->stopDistance)
             {
-                this->chargeDirection = Vector3Normalize(toPlayer);
+                this->state = ChargeState::Windup;
+                this->stateTimer = this->windupDuration;
+                this->poseAngularVelocityDegPerSec = 0.0f;
+                if (Vector3LengthSqr(toPlayer) > 0.001f)
+                {
+                    this->chargeDirection = Vector3Normalize(toPlayer);
+                }
+                desiredDirection = Vector3Zero();
+                targetSpeed = 0.0f;
+                targetPoseDeg = -90.0f;
+                usesStateTimer = true;
+                timerWaitsForPose = true;
             }
+            else
+            {
+                desiredDirection = toPlayer;
+                targetSpeed = this->approachSpeed;
+                targetPoseDeg = 0.0f;
+            }
+            break;
+        case ChargeState::Windup:
             desiredDirection = Vector3Zero();
             targetSpeed = 0.0f;
             targetPoseDeg = -90.0f;
             usesStateTimer = true;
             timerWaitsForPose = true;
-        }
-        else
-        {
-            desiredDirection = toPlayer;
-            targetSpeed = this->approachSpeed;
+            break;
+        case ChargeState::Charging:
+            desiredDirection = this->chargeDirection;
+            targetSpeed = this->chargeSpeed;
+            targetPoseDeg = -90.0f;
+            usesStateTimer = true;
+            break;
+        case ChargeState::Recover:
+            desiredDirection = Vector3Zero();
+            targetSpeed = 0.0f;
             targetPoseDeg = 0.0f;
+            usesStateTimer = true;
+            timerWaitsForPose = true;
+            break;
         }
-        break;
-    case ChargeState::Windup:
-        desiredDirection = Vector3Zero();
-        targetSpeed = 0.0f;
-        targetPoseDeg = -90.0f;
-        usesStateTimer = true;
-        timerWaitsForPose = true;
-        break;
-    case ChargeState::Charging:
-        desiredDirection = this->chargeDirection;
-        targetSpeed = this->chargeSpeed;
-        targetPoseDeg = -90.0f;
-        usesStateTimer = true;
-        break;
-    case ChargeState::Recover:
-        desiredDirection = Vector3Zero();
-        targetSpeed = 0.0f;
-        targetPoseDeg = 0.0f;
-        usesStateTimer = true;
-        timerWaitsForPose = true;
-        break;
     }
 
     MovementSettings settings;
@@ -398,14 +387,14 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
     settings.enableLean = (this->state != ChargeState::Charging);
     settings.enableBobAndSway = (this->state != ChargeState::Charging);
 
-    if (this->isMovementDisabled())
+    if (this->isMovementDisabled() || isStunned)
     {
         desiredDirection = Vector3Zero();
         settings.maxSpeed = 0.0f;
         settings.maxAccel = 0.0f;
     }
 
-    if (this->state == ChargeState::Charging)
+    if (this->state == ChargeState::Charging && !isStunned)
     {
         settings.maxAccel = this->chargeSpeed * 200.0f;
         settings.decelGround = 1.0f;
@@ -417,46 +406,49 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
 
     this->UpdateCommonBehavior(uc, desiredDirection, delta, settings);
 
-    bool poseAligned = this->updatePoseTowards(targetPoseDeg, delta);
-
-    if (usesStateTimer && this->stateTimer > 0.0f)
+    if (!isStunned)
     {
-        if (!timerWaitsForPose || poseAligned)
-        {
-            this->stateTimer -= delta;
-            if (this->stateTimer < 0.0f)
-                this->stateTimer = 0.0f;
-        }
-    }
+        bool poseAligned = this->updatePoseTowards(targetPoseDeg, delta);
 
-    if (this->state == ChargeState::Windup)
-    {
-        if (poseAligned && this->stateTimer <= 0.0f)
+        if (usesStateTimer && this->stateTimer > 0.0f)
         {
-            this->state = ChargeState::Charging;
-            this->stateTimer = this->chargeDuration;
-            this->poseAngularVelocityDegPerSec = 0.0f;
-            if (Vector3LengthSqr(toPlayer) > 0.001f)
+            if (!timerWaitsForPose || poseAligned)
             {
-                this->chargeDirection = Vector3Normalize(toPlayer);
+                this->stateTimer -= delta;
+                if (this->stateTimer < 0.0f)
+                    this->stateTimer = 0.0f;
             }
-            this->appliedChargeDamage = false;
         }
-    }
-    else if (this->state == ChargeState::Charging)
-    {
-        if (this->stateTimer <= 0.0f || distanceToPlayer <= 1.5f)
+
+        if (this->state == ChargeState::Windup)
         {
-            this->state = ChargeState::Recover;
-            this->stateTimer = this->recoverDuration;
-            this->poseAngularVelocityDegPerSec = 0.0f;
+            if (poseAligned && this->stateTimer <= 0.0f)
+            {
+                this->state = ChargeState::Charging;
+                this->stateTimer = this->chargeDuration;
+                this->poseAngularVelocityDegPerSec = 0.0f;
+                if (Vector3LengthSqr(toPlayer) > 0.001f)
+                {
+                    this->chargeDirection = Vector3Normalize(toPlayer);
+                }
+                this->appliedChargeDamage = false;
+            }
         }
-    }
-    else if (this->state == ChargeState::Recover)
-    {
-        if (poseAligned && this->stateTimer <= 0.0f)
+        else if (this->state == ChargeState::Charging)
         {
-            this->state = ChargeState::Approaching;
+            if (this->stateTimer <= 0.0f || distanceToPlayer <= 1.5f)
+            {
+                this->state = ChargeState::Recover;
+                this->stateTimer = this->recoverDuration;
+                this->poseAngularVelocityDegPerSec = 0.0f;
+            }
+        }
+        else if (this->state == ChargeState::Recover)
+        {
+            if (poseAligned && this->stateTimer <= 0.0f)
+            {
+                this->state = ChargeState::Approaching;
+            }
         }
     }
 
@@ -477,7 +469,7 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
         tiltRotation = QuaternionFromAxisAngle(rightDir, this->chargePoseAngleDeg * DEG2RAD);
     }
 
-    if (this->state == ChargeState::Charging)
+    if (this->state == ChargeState::Charging && !isStunned)
     {
         Vector3 horizontalVelocity = {this->velocity.x, 0.0f, this->velocity.z};
         float currentSpeed = Vector3Length(horizontalVelocity);
@@ -498,7 +490,7 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
     if (fabsf(this->chargeSpinAngleDeg) > 0.01f)
     {
         Vector3 spinAxis = forwardDir;
-        if (this->state == ChargeState::Charging)
+        if (this->state == ChargeState::Charging && !isStunned)
         {
             spinAxis = {0.0f, 1.0f, 0.0f};
         }
@@ -516,7 +508,7 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
     }
     this->o.UpdateOBB();
 
-    if (this->state == ChargeState::Charging && !this->appliedChargeDamage)
+    if (this->state == ChargeState::Charging && !this->appliedChargeDamage && !isStunned)
     {
         CollisionResult playerHit = Object::collided(this->o, uc.player->obj());
         if (playerHit.collided)
@@ -530,6 +522,7 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
             this->appliedChargeDamage = true;
         }
     }
+    this->updateElectrocute(delta);
     // Update health dialog for charging enemy
     this->UpdateDialog(uc);
 }
@@ -623,29 +616,15 @@ void Enemy::tickStatusTimers(float deltaSeconds)
     {
         this->electrocuteTimer = fmaxf(0.0f, this->electrocuteTimer - deltaSeconds);
     }
+    if (this->stunTimer > 0.0f)
+    {
+        this->stunTimer = fmaxf(0.0f, this->stunTimer - deltaSeconds);
+    }
 }
 
-bool Enemy::updateStun(UpdateContext &uc, float deltaSeconds)
+bool Enemy::updateStun(UpdateContext &uc)
 {
-    if (this->stunTimer <= 0.0f)
-        return false;
-
-    this->stunTimer = fmaxf(0.0f, this->stunTimer - deltaSeconds);
-    // For long stuns (>0.5s like lightning's 1.5s), zero velocity to prevent explosion from ApplyPhysics.
-    // For short stuns (<0.5s like gravity's 0.2s suppress), preserve velocity so external forces (gravity well) still act.
-    if (this->stunTimer > 0.5f)
-    {
-        this->velocity = Vector3Zero();
-        this->grounded = true;
-
-        // Snap to ground to keep position stable during long stun
-        float floory = this->computeSupportHeightForRotation(this->o.getRotation());
-        this->position.y = floory;
-        this->o.pos = this->position;
-    }
-
-    // Stun itself does not animate; electrocute animation is handled separately by updateElectrocute().
-    return true;
+    return this->stunTimer > 0.0f;
 }
 
 bool Enemy::updateElectrocute(float deltaSeconds)
@@ -653,7 +632,6 @@ bool Enemy::updateElectrocute(float deltaSeconds)
     if (this->electrocuteTimer <= 0.0f)
         return false;
 
-    this->electrocuteTimer = fmaxf(0.0f, this->electrocuteTimer - deltaSeconds);
     this->electrocutePhase += deltaSeconds * 18.0f;
 
     // Visual electrocution: yaw-only shake (left-right). Avoid tilt so enemies don't tumble.
@@ -967,26 +945,31 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
+    bool isStunned = this->updateStun(uc);
+
+    // If stunned, interrupt any ongoing summon animation so physics can take over.
+    if (isStunned && summonState != SummonState::Idle)
     {
-        this->updateElectrocute(delta);
-        this->UpdateDialog(uc);
-        return;
+        summonState = SummonState::Idle;
     }
-    this->updateElectrocute(delta);
     
-    // Always update animation (handles idle countdown and active animation states)
-    UpdateSummonAnimation(uc, delta);
+    // Animation logic runs only if not stunned.
+    if (!isStunned && !this->isMovementDisabled())
+    {
+        UpdateSummonAnimation(uc, delta);
+    }
     
-    // Handle summoning animation if active
+    // If the enemy is animating, its position is controlled by the animation, not physics.
+    // So we can return early.
     if (summonState != SummonState::Idle)
     {
-        // During animation, only do basic dialog
         this->UpdateDialog(uc);
+        // We don't call UpdateCommonBehavior because the animation is kinematic.
         return;
     }
     
-    // Normal idle behavior
+    // --- From here on, we are NOT animating, so normal physics/AI applies ---
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float dist = Vector3Length(toPlayer);
@@ -999,26 +982,22 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
     settings.decelGround = FRICTION;
     settings.decelAir = AIR_DRAG;
 
-    // Retreat if player too close
-    if (dist < retreatDistance)
+    // AI behavior only if not stunned/disabled
+    if (!isStunned && !this->isMovementDisabled())
     {
-        desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
-        settings.facingHint = Vector3Negate(desiredDir);
+        if (dist < retreatDistance)
+        {
+            desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
+            settings.facingHint = Vector3Negate(desiredDir);
+        }
+        else
+        {
+            settings.facingHint = toPlayer;
+        }
     }
-    else
-    {
-        desiredDir = Vector3Zero();
-        settings.facingHint = toPlayer;
-    }
-
-    if (this->isMovementDisabled())
-    {
-        desiredDir = Vector3Zero();
-        settings.maxSpeed = 0.0f;
-        settings.maxAccel = 0.0f;
-    }
-
+    
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->updateElectrocute(delta);
     this->UpdateDialog(uc);
 }
 
@@ -1026,37 +1005,36 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
-    {
-        this->updateElectrocute(delta);
-        this->UpdateDialog(uc);
-        return;
-    }
-    this->updateElectrocute(delta);
+    bool isStunned = this->updateStun(uc);
 
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float distance = Vector3Length(toPlayer);
 
     Vector3 aimDir = {0.0f, 0.0f, 0.0f};
-    bool hasLineOfSight = this->findShotDirection(uc, aimDir);
-    bool withinRange = this->isWithinPreferredRange(distance);
-
+    bool hasLineOfSight = false;
     MovementCommand command{};
-    if (this->phase == Phase::FindPosition)
+
+    if (!isStunned && !this->isMovementDisabled())
     {
-        command = this->FindMovement(uc, toPlayer, distance, hasLineOfSight, delta);
-        if (withinRange && hasLineOfSight)
+        hasLineOfSight = this->findShotDirection(uc, aimDir);
+        bool withinRange = this->isWithinPreferredRange(distance);
+
+        if (this->phase == Phase::FindPosition)
         {
-            this->phase = Phase::Shooting;
-        }
-    }
-    else
-    {
-        if (!withinRange || !hasLineOfSight)
-        {
-            this->phase = Phase::FindPosition;
             command = this->FindMovement(uc, toPlayer, distance, hasLineOfSight, delta);
+            if (withinRange && hasLineOfSight)
+            {
+                this->phase = Phase::Shooting;
+            }
+        }
+        else // Shooting phase
+        {
+            if (!withinRange || !hasLineOfSight)
+            {
+                this->phase = Phase::FindPosition;
+                command = this->FindMovement(uc, toPlayer, distance, hasLineOfSight, delta);
+            }
         }
     }
 
@@ -1067,7 +1045,7 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
     settings.enableLean = command.speed > 0.1f;
     settings.enableBobAndSway = command.speed > 0.1f;
 
-    if (this->isMovementDisabled())
+    if (this->isMovementDisabled() || isStunned)
     {
         command.direction = Vector3Zero();
         settings.maxSpeed = 0.0f;
@@ -1076,19 +1054,23 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
 
     this->UpdateCommonBehavior(uc, command.direction, delta, settings);
 
-    Vector3 muzzle = this->position;
-    muzzle.y += this->muzzleHeight;
+    if (!isStunned)
+    {
+        Vector3 muzzle = this->position;
+        muzzle.y += this->muzzleHeight;
 
-    if (this->phase == Phase::Shooting)
-    {
-        this->HandleShooting(delta, muzzle, aimDir, hasLineOfSight);
-    }
-    else
-    {
-        this->fireCooldown = fmaxf(this->fireCooldown - delta, 0.0f);
+        if (this->phase == Phase::Shooting)
+        {
+            this->HandleShooting(delta, muzzle, aimDir, hasLineOfSight);
+        }
+        else
+        {
+            this->fireCooldown = fmaxf(this->fireCooldown - delta, 0.0f);
+        }
     }
 
     this->updateBullets(uc, delta);
+    this->updateElectrocute(delta);
     // Update health dialog
     this->UpdateDialog(uc);
 }
@@ -1707,6 +1689,7 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
     }
     
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->updateElectrocute(delta);
     this->UpdateDialog(uc);
 }
 
@@ -1803,6 +1786,7 @@ void SupportEnemy::UpdateHealMode(UpdateContext &uc)
     }
 
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->updateElectrocute(delta);
     this->UpdateDialog(uc);
 }
 
@@ -1893,6 +1877,7 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
     }
 
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->updateElectrocute(delta);
     this->UpdateDialog(uc);
 }
 
@@ -1900,13 +1885,27 @@ void SupportEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
+    bool isStunned = this->updateStun(uc);
+
+    // If stunned, the enemy should do nothing but be subject to physics.
+    if (isStunned || this->isMovementDisabled())
     {
+        // If stunned during an action, switch back to normal mode.
+        if (this->mode != SupportMode::Normal)
+        {
+            this->mode = SupportMode::Normal;
+            this->actionTimer = 0.0f;
+            this->targetAlly = nullptr;
+        }
+
+        Enemy::MovementSettings settings;
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+        this->UpdateCommonBehavior(uc, Vector3Zero(), delta, settings);
         this->updateElectrocute(delta);
         this->UpdateDialog(uc);
         return;
     }
-    this->updateElectrocute(delta);
     
     // Decrement cooldown timer
     if (this->actionCooldownTimer > 0.0f)
@@ -2335,10 +2334,10 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
             this->spearThrustAmount = 0.0f;
             this->spearSwingAngle = 0.0f;
         }
-    }
+        }
     
-    this->UpdateDialog(uc);
-}
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);}
 
 void VanguardEnemy::DecideAction(UpdateContext &uc, float distanceToPlayer)
 {
@@ -2690,6 +2689,7 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
         }
     }
     
+    this->updateElectrocute(delta);
     // Update health bar position for all aerial states
     this->UpdateDialog(uc);
 }
@@ -2720,13 +2720,27 @@ void VanguardEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->tickStatusTimers(delta);
-    if (this->updateStun(uc, delta))
+    bool isStunned = this->updateStun(uc);
+
+    if (isStunned || this->isMovementDisabled())
     {
+        // If stunned mid-air, should fall. If in a combo, should stop.
+        if (this->state != VanguardState::Chasing)
+        {
+            this->state = VanguardState::Chasing; // Revert to a neutral state
+            this->comboStage = 0;
+        }
+        Enemy::MovementSettings ms;
+        ms.maxSpeed = 0.0f;
+        ms.maxAccel = 0.0f;
+        this->UpdateCommonBehavior(uc, Vector3Zero(), delta, ms);
         this->updateElectrocute(delta);
         this->UpdateDialog(uc);
         return;
     }
-    this->updateElectrocute(delta);
+
+    // --- Not stunned from here on ---
+
     // Cache camera info for use during Draw (Draw is const and has no UpdateContext)
     const Camera &cam = uc.player->getCamera();
     this->cachedCameraPos = cam.position;
@@ -2768,6 +2782,7 @@ void VanguardEnemy::UpdateBody(UpdateContext &uc)
             ms.decelAir = AIR_DRAG;
             ms.facingHint = toPlayer;
             this->UpdateCommonBehavior(uc, desired, delta, ms);
+            this->updateElectrocute(delta);
             this->UpdateDialog(uc);
         }
     }

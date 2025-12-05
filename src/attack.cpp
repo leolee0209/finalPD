@@ -12,8 +12,8 @@ Texture2D BambooBombAttack::explosionTexture{};
 bool BambooBombAttack::explosionTextureLoaded = false;
 int BambooBombAttack::explosionTextureUsers = 0;
 
-// --- BambooTripleAttack: rapid-fire mode triggered by three same bamboo tiles ---
-void BambooTripleAttack::trigger(UpdateContext &uc)
+// --- BambooBasicBuffAttack: rapid-fire mode triggered by three same bamboo tiles ---
+void BambooBasicBuffAttack::trigger(UpdateContext &uc)
 {
     if (this->cooldownRemaining > 0.0f)
         return;
@@ -22,7 +22,7 @@ void BambooTripleAttack::trigger(UpdateContext &uc)
     this->cooldownRemaining = cooldownDuration;
 }
 
-void BambooTripleAttack::update(UpdateContext &uc)
+void BambooBasicBuffAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
 
@@ -37,20 +37,20 @@ void BambooTripleAttack::update(UpdateContext &uc)
     }
 }
 
-float BambooTripleAttack::getCooldownPercent() const
+float BambooBasicBuffAttack::getCooldownPercent() const
 {
     if (cooldownDuration <= 0.0f)
         return 1.0f;
     return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
 }
 
-float BambooTripleAttack::getReducedCooldown() const
+float BambooBasicBuffAttack::getReducedCooldown() const
 {
     return this->isActive() ? reducedCooldown : normalCooldown;
 }
 
-// --- BasicTileAttack: simple horizontal shooting ---
-void BasicTileAttack::spawnProjectile(UpdateContext &uc)
+// --- BambooBasicAttack: simple horizontal shooting ---
+void BambooBasicAttack::spawnProjectile(UpdateContext &uc)
 {
     if (!uc.scene || !this->spawnedBy)
         return;
@@ -155,7 +155,7 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
     }
 }
 
-void BasicTileAttack::update(UpdateContext &uc)
+void BambooBasicAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     
@@ -247,56 +247,7 @@ Quaternion GetQuaternionFromForward(Vector3 forward)
     return QuaternionFromAxisAngle(rotAxis, angleRad);
 }
 
-// --- ThousandTileAttack: thousand-mode implementation (moved from ThousandAttack) ---
-void ThousandTileAttack::startThousandMode()
-{
-    if (this->projectiles.empty())
-        return;
-    this->mode = MODE_THOUSAND_FINAL;
-    // compute average destination
-    float x = 0, y = 0, z = 0;
-    for (const auto &p : this->projectiles)
-    {
-        x += p.pos().x;
-        y += p.pos().y;
-        z += p.pos().z;
-    }
-    float size = (float)this->projectiles.size();
-    this->thousandDest = {x / size, y / size, z / size};
-
-    // set each projectile to fly towards dest
-    for (auto &p : this->projectiles)
-    {
-        Vector3 toDest = Vector3Subtract(this->thousandDest, p.pos());
-        Vector3 newDir = Vector3Normalize(toDest);
-        Vector3 newVel = Vector3Scale(newDir, ThousandTileAttack::thousandFinalVel);
-        // preserve grounded state and object rotation
-        p = Projectile(p.pos(), newVel, newDir, p.isGrounded(), p.obj(), 1.0f, 1.0f, p.type);
-    }
-}
-
-bool ThousandTileAttack::thousandEndFinal()
-{
-    // remove projectiles that reached or overshot destination, like previous endFinal
-    auto should_remove = [&](const Projectile &p)
-    {
-        if (Vector3DistanceSqr(p.pos(), this->thousandDest) <= 0.04f) // small margin (0.2^2)
-            return true;
-        Vector3 toDest = Vector3Subtract(this->thousandDest, p.pos());
-        if (Vector3DotProduct(toDest, p.vel()) <= 0)
-            return true;
-        return false;
-    };
-
-    size_t old_size = this->projectiles.size();
-    this->projectiles.erase(
-        std::remove_if(this->projectiles.begin(), this->projectiles.end(), should_remove),
-        this->projectiles.end());
-    this->count -= (old_size - this->projectiles.size());
-    return this->projectiles.empty();
-}
-
-// --- BambooBombAttack (renamed from DotBombAttack) --------------------------------------------------------------------
+// --- BambooBombAttack --------------------------------------------------------------------
 
 BambooBombAttack::BambooBombAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
 {
@@ -669,182 +620,6 @@ void BambooBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, f
         bomb.spriteActive = false;
         bomb.explosionSprite.setVisible(false);
     }
-}
-
-// --- Triplet integration (connectors) moved into ThousandTileAttack ---
-void ThousandTileAttack::startTripletMode()
-{
-    if (this->projectiles.size() < 3)
-        return;
-    this->mode = MODE_TRIPLET_CONNECTING;
-    this->connectingTimer = 0.0f;
-    this->connectors.clear();
-    this->connectorForward.clear();
-}
-
-// helper used inside update to perform triplet connector spawn / animation
-void ThousandTileAttack::updateTriplet(UpdateContext &uc)
-{
-    // update physics of projectiles still
-    for (auto &p : this->projectiles)
-        p.UpdateBody(uc);
-
-    connectingTimer += GetFrameTime();
-
-    auto spawnConnector = [&](int startIdx, int endIdx)
-    {
-        Vector3 start = projectiles[startIdx].pos();
-        Vector3 end = projectiles[endIdx].pos();
-        Vector3 delta = Vector3Subtract(end, start);
-        float length = Vector3Length(delta);
-        Vector3 mid = Vector3Scale(Vector3Add(start, end), 0.5f);
-        Vector3 forward = Vector3Normalize(delta);
-        Object conn({connectorThickness, connectorThickness, length}, mid);
-        conn.setRotationFromForward(forward);
-        this->connectors.push_back(conn);
-        this->connectorForward.push_back(0.0f);
-    };
-
-    // spawn connectors sequentially
-    if (this->connectors.size() < 1 && connectingTimer > 0.0f)
-    {
-        spawnConnector(0, 1);
-    }
-    if (this->connectors.size() < 2 && connectingTimer > 0.5f)
-    {
-        spawnConnector(1, 2);
-    }
-    if (this->connectors.size() < 3 && connectingTimer > 1.0f)
-    {
-        spawnConnector(2, 0);
-    }
-
-    // after spawning connectors, grow them (FINAL stage)
-    if (connectingTimer > 2.0f)
-    {
-        // transition to FINAL stage where we animate connectors growing/rotating
-        this->mode = MODE_TRIPLET_FINAL;
-    }
-}
-
-void ThousandTileAttack::update(UpdateContext &uc)
-{
-    // Always update base projectile physics if not handled by mode-specific code above
-    if (this->mode != MODE_TRIPLET_CONNECTING && this->mode != MODE_TRIPLET_FINAL)
-    {
-        for (auto &p : this->projectiles)
-            p.UpdateBody(uc);
-    }
-
-    // Mode handling
-    switch (this->mode)
-    {
-    case MODE_THOUSAND_FINAL:
-        if (thousandEndFinal())
-        {
-            this->mode = MODE_IDLE;
-            this->thousandActivated = false;
-            this->count = 0;
-            this->thousandDest = {0};
-        }
-        break;
-    case MODE_TRIPLET_CONNECTING:
-    case MODE_TRIPLET_FINAL:
-    {
-        // animate connectors expanding / rotating to final height
-        bool allAtTarget = true;
-        for (size_t i = 0; i < connectors.size(); ++i)
-        {
-            Object &c = connectors[i];
-            if (c.size.y < tripletFinalHeight)
-            {
-                c.size.y += tripletGrowthRate;
-                if (c.size.y >= tripletFinalHeight)
-                    c.size.y = tripletFinalHeight;
-                allAtTarget = false;
-            }
-            // rotate connector forward (visual) using rotate helper
-            Vector3 forwardDir = Vector3RotateByQuaternion({0.0f, 0.0f, 1.0f}, c.getRotation());
-            c.rotate(forwardDir, 1.0f); // small rotation per frame
-        }
-        if (allAtTarget)
-        {
-            // cleanup and reset
-            this->projectiles.clear();
-            this->connectors.clear();
-            this->connectorForward.clear();
-            this->mode = MODE_IDLE;
-            this->count = 0;
-        }
-    }
-    break;
-    default:
-        // MODE_IDLE etc. nothing special
-        break;
-    }
-}
-void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
-{
-    if (!uc.scene)
-        return;
-    AttackManager &am = uc.scene->am;
-    if (am.isAttackLockedByOther(this))
-        return;
-
-    float yaw;
-    float pitch;
-
-    // Determine spawner orientation without RTTI: use category() then static_cast
-    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
-    {
-        Me *player = static_cast<Me *>(this->spawnedBy);
-        yaw = player->getLookRotation().x;
-        pitch = player->getLookRotation().y;
-    }
-    else if (this->spawnedBy && this->spawnedBy->category() == ENTITY_ENEMY)
-    {
-        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
-        yaw = enemy->dir().x;
-        pitch = enemy->dir().y;
-    }
-    else
-    {
-        return;
-    }
-
-    Vector3 forward = {
-        cosf(pitch) * sinf(yaw),
-        0.0f,
-        cosf(pitch) * cosf(yaw)};
-    forward = Vector3Normalize(forward);
-
-    Vector3 vel = {-forward.x * shootHoriSpeed + this->spawnedBy->vel().x, shootVertSpeed, -forward.z * shootHoriSpeed + this->spawnedBy->vel().z};
-    Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
-    Object o({1, 1, 1}, pos);
-    o.setRotationFromForward(forward);
-    o.useTexture = true;
-
-    TileType tile = TileType::BAMBOO_1;
-    if (uc.uiManager && uc.player)
-    {
-        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
-    }
-    o.texture = &uc.uiManager->muim.getSpriteSheet();
-    o.sourceRect = uc.uiManager->muim.getTile(tile);
-
-    Projectile projectile(
-        pos,
-        vel,
-        forward,
-        false,
-        o,
-        FRICTION,
-        AIR_DRAG,
-        tile);
-
-    this->projectiles.push_back(projectile);
-    uc.scene->am.recordThrow(uc);
-    // this->lifetime.push_back(2.0f); // 2 seconds lifetime
 }
 
 // --- MeleePushAttack ------------------------------------------------------------------
@@ -1389,6 +1164,8 @@ float DashAttack::getCooldownPercent() const
 
 bool DragonClawAttack::tweakModeEnabled = false;
 int DragonClawAttack::tweakSelectedCombo = 0;
+float DragonClawAttack::spiritTileOpacity = 0.5f;
+float DragonClawAttack::spiritTileOpacityFadeRate = 1.0f;
 
 DragonClawAttack::DragonClawAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
 {
@@ -1633,16 +1410,7 @@ std::vector<Object *> DragonClawAttack::obj()
     std::vector<Object *> ret;
     for (auto &slash : activeSlashes)
     {
-        // Only fade opacity in follow-through phase (70-100%)
-        float followThruStart = (windupDuration + strikeDuration) / attackDuration;
-        float alpha = spiritTileOpacity;
-        
-        if (slash.animationProgress >= followThruStart)
-        {
-            // Fade out during follow-through
-            float fadeProgress = (slash.animationProgress - followThruStart) / (1.0f - followThruStart);
-            alpha = spiritTileOpacity * (1.0f - fadeProgress);
-        }
+        float alpha = spiritTileOpacity * (1.0f - powf(slash.animationProgress, spiritTileOpacityFadeRate));
         
         unsigned char alphaVal = (unsigned char)(alpha * 255.0f);
         slash.spiritTile.tint.a = alphaVal;
@@ -1866,6 +1634,14 @@ void DragonClawAttack::handleTweakHotkeys()
     const float heightStep = 2.0f * delta;
     const float forwardStep = 3.0f * delta;
 
+    if (IsKeyDown(KEY_PAGE_UP)) { spiritTileOpacity += 0.5f * delta; }
+    if (IsKeyDown(KEY_PAGE_DOWN)) { spiritTileOpacity -= 0.5f * delta; }
+    spiritTileOpacity = Clamp(spiritTileOpacity, 0.0f, 1.0f);
+
+    if (IsKeyDown(KEY_HOME)) { spiritTileOpacityFadeRate += 0.5f * delta; }
+    if (IsKeyDown(KEY_END)) { spiritTileOpacityFadeRate -= 0.5f * delta; }
+    spiritTileOpacityFadeRate = fmaxf(spiritTileOpacityFadeRate, 0.0f);
+    
     if (IsKeyDown(KEY_UP))   { deltaPoint.y += heightStep; }
     if (IsKeyDown(KEY_DOWN)) { deltaPoint.y -= heightStep; }
     if (IsKeyDown(KEY_LEFT)) { deltaPoint.x -= sideStep; }
@@ -1987,6 +1763,8 @@ void DragonClawAttack::drawTweakHud(const Me &player)
     DrawText("Arrow keys: Side/Height", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("</>: Forward/Back control", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("F5: Save arcs", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText(TextFormat("Opacity: %.2f (PageUp/Down)", spiritTileOpacity), baseX, y, 16, YELLOW); y += line;
+    DrawText(TextFormat("Fade Rate: %.2f (Home/End)", spiritTileOpacityFadeRate), baseX, y, 16, YELLOW); y += line;
     DrawText("F6: Load arcs", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("Left Click: Use attack during tweak", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("Camera set to top-back view", baseX, y, 16, LIGHTGRAY);
