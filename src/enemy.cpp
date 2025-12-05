@@ -145,10 +145,18 @@ void Enemy::UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirect
 
     if (settings.lockToGround && !knockedBack)
     {
-        this->position.y = floory;
-        this->velocity.y = 0.0f;
-        this->grounded = true;
-        this->o.pos = this->position;
+        // Only snap if we're essentially on the floor; allow airborne knockups
+        if (this->position.y <= floory + 0.05f)
+        {
+            this->position.y = floory;
+            this->velocity.y = 0.0f;
+            this->grounded = true;
+            this->o.pos = this->position;
+        }
+        else
+        {
+            this->grounded = false;
+        }
     }
 
     Vector3 facingTarget = settings.facingHint;
@@ -223,7 +231,10 @@ void Enemy::UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirect
 
     if (settings.lockToGround && !knockedBack)
     {
-        this->snapToGroundWithRotation(this->o.getRotation());
+        if (this->position.y <= this->computeSupportHeightForRotation(this->o.getRotation()) + 0.05f)
+        {
+            this->snapToGroundWithRotation(this->o.getRotation());
+        }
     }
 
     this->o.UpdateOBB();
@@ -2370,6 +2381,12 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
                     this->visualScale = {1.6f, 0.6f, 1.6f};
                     this->o.pos = this->position;
                     this->o.UpdateOBB();
+                    
+                    // Start shockwave on wall impact landing
+                    this->shockwaveActive = true;
+                    this->shockwaveRadius = 0.0f;
+                    this->shockwaveCenter = this->position;
+                    this->shockwaveHitPlayer = false;
                     
                     // Wall impact particles
                     if (uc.scene)

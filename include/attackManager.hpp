@@ -21,7 +21,9 @@ private:
         DotBomb,
         Melee,
         Dash,
-        BambooTriple
+        BambooTriple,
+        FanShot,
+        SeismicSlam
     };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
@@ -29,16 +31,28 @@ private:
     std::vector<ThousandTileAttack *> singleTileAttack;
     std::vector<MeleePushAttack *> meleeAttacks;
     std::vector<DashAttack *> dashAttacks;
-    std::vector<DotBombAttack *> dotBombAttacks;
+    std::vector<BambooBombAttack *> bambooBombAttacks;
     std::vector<BambooTripleAttack *> bambooTripleAttacks;
     std::vector<DragonClawAttack *> dragonClawAttacks;
     std::vector<ArcaneOrbAttack *> arcaneOrbAttacks;
+    std::vector<FanShotAttack *> fanShotAttacks;
+    std::vector<SeismicSlamAttack *> seismicSlamAttacks;
     std::vector<std::pair<TileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
     void checkActivation(Entity *player);
     SlotAttackKind classifySlotAttack(const std::vector<SlotTileEntry> &slotEntries) const;
     float computeSlotCooldownPercent(int slotIndex, UpdateContext &uc);
+
+public:
+    /**
+     * @brief Classify attack type from tile combination and return as string.
+     * @param tiles Vector of tiles in the slot (order-independent for sequences).
+     * @return String name of attack type, or "NA" if no valid attack.
+     */
+    static std::string classifyAttackType(const std::vector<SlotTileEntry> &tiles);
+
+private:
 
 public:
     ~AttackManager(); // Destructor to clean up dynamically allocated attacks
@@ -66,12 +80,14 @@ public:
     /**
      * @brief Retrieve or create a melee push attack controller for `spawnedBy`.
      */
-    MeleePushAttack *getMeleeAttack(Entity *spawnedBy);
+    MeleePushAttack *getMeleePushAttack(Entity *spawnedBy);
     DashAttack *getDashAttack(Entity *spawnedBy);
-    DotBombAttack *getDotBombAttack(Entity *spawnedBy);
+    BambooBombAttack *getBambooBombAttack(Entity *spawnedBy);
     BambooTripleAttack *getBambooTripleAttack(Entity *spawnedBy);
     DragonClawAttack *getDragonClawAttack(Entity *spawnedBy);
     ArcaneOrbAttack *getArcaneOrbAttack(Entity *spawnedBy);
+    FanShotAttack *getFanShotAttack(Entity *spawnedBy);
+    SeismicSlamAttack *getSeismicSlamAttack(Entity *spawnedBy);
     bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**

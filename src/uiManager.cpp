@@ -3,6 +3,7 @@
 #include "rewardBriefcase.hpp"
 #include "Inventory.hpp"
 #include "scene.hpp"
+#include "attackManager.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -35,6 +36,13 @@ void UIManager::setSlotCooldownPercent(int slotIndex, float percent)
     if (!isValidSlotIndex(slotIndex))
         return;
     slotCooldowns[slotIndex] = std::clamp(percent, 0.0f, 1.0f);
+}
+
+void UIManager::setSlotValidity(int slotIndex, bool valid)
+{
+    if (!isValidSlotIndex(slotIndex))
+        return;
+    slotValid[slotIndex] = valid;
 }
 
 void UIManager::setPauseMenuVisible(bool visible)
@@ -320,7 +328,10 @@ void UIManager::drawSlotHudPreview()
         Rectangle slotRect{startX, startY + i * (slotHeight + spacing), slotWidth, slotHeight};
         Color frame = Color{8, 10, 16, 160};
         DrawRectangleRounded(slotRect, 0.26f, 6, frame);
-        DrawRectangleRoundedLines(slotRect, 0.26f, 6, Fade(RAYWHITE, 1.0f));
+        bool valid = slotValid[i];
+        Color outline = valid ? Fade(RAYWHITE, 1.0f) : RED;
+        float thick = valid ? 1.0f : 3.0f;
+        DrawRectangleRoundedLinesEx(slotRect, 0.26f, 6, thick, outline);
 
         const char *label = slotKeyLabels[i];
         if (label && *label)
@@ -366,10 +377,10 @@ void UIManager::drawSlotHudPreview()
         }
 
         float cooldown = slotCooldowns[i];
-        if (cooldown > 0.001f)
+        if (cooldown < 0.999f)  // Show gray overlay when NOT ready
         {
             Rectangle cooldownRect = slotRect;
-            cooldownRect.width = slotRect.width * std::clamp(cooldown, 0.0f, 1.0f);
+            cooldownRect.width = slotRect.width * std::clamp(1.0f - cooldown, 0.0f, 1.0f);
             DrawRectangleRounded(cooldownRect, 0.18f, 4, Color{120, 120, 120, 160});
         }
     }
@@ -426,7 +437,9 @@ void UIManager::ensureSlotSetup()
     for (auto &v : attackSlots)
         v.clear();
     for (auto &c : slotCooldowns)
-        c = 0.0f;
+        c = 1.0f; // Ready by default so HUD is not gray on start
+    for (auto &v : slotValid)
+        v = true;
     slotsInitialized = true;
 }
 
@@ -440,6 +453,7 @@ void UIManager::ensureSlotElements()
             slotElements[i]->setEntries(&attackSlots[i]);
             slotElements[i]->setKeyLabel(slotKeyLabels[i]);
         }
+        slotElements[i]->setValid(slotValid[i]);
         slotElements[i]->setBounds(getSlotRect(i));
     }
 }
@@ -449,6 +463,7 @@ void UIManager::updateSlotElementLayout()
     ensureSlotElements();
     for (int i = 0; i < slotCount; ++i)
     {
+        slotElements[i]->setValid(slotValid[i]);
         slotElements[i]->setBounds(getSlotRect(i));
     }
 }
@@ -581,6 +596,24 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
 {
     ensureSlotSetup();
     updateSlotElementLayout();
+    // Validate slots: empty=valid, 1-2 tiles=invalid, 3+ tiles use classifier
+    for (int s = 0; s < slotCount; ++s)
+    {
+        if (attackSlots[s].empty())
+        {
+            slotValid[s] = true;  // Empty slots are valid
+        }
+        else if (attackSlots[s].size() < 3)
+        {
+            slotValid[s] = false; // 1 or 2 tiles invalid
+        }
+        else
+        {
+            // 3+ tiles: check if valid combo (not DefaultThrow or NA)
+            std::string attackType = AttackManager::classifyAttackType(attackSlots[s]);
+            slotValid[s] = (attackType != "NA" && attackType != "DefaultThrow");
+        }
+    }
     muim.update(playerInventory);
 
     Vector2 mouse = GetMousePosition();
@@ -588,19 +621,46 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
 
     // Hover hand tile
     hoveredTileIndex = muim.getTileIndexAt(mouse);
+    const float dragThreshold = 6.0f;
 
-    // Handle left click on hand tiles - for selection
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredTileIndex >= 0)
+    // Track left press target for drag or selection
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {
-        auto &tiles = playerInventory.getTiles();
-        if (hoveredTileIndex < (int)tiles.size())
+        leftMousePressed = true;
+        leftMouseDownPos = mouse;
+        leftMouseDownHandIndex = hoveredTileIndex;
+        leftMouseDownSlot = -1;
+        leftMouseDownSlotTileIndex = -1;
+
+        // If not on a hand tile, check slot tiles under cursor
+        if (hoveredTileIndex < 0)
         {
-            // Select this tile as the basic attack tile
-            muim.selectTileByIndex(hoveredTileIndex);
+            for (int s = 0; s < slotCount; ++s)
+            {
+                AttackSlotElement *slotEl = getSlotElement(s);
+                if (!slotEl || !slotEl->containsPoint(mouse))
+                    continue;
+                int tileIdx = -1;
+                int tileCount = (int)attackSlots[s].size();
+                for (int i = 0; i < tileCount; ++i)
+                {
+                    if (CheckCollisionPointRec(mouse, slotEl->getTileRect(i)))
+                    {
+                        tileIdx = i;
+                        break;
+                    }
+                }
+                if (tileIdx >= 0)
+                {
+                    leftMouseDownSlot = s;
+                    leftMouseDownSlotTileIndex = tileIdx;
+                    break;
+                }
+            }
         }
     }
 
-    // Handle right click on hand tiles - for dragging to slots
+    // Handle right click on hand tiles - for dragging to slots (legacy behavior)
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hoveredTileIndex >= 0)
     {
         auto &tiles = playerInventory.getTiles();
@@ -610,7 +670,7 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
         }
     }
 
-    // Start drag from slot with right-click
+    // Start drag from slot with right-click (legacy behavior)
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hoveredTileIndex < 0)
     {
         for (int s = 0; s < slotCount; ++s)
@@ -620,7 +680,6 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
                 continue;
             if (!slotEl->containsPoint(mouse))
                 continue;
-            // Check tile cells
             int tileIdx = -1;
             int tileCount = (int)attackSlots[s].size();
             for (int i = 0; i < tileCount; ++i)
@@ -639,25 +698,70 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
         }
     }
 
-    if (isDraggingTile)
+    // Start left-drag if moved enough while held
+    if (leftMousePressed && !isDraggingTile && IsMouseButtonDown(MOUSE_BUTTON_LEFT))
     {
-        if (IsMouseButtonReleased(MOUSE_BUTTON_RIGHT))
+        float dist = Vector2Distance(leftMouseDownPos, mouse);
+        if (dist > dragThreshold)
         {
-            endTileDrag(mouse);
+            if (leftMouseDownHandIndex >= 0)
+            {
+                auto &tiles = playerInventory.getTiles();
+                if (leftMouseDownHandIndex < (int)tiles.size())
+                {
+                    beginTileDragFromHand(leftMouseDownHandIndex, tiles[leftMouseDownHandIndex].type, mouse);
+                }
+            }
+            else if (leftMouseDownSlot >= 0 && leftMouseDownSlotTileIndex >= 0)
+            {
+                beginTileDragFromSlot(leftMouseDownSlot, leftMouseDownSlotTileIndex, mouse);
+            }
         }
     }
 
-    // Handle buttons
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+    // Drop on left release if dragging; otherwise handle selection/buttons
+    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
     {
-        if (CheckCollisionPointRec(mouse, getSmallButtonRect(0)))
+        if (isDraggingTile)
         {
-            resumeRequested = true;
+            endTileDrag(mouse);
         }
-        else if (CheckCollisionPointRec(mouse, getSmallButtonRect(1)))
+        else
         {
-            quitRequested = true;
+            // Selection click from hand
+            if (leftMouseDownHandIndex >= 0)
+            {
+                auto &tiles = playerInventory.getTiles();
+                if (leftMouseDownHandIndex < (int)tiles.size())
+                {
+                    muim.selectTileByIndex(leftMouseDownHandIndex);
+                }
+            }
+            else
+            {
+                // Buttons
+                if (CheckCollisionPointRec(mouse, getSmallButtonRect(0)))
+                {
+                    resumeRequested = true;
+                }
+                else if (CheckCollisionPointRec(mouse, getSmallButtonRect(1)))
+                {
+                    quitRequested = true;
+                }
+            }
         }
+
+        // Reset press tracking
+        leftMousePressed = false;
+        leftMouseDownHandIndex = -1;
+        leftMouseDownSlot = -1;
+        leftMouseDownSlotTileIndex = -1;
+    }
+
+    // Right-button drop support
+    if (isDraggingTile && IsMouseButtonReleased(MOUSE_BUTTON_RIGHT))
+    {
+        endTileDrag(mouse);
     }
 }
 

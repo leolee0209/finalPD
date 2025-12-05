@@ -7,9 +7,9 @@
 #include <algorithm>
 #include "scene.hpp"
 
-Texture2D DotBombAttack::explosionTexture{};
-bool DotBombAttack::explosionTextureLoaded = false;
-int DotBombAttack::explosionTextureUsers = 0;
+Texture2D BambooBombAttack::explosionTexture{};
+bool BambooBombAttack::explosionTextureLoaded = false;
+int BambooBombAttack::explosionTextureUsers = 0;
 
 // --- BambooTripleAttack: rapid-fire mode triggered by three same bamboo tiles ---
 void BambooTripleAttack::trigger(UpdateContext &uc)
@@ -38,9 +38,9 @@ void BambooTripleAttack::update(UpdateContext &uc)
 
 float BambooTripleAttack::getCooldownPercent() const
 {
-    if (this->cooldownRemaining <= 0.0f)
-        return 0.0f;
-    return this->cooldownRemaining / cooldownDuration;
+    if (cooldownDuration <= 0.0f)
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
 }
 
 float BambooTripleAttack::getReducedCooldown() const
@@ -295,19 +295,19 @@ bool ThousandTileAttack::thousandEndFinal()
     return this->projectiles.empty();
 }
 
-// --- DotBombAttack --------------------------------------------------------------------
+// --- BambooBombAttack (renamed from DotBombAttack) --------------------------------------------------------------------
 
-DotBombAttack::DotBombAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
+BambooBombAttack::BambooBombAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
 {
     retainExplosionTexture();
 }
 
-DotBombAttack::~DotBombAttack()
+BambooBombAttack::~BambooBombAttack()
 {
     releaseExplosionTexture();
 }
 
-bool DotBombAttack::trigger(UpdateContext &uc, TileType tile)
+bool BambooBombAttack::trigger(UpdateContext &uc, TileType tile)
 {
     if (!uc.scene || !this->spawnedBy)
         return false;
@@ -373,7 +373,7 @@ bool DotBombAttack::trigger(UpdateContext &uc, TileType tile)
     return true;
 }
 
-void DotBombAttack::retainExplosionTexture()
+void BambooBombAttack::retainExplosionTexture()
 {
     if (++explosionTextureUsers > 1)
         return;
@@ -385,7 +385,7 @@ void DotBombAttack::retainExplosionTexture()
     }
 }
 
-void DotBombAttack::releaseExplosionTexture()
+void BambooBombAttack::releaseExplosionTexture()
 {
     if (explosionTextureUsers <= 0)
         return;
@@ -401,7 +401,7 @@ void DotBombAttack::releaseExplosionTexture()
     }
 }
 
-void DotBombAttack::update(UpdateContext &uc)
+void BambooBombAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
@@ -411,6 +411,21 @@ void DotBombAttack::update(UpdateContext &uc)
         {
             bomb.flightTimeRemaining = fmaxf(0.0f, bomb.flightTimeRemaining - delta);
             bomb.projectile.UpdateBody(uc);
+
+            // Apply heavy end-over-end tumbling rotation
+            bomb.tumbleRotation += tumbleSpeed * delta;
+            if (bomb.tumbleRotation > 360.0f) bomb.tumbleRotation -= 360.0f;
+            
+            // Get current forward direction and apply pitch rotation
+            Vector3 forward = bomb.projectile.dir();
+            Vector3 right = Vector3CrossProduct({0.0f, 1.0f, 0.0f}, forward);
+            if (Vector3LengthSqr(right) < 0.0001f) right = {1.0f, 0.0f, 0.0f};
+            right = Vector3Normalize(right);
+            
+            // Tumble around the right axis (end-over-end)
+            Quaternion tumbleQuat = QuaternionFromAxisAngle(right, bomb.tumbleRotation * DEG2RAD);
+            bomb.projectile.obj().setRotation(tumbleQuat);
+            bomb.projectile.obj().UpdateOBB();
 
             bool hitEnvironment = false;
             if (uc.scene)
@@ -476,14 +491,14 @@ void DotBombAttack::update(UpdateContext &uc)
         bombs.end());
 }
 
-float DotBombAttack::getCooldownPercent() const
+float BambooBombAttack::getCooldownPercent() const
 {
     if (cooldownDuration <= 0.0f)
-        return 0.0f;
-    return Clamp(this->cooldownRemaining / cooldownDuration, 0.0f, 1.0f);
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
 }
 
-std::vector<Entity *> DotBombAttack::getEntities()
+std::vector<Entity *> BambooBombAttack::getEntities()
 {
     std::vector<Entity *> ret;
     for (auto &bomb : bombs)
@@ -496,7 +511,7 @@ std::vector<Entity *> DotBombAttack::getEntities()
     return ret;
 }
 
-std::vector<Object *> DotBombAttack::obj()
+std::vector<Object *> BambooBombAttack::obj()
 {
     std::vector<Object *> ret;
     for (auto &bomb : bombs)
@@ -517,7 +532,7 @@ std::vector<Object *> DotBombAttack::obj()
     return ret;
 }
 
-void DotBombAttack::startExplosion(Bomb &bomb, const Vector3 &origin, UpdateContext &uc)
+void BambooBombAttack::startExplosion(Bomb &bomb, const Vector3 &origin, UpdateContext &uc)
 {
     if (bomb.exploded)
         return;
@@ -550,7 +565,7 @@ void DotBombAttack::startExplosion(Bomb &bomb, const Vector3 &origin, UpdateCont
     applyExplosionEffects(origin, uc);
 }
 
-void DotBombAttack::applyExplosionEffects(const Vector3 &origin, UpdateContext &uc)
+void BambooBombAttack::applyExplosionEffects(const Vector3 &origin, UpdateContext &uc)
 {
     if (!uc.scene)
         return;
@@ -619,7 +634,7 @@ void DotBombAttack::applyExplosionEffects(const Vector3 &origin, UpdateContext &
     }
 }
 
-void DotBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, float normalizedProgress)
+void BambooBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, float normalizedProgress)
 {
     if (!bomb.spriteActive)
         return;
@@ -1086,8 +1101,8 @@ void MeleePushAttack::providePlayerFeedback(bool hit)
 float MeleePushAttack::getCooldownPercent() const
 {
     if (cooldownDuration <= 0.0f)
-        return 0.0f;
-    return Clamp(this->cooldownRemaining / cooldownDuration, 0.0f, 1.0f);
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
 }
 
 void MeleePushAttack::initializeTileIndicator(UpdateContext &uc)
@@ -1367,8 +1382,8 @@ void DashAttack::trigger(UpdateContext &uc)
 float DashAttack::getCooldownPercent() const
 {
     if (dashCooldown <= 0.0f)
-        return 0.0f;
-    return Clamp(this->cooldownRemaining / dashCooldown, 0.0f, 1.0f);
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / dashCooldown), 0.0f, 1.0f);
 }
 
 bool DragonClawAttack::tweakModeEnabled = false;
@@ -1785,19 +1800,52 @@ void DragonClawAttack::nudgeArc(int comboIndex, const Vector3 &deltaP1, const Ve
     arcCurves[idx].p2 = Vector3Add(arcCurves[idx].p2, deltaP2);
 }
 
+void DragonClawAttack::nudgeArcPoint(int comboIndex, int pointIndex, const Vector3 &delta)
+{
+    int idx = comboIndex % (int)arcCurves.size();
+    switch (pointIndex)
+    {
+    case 0: arcCurves[idx].p0 = Vector3Add(arcCurves[idx].p0, delta); break;
+    case 1: arcCurves[idx].p1 = Vector3Add(arcCurves[idx].p1, delta); break;
+    case 2: arcCurves[idx].p2 = Vector3Add(arcCurves[idx].p2, delta); break;
+    case 3: arcCurves[idx].p3 = Vector3Add(arcCurves[idx].p3, delta); break;
+    }
+}
+
 void DragonClawAttack::handleTweakHotkeys()
 {
-    if (IsKeyPressed(KEY_F2))
+    // Toggle tweak mode on F2 press (only if SeismicSlam tweak is not active)
+    static bool f2WasPressed = false;
+    bool f2IsPressed = IsKeyDown(KEY_F2);
+    if (f2IsPressed && !f2WasPressed && !SeismicSlamAttack::isTweakModeEnabled())
     {
         tweakModeEnabled = !tweakModeEnabled;
+    }
+    f2WasPressed = f2IsPressed;
+    
+    // Tab to switch to SeismicSlam tweak mode
+    if (tweakModeEnabled && IsKeyPressed(KEY_TAB))
+    {
+        tweakModeEnabled = false;
+        SeismicSlamAttack::setTweakMode(true);
+        return;
     }
 
     if (!tweakModeEnabled)
         return;
 
+    // Select which arc to edit (1-3)
     if (IsKeyPressed(KEY_ONE)) tweakSelectedCombo = 0;
     if (IsKeyPressed(KEY_TWO)) tweakSelectedCombo = 1;
     if (IsKeyPressed(KEY_THREE)) tweakSelectedCombo = 2;
+    
+    // Select which control point to edit (Q=p0, W=p1, E=p2, R=p3)
+    static int selectedPoint = 1; // Default to p1
+    if (IsKeyPressed(KEY_Q)) selectedPoint = 0; // Start point
+    if (IsKeyPressed(KEY_W)) selectedPoint = 1; // First control
+    if (IsKeyPressed(KEY_E)) selectedPoint = 2; // Second control
+    if (IsKeyPressed(KEY_T)) selectedPoint = 3; // End point
+    
     if (IsKeyPressed(KEY_R))
     {
         arcCurves = defaultArcCurves;
@@ -1812,22 +1860,21 @@ void DragonClawAttack::handleTweakHotkeys()
     }
 
     float delta = GetFrameTime();
-    Vector3 deltaP1 = {0.0f, 0.0f, 0.0f};
-    Vector3 deltaP2 = {0.0f, 0.0f, 0.0f};
+    Vector3 deltaPoint = {0.0f, 0.0f, 0.0f};
     const float sideStep = 2.4f * delta;
     const float heightStep = 2.0f * delta;
     const float forwardStep = 3.0f * delta;
 
-    if (IsKeyDown(KEY_UP))   { deltaP1.y += heightStep; deltaP2.y += heightStep; }
-    if (IsKeyDown(KEY_DOWN)) { deltaP1.y -= heightStep; deltaP2.y -= heightStep; }
-    if (IsKeyDown(KEY_LEFT)) { deltaP1.x -= sideStep;   deltaP2.x -= sideStep; }
-    if (IsKeyDown(KEY_RIGHT)){ deltaP1.x += sideStep;   deltaP2.x += sideStep; }
-    if (IsKeyDown(KEY_COMMA)){ deltaP1.z -= forwardStep; deltaP2.z -= forwardStep; }
-    if (IsKeyDown(KEY_PERIOD)){ deltaP1.z += forwardStep; deltaP2.z += forwardStep; }
+    if (IsKeyDown(KEY_UP))   { deltaPoint.y += heightStep; }
+    if (IsKeyDown(KEY_DOWN)) { deltaPoint.y -= heightStep; }
+    if (IsKeyDown(KEY_LEFT)) { deltaPoint.x -= sideStep; }
+    if (IsKeyDown(KEY_RIGHT)){ deltaPoint.x += sideStep; }
+    if (IsKeyDown(KEY_COMMA)){ deltaPoint.z -= forwardStep; }
+    if (IsKeyDown(KEY_PERIOD)){ deltaPoint.z += forwardStep; }
 
-    if (Vector3LengthSqr(deltaP1) > 0.0f || Vector3LengthSqr(deltaP2) > 0.0f)
+    if (Vector3LengthSqr(deltaPoint) > 0.0f)
     {
-        nudgeArc(tweakSelectedCombo, deltaP1, deltaP2);
+        nudgeArcPoint(tweakSelectedCombo, selectedPoint, deltaPoint);
     }
 }
 
@@ -1917,19 +1964,30 @@ void DragonClawAttack::drawTweakHud(const Me &player)
     if (!tweakModeEnabled)
         return;
 
+    // Get selected point from static variable in handleTweakHotkeys
+    static int displayPoint = 1;
+    if (IsKeyPressed(KEY_Q)) displayPoint = 0;
+    if (IsKeyPressed(KEY_W)) displayPoint = 1;
+    if (IsKeyPressed(KEY_E)) displayPoint = 2;
+    if (IsKeyPressed(KEY_T)) displayPoint = 3;
+    
+    const char* pointNames[] = {"Start (p0)", "Control 1 (p1)", "Control 2 (p2)", "End (p3)"};
+
     const int baseX = 20;
     int y = 20;
     int line = 18;
     DrawText("Claw Animation Tweak Mode", baseX, y, 20, ORANGE); y += line + 4;
-    DrawText(TextFormat("Selected arc: %d", tweakSelectedCombo + 1), baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText(TextFormat("Selected arc: %d | Point: %s", tweakSelectedCombo + 1, pointNames[displayPoint]), baseX, y, 16, YELLOW); y += line;
     DrawText("F2: Toggle tweak mode", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("TAB: Switch to Seismic Slam tweak", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("1/2/3: Pick arc", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Q/W/E/T: Select point (p0/p1/p2/p3)", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("R: Reset arc", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("Arrow keys: Side/Height", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("</>: Forward/Back control", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("F5: Save arcs", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("F6: Load arcs", baseX, y, 16, LIGHTGRAY); y += line;
-    DrawText("Tile faces arc tangent", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Left Click: Use attack during tweak", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("Camera set to top-back view", baseX, y, 16, LIGHTGRAY);
 }
 
@@ -2189,4 +2247,803 @@ std::vector<Object *> ArcaneOrbAttack::obj()
         }
     }
     return ret;
+}
+
+// ============================================================================
+// FanShotAttack Implementation
+// ============================================================================
+
+void FanShotAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    cooldownRemaining -= delta;
+    if (cooldownRemaining < 0.0f)
+        cooldownRemaining = 0.0f;
+
+    // Handle camera recoil animation
+    if (recoilActive && uc.player)
+    {
+        recoilTimer += delta;
+        float &currentPitch = uc.player->getLookRotation().y;
+        
+        if (recoilTimer < recoilKickTime)
+        {
+            // Fast upward kick phase
+            float t = recoilTimer / recoilKickTime;
+            float targetPitch = originalPitch - recoilPitchKick;
+            float pitchDiff = targetPitch - currentPitch;
+                currentPitch += pitchDiff * recoilKickSpeed * delta;
+        }
+        else if (recoilTimer < recoilDuration)
+        {
+            // Slower recovery phase
+            float recoveryTime = recoilTimer - recoilKickTime;
+            float recoveryDuration = recoilDuration - recoilKickTime;
+            float t = recoveryTime / recoveryDuration;
+            float targetPitch = originalPitch;
+            float pitchDiff = targetPitch - currentPitch;
+                currentPitch += pitchDiff * recoilRecoverySpeed * delta;
+        }
+        else
+        {
+            // Recoil complete
+            recoilActive = false;
+        }
+    }
+
+    // Update all projectiles
+    for (auto &proj : projectiles)
+    {
+        proj.UpdateBody(uc);
+    }
+
+    // Remove projectiles that hit enemies or go out of bounds
+    auto shouldRemove = [&uc](Projectile &p) -> bool
+    {
+        // Check if projectile is too low (fell through floor) or too far
+        if (p.pos().y < -10.0f || Vector3Distance(p.pos(), {0, 0, 0}) > 200.0f)
+            return true;
+
+        // Check collision with enemies
+        if (uc.scene)
+        {
+            for (Entity *entity : uc.scene->em.getEntities())
+            {
+                if (!entity || entity->category() != ENTITY_ENEMY)
+                    continue;
+                Enemy *enemy = static_cast<Enemy *>(entity);
+                CollisionResult result = Object::collided(p.obj(), enemy->obj());
+                if (result.collided)
+                {
+                    DamageResult damage(p.damage, result);
+                    uc.scene->em.damage(enemy, damage, uc);
+                    return true; // remove projectile
+                }
+            }
+        }
+
+        return false;
+    };
+
+    projectiles.erase(
+        std::remove_if(projectiles.begin(), projectiles.end(), shouldRemove),
+        projectiles.end());
+}
+
+std::vector<Entity *> FanShotAttack::getEntities()
+{
+    std::vector<Entity *> ret;
+    for (auto &p : projectiles)
+    {
+        ret.push_back(&p);
+    }
+    return ret;
+}
+
+std::vector<Object *> FanShotAttack::obj()
+{
+    std::vector<Object *> ret;
+    for (auto &p : projectiles)
+    {
+        ret.push_back(&p.obj());
+    }
+    return ret;
+}
+
+bool FanShotAttack::trigger(UpdateContext &uc)
+{
+    if (cooldownRemaining > 0.0f)
+        return false;
+
+    Vector3 spawnPos = {0.0f, 0.0f, 0.0f};
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    TileType selectedTile = TileType::BAMBOO_1;
+
+    // Get spawn position and direction
+    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        spawnPos = player->pos();
+        // Use player look rotation with the same math as MyCamera to match actual view
+        Vector2 rot = player->getLookRotation();
+        const Vector3 baseForward = {0.0f, 0.0f, -1.0f};
+        const Vector3 up = {0.0f, 1.0f, 0.0f};
+        Vector3 yawForward = Vector3RotateByAxisAngle(baseForward, up, rot.x);
+        Vector3 right = Vector3Normalize(Vector3CrossProduct(yawForward, up));
+        float pitchAngle = -rot.y; // MyCamera uses negative pitch for look up/down
+        Vector3 pitched = Vector3RotateByAxisAngle(yawForward, right, pitchAngle);
+        forward = Vector3Normalize(pitched);
+
+        spawnPos.y += muzzleHeight;
+
+        // Start camera recoil animation
+        recoilActive = true;
+        recoilTimer = 0.0f;
+        originalPitch = uc.player->getLookRotation().y;
+
+        if (uc.uiManager)
+        {
+            selectedTile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        }
+    }
+
+    // Calculate right vector for horizontal spread
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    Vector3 right = Vector3CrossProduct(forward, up);
+    if (Vector3LengthSqr(right) < 0.0001f)
+    {
+        right = {1.0f, 0.0f, 0.0f};
+    }
+    right = Vector3Normalize(right);
+
+    // Spawn 5 projectiles in horizontal spread
+    float halfSpread = spreadAngle * 0.5f * DEG2RAD;
+    float angleStep = (spreadCount > 1) ? (spreadAngle * DEG2RAD) / (float)(spreadCount - 1) : 0.0f;
+
+    for (int i = 0; i < spreadCount; ++i)
+    {
+        // Calculate angle for this projectile (-halfSpread to +halfSpread)
+        float angle = -halfSpread + (float)i * angleStep;
+        
+        // Rotate forward vector around up axis by angle
+        Vector3 dir = Vector3RotateByAxisAngle(forward, up, angle);
+        dir = Vector3Normalize(dir);
+
+        // Create projectile body
+        Object body;
+        body.setAsSphere(projectileSize);
+        body.pos = spawnPos;
+        body.useTexture = uc.uiManager != nullptr;
+        if (uc.uiManager)
+        {
+            body.texture = &uc.uiManager->muim.getSpriteSheet();
+            body.sourceRect = uc.uiManager->muim.getTile(selectedTile);
+            body.tint = Color{255, 255, 255, 220}; // White-hot tint
+        }
+        body.UpdateOBB();
+
+        // Create projectile
+        Projectile proj(
+            spawnPos,
+            Vector3Scale(dir, projectileSpeed),
+            dir,
+            false,
+            body,
+            1.0f,
+            1.0f,
+            selectedTile
+        );
+        proj.damage = projectileDamage;
+
+        projectiles.push_back(proj);
+    }
+
+    cooldownRemaining = cooldownDuration;
+    return true;
+}
+
+float FanShotAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 0.0f;
+    return Clamp(1.0f - (cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
+}
+// ============================================================================
+// SeismicSlamAttack Implementation
+// ============================================================================
+
+bool SeismicSlamAttack::tweakModeEnabled = false;
+
+SeismicSlamAttack::SeismicSlamAttack(Entity *_spawnedBy)
+    : AttackController(_spawnedBy)
+{
+    // Initialize default arc curve (local space: x=right, y=up, z=forward)
+    defaultArcCurve.p0 = {0.0f, 0.0f, 0.0f};                    // Start at origin
+    defaultArcCurve.p1 = {0.0f, 3.0f, 2.0f};                    // First control: up and forward
+    defaultArcCurve.p2 = {0.0f, arcApexHeight, 5.0f};           // Second control: apex
+    defaultArcCurve.p3 = {0.0f, 0.0f, arcForwardDistance};      // End: forward on ground
+    
+    arcCurve = defaultArcCurve;
+    
+    // Initialize shockwave ring as a flat box
+    shockwaveRing.setAsBox({shockwaveStartRadius * 2.0f, shockwaveHeight, shockwaveStartRadius * 2.0f});
+    shockwaveRing.tint = Color{255, 200, 100, 180};
+    shockwaveRing.useTexture = false;
+    shockwaveRing.setVisible(false);
+    
+    loadArcCurve();
+}
+
+void SeismicSlamAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    // Update cooldown
+    if (cooldownRemaining > 0.0f)
+    {
+        cooldownRemaining -= delta;
+        if (cooldownRemaining < 0.0f)
+            cooldownRemaining = 0.0f;
+    }
+    
+    // Update state machine
+    switch (state)
+    {
+    case SLAM_IDLE:
+        // Nothing to update
+        break;
+        
+    case SLAM_LEAP:
+        updateLeap(uc, delta);
+        break;
+        
+    case SLAM_DESCEND:
+        // Legacy path; leap now handles full arc and triggers impact directly
+        updateDescend(uc, delta);
+        break;
+        
+    case SLAM_IMPACT:
+        updateImpact(uc, delta);
+        break;
+        
+    case SLAM_RECOVERY:
+        updateRecovery(uc, delta);
+        break;
+    }
+    
+    // Update shockwave ring
+    if (shockwaveActive)
+    {
+        shockwaveTimer += delta;
+        float progress = shockwaveTimer / impactDuration;
+        
+        if (progress >= 1.0f)
+        {
+            shockwaveActive = false;
+            shockwaveRing.setVisible(false);
+        }
+        else
+        {
+            // Expand ring
+            float currentRadius = shockwaveStartRadius + (shockwaveEndRadius - shockwaveStartRadius) * progress;
+            shockwaveRing.setAsBox({currentRadius * 2.0f, shockwaveHeight, currentRadius * 2.0f});
+            
+            // Fade out
+            unsigned char alpha = (unsigned char)((1.0f - progress) * 180.0f);
+            shockwaveRing.tint.a = alpha;
+            
+            shockwaveRing.UpdateOBB();
+        }
+    }
+}
+
+bool SeismicSlamAttack::trigger(UpdateContext &uc)
+{
+    if (cooldownRemaining > 0.0f || state != SLAM_IDLE || tweakModeEnabled)
+        return false;
+    
+    performLeap(uc);
+    return true;
+}
+
+void SeismicSlamAttack::performLeap(UpdateContext &uc)
+{
+    if (!uc.player)
+        return;
+    
+    state = SLAM_LEAP;
+    stateTimer = 0.0f;
+    animationProgress = 0.0f;
+    
+    // Save player state
+    leapStartPos = uc.player->pos();
+    savedVelocity = uc.player->vel();
+    
+    // Store current facing for arc calculation
+    const Camera &cam = uc.player->getCamera();
+    lastForward = Vector3Subtract(cam.target, cam.position);
+    if (Vector3LengthSqr(lastForward) < 0.0001f)
+        lastForward = {0.0f, 0.0f, -1.0f};
+    lastForward = Vector3Normalize(lastForward);
+    lastForward.y = 0.0f; // Keep horizontal
+    lastForward = Vector3Normalize(lastForward);
+    
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    lastRight = Vector3Normalize(Vector3CrossProduct(up, lastForward));
+    lastBasePos = leapStartPos;
+    
+    // Zero out player velocity
+    uc.player->setVelocity({0.0f, 0.0f, 0.0f});
+}
+
+void SeismicSlamAttack::updateLeap(UpdateContext &uc, float delta)
+{
+    if (!uc.player)
+        return;
+    
+    stateTimer += delta;
+    float linearT = Clamp(stateTimer / leapDuration, 0.0f, 1.0f);
+    // Gravity-shaped progress: speeds up at start/end, slows near apex
+    float shapedT = linearT + gravityShape * sinf(2.0f * PI * linearT) / (2.0f * PI);
+    animationProgress = Clamp(shapedT, 0.0f, 1.0f);
+
+    // Evaluate arc position
+    Vector3 arcPos = evalArcPoint(arcCurve, animationProgress, lastForward, lastRight, lastBasePos);
+    
+    // Check for wall collision before moving
+    if (uc.scene)
+    {
+        Vector3 currentPos = uc.player->pos();
+        Vector3 moveDelta = Vector3Subtract(arcPos, currentPos);
+        float moveDistance = Vector3Length(moveDelta);
+        
+        if (moveDistance > 0.001f)
+        {
+            // Create a temporary collision box at target position
+            Object testBox = uc.player->obj();
+            testBox.pos = arcPos;
+            testBox.UpdateOBB();
+            
+            // Check collision with scene objects (walls)
+            auto collisions = Object::collided(testBox, uc.scene);
+            bool hitWall = false;
+            for (const auto &col : collisions)
+            {
+                if (col.collided)
+                {
+                    hitWall = true;
+                    // Stop the leap early and trigger impact
+                    performImpact(uc);
+                    return;
+                }
+            }
+        }
+    }
+    
+    uc.player->setPosition(arcPos);
+
+    // Calculate tangent for camera pitch (look along motion direction)
+    Vector3 tangent = evalArcTangent(arcCurve, animationProgress, lastForward, lastRight);
+    tangent = Vector3Normalize(tangent);
+    float horizLen = Vector3Length({tangent.x, 0.0f, tangent.z});
+    float targetPitch = atan2f(tangent.y, horizLen); // Positive up, negative down
+    // During ascent (first half), look upward naturally
+    // During descent (second half), smoothly transition to looking straight down
+    if (animationProgress > 0.5f)
+    {
+        float descentProgress = (animationProgress - 0.5f) / 0.5f; // 0 to 1 over second half
+        targetPitch = Lerp(targetPitch, -PI * 0.5f, descentProgress);
+    }
+    updateCameraLook(uc, targetPitch);
+
+    // Trigger impact when arc completes
+    if (animationProgress >= 0.999f)
+    {
+        performImpact(uc);
+    }
+}
+
+void SeismicSlamAttack::updateDescend(UpdateContext &uc, float delta)
+{
+    if (!uc.player)
+        return;
+    
+    stateTimer += delta;
+    animationProgress = Clamp(stateTimer / descendDuration, 0.0f, 1.0f);
+    
+    // Simple downward motion
+    Vector3 currentPos = uc.player->pos();
+    float targetY = 0.0f; // Ground level
+    currentPos.y = Lerp(currentPos.y, targetY, animationProgress);
+    uc.player->setPosition(currentPos);
+    
+    // Camera looks down at impact point
+    updateCameraLook(uc, -impactLookDownAngle);
+    
+    // Check for ground impact
+    if (currentPos.y <= 0.1f || animationProgress >= 1.0f)
+    {
+        currentPos.y = 0.0f;
+        uc.player->setPosition(currentPos);
+        performImpact(uc);
+    }
+}
+
+void SeismicSlamAttack::performImpact(UpdateContext &uc)
+{
+    state = SLAM_IMPACT;
+    stateTimer = 0.0f;
+    
+    // Apply camera shake
+    if (uc.player)
+    {
+        uc.player->addCameraShake(cameraShakeMagnitude, cameraShakeDuration);
+        // Camera should already be looking down from the dive
+        // No need to force set it here
+    }
+    
+    // Impact particles and rings (match Vanguard dive feel)
+    if (uc.scene)
+    {
+        Vector3 pos = uc.player->pos();
+        uc.scene->particles.spawnExplosion(pos, 48, RED, 0.4f, 8.0f, 1.0f);
+        uc.scene->particles.spawnRing(pos, 4.0f, 32, ColorAlpha(ORANGE, 220), 3.2f, true);
+    }
+
+    // Start shockwave visual
+    shockwaveActive = true;
+    shockwaveTimer = 0.0f;
+    shockwaveRing.pos = uc.player->pos();
+    shockwaveRing.pos.y = shockwaveHeight * 0.5f;
+    shockwaveRing.setAsBox({shockwaveStartRadius * 2.0f, shockwaveHeight, shockwaveStartRadius * 2.0f});
+    shockwaveRing.tint = Color{255, 200, 100, 180};
+    shockwaveRing.setVisible(true);
+    shockwaveRing.UpdateOBB();
+    
+    // Apply damage to enemies in radius
+    applyShockwaveDamage(uc);
+}
+
+void SeismicSlamAttack::updateImpact(UpdateContext &uc, float delta)
+{
+    stateTimer += delta;
+    
+    if (stateTimer >= impactDuration)
+    {
+        state = SLAM_RECOVERY;
+        stateTimer = 0.0f;
+    }
+}
+
+void SeismicSlamAttack::updateRecovery(UpdateContext &uc, float delta)
+{
+    stateTimer += delta;
+    
+    // Gradually restore camera control with slower speed
+    if (!uc.player)
+        return;
+    
+    float &currentPitch = uc.player->getLookRotation().y;
+    float targetPitch = 0.0f;
+    float pitchDiff = targetPitch - currentPitch;
+    currentPitch += pitchDiff * cameraRecoverySpeed * delta;
+    
+    if (stateTimer >= recoveryDuration)
+    {
+        state = SLAM_IDLE;
+        restoreCameraControl(uc);
+        cooldownRemaining = cooldownDuration;
+    }
+}
+
+void SeismicSlamAttack::applyShockwaveDamage(UpdateContext &uc)
+{
+    if (!uc.scene || !uc.player)
+        return;
+    
+    Vector3 impactPos = uc.player->pos();
+    
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        if (!entity || entity->category() != ENTITY_ENEMY)
+            continue;
+        
+        Enemy *enemy = static_cast<Enemy *>(entity);
+        float dist = Vector3Distance(impactPos, enemy->pos());
+        
+        if (dist <= shockwaveEndRadius)
+        {
+            // Deal damage
+            CollisionResult cResult;
+            DamageResult damage(slamDamage, cResult);
+            uc.scene->em.damage(enemy, damage, uc);
+            
+            // Apply knockback
+            Vector3 delta = Vector3Subtract(enemy->pos(), impactPos);
+            delta.y = 0.0f;
+            if (Vector3LengthSqr(delta) < 0.0001f)
+                delta = {1.0f, 0.0f, 0.0f};
+            Vector3 pushDir = Vector3Normalize(delta);
+            enemy->applyKnockback(
+                Vector3Scale(pushDir, slamKnockback),
+                slamKnockbackDuration,
+                slamLift
+            );
+        }
+    }
+}
+
+void SeismicSlamAttack::updateCameraLook(UpdateContext &uc, float targetPitch)
+{
+    if (!uc.player)
+        return;
+    
+    float &currentPitch = uc.player->getLookRotation().y;
+    float pitchDiff = targetPitch - currentPitch;
+    currentPitch += pitchDiff * cameraTransitionSpeed * GetFrameTime();
+}
+
+void SeismicSlamAttack::restoreCameraControl(UpdateContext &uc)
+{
+    // Camera returns to normal - player regains control
+    // No special action needed; player input will naturally resume
+}
+
+Vector3 SeismicSlamAttack::evalArcPoint(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right, const Vector3 &basePos) const
+{
+    // Cubic Bezier interpolation
+    float oneMinusT = 1.0f - t;
+    float b0 = oneMinusT * oneMinusT * oneMinusT;
+    float b1 = 3.0f * oneMinusT * oneMinusT * t;
+    float b2 = 3.0f * oneMinusT * t * t;
+    float b3 = t * t * t;
+    
+    // Evaluate in local space
+    Vector3 localPos = {
+        b0 * curve.p0.x + b1 * curve.p1.x + b2 * curve.p2.x + b3 * curve.p3.x,
+        b0 * curve.p0.y + b1 * curve.p1.y + b2 * curve.p2.y + b3 * curve.p3.y,
+        b0 * curve.p0.z + b1 * curve.p1.z + b2 * curve.p2.z + b3 * curve.p3.z
+    };
+    
+    // Transform to world space
+    Vector3 worldPos = basePos;
+    worldPos = Vector3Add(worldPos, Vector3Scale(right, localPos.x));
+    worldPos = Vector3Add(worldPos, Vector3Scale({0.0f, 1.0f, 0.0f}, localPos.y));
+    worldPos = Vector3Add(worldPos, Vector3Scale(forward, localPos.z));
+    
+    return worldPos;
+}
+
+Vector3 SeismicSlamAttack::evalArcTangent(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right) const
+{
+    // Derivative of cubic Bezier
+    float oneMinusT = 1.0f - t;
+    float d0 = 3.0f * oneMinusT * oneMinusT;
+    float d1 = 6.0f * oneMinusT * t;
+    float d2 = 3.0f * t * t;
+    
+    Vector3 p01 = Vector3Subtract(curve.p1, curve.p0);
+    Vector3 p12 = Vector3Subtract(curve.p2, curve.p1);
+    Vector3 p23 = Vector3Subtract(curve.p3, curve.p2);
+    
+    Vector3 localTangent = {
+        d0 * p01.x + d1 * p12.x + d2 * p23.x,
+        d0 * p01.y + d1 * p12.y + d2 * p23.y,
+        d0 * p01.z + d1 * p12.z + d2 * p23.z
+    };
+    
+    // Transform to world space
+    Vector3 worldTangent = {0.0f, 0.0f, 0.0f};
+    worldTangent = Vector3Add(worldTangent, Vector3Scale(right, localTangent.x));
+    worldTangent = Vector3Add(worldTangent, Vector3Scale({0.0f, 1.0f, 0.0f}, localTangent.y));
+    worldTangent = Vector3Add(worldTangent, Vector3Scale(forward, localTangent.z));
+    
+    return worldTangent;
+}
+
+float SeismicSlamAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 0.0f;
+    return Clamp(1.0f - (cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
+}
+
+std::vector<Object *> SeismicSlamAttack::obj()
+{
+    std::vector<Object *> ret;
+    if (shockwaveActive)
+    {
+        ret.push_back(&shockwaveRing);
+    }
+    if (tweakModeEnabled && !debugArcPoints.empty())
+    {
+        for (auto &pt : debugArcPoints)
+        {
+            ret.push_back(&pt);
+        }
+    }
+    return ret;
+}
+
+// ============================================================================
+// Tweak Mode for SeismicSlamAttack
+// ============================================================================
+
+void SeismicSlamAttack::handleTweakHotkeys()
+{
+    // Toggle tweak mode on F3 press (only if DragonClaw tweak is not active)
+    static bool f3WasPressed = false;
+    bool f3IsPressed = IsKeyDown(KEY_F3);
+    if (f3IsPressed && !f3WasPressed && !DragonClawAttack::isTweakModeEnabled())
+    {
+        tweakModeEnabled = !tweakModeEnabled;
+    }
+    f3WasPressed = f3IsPressed;
+    
+    // Tab to switch to DragonClaw tweak mode
+    if (tweakModeEnabled && IsKeyPressed(KEY_TAB))
+    {
+        tweakModeEnabled = false;
+        DragonClawAttack::setTweakMode(true);
+        return;
+    }
+
+    if (!tweakModeEnabled)
+        return;
+    
+    // Select which control point to edit (Q=p0, W=p1, E=p2, T=p3)
+    static int selectedPoint = 1; // Default to p1
+    if (IsKeyPressed(KEY_Q)) selectedPoint = 0;
+    if (IsKeyPressed(KEY_W)) selectedPoint = 1;
+    if (IsKeyPressed(KEY_E)) selectedPoint = 2;
+    if (IsKeyPressed(KEY_T)) selectedPoint = 3;
+    
+    if (IsKeyPressed(KEY_R))
+    {
+        resetArcDefaults();
+    }
+    if (IsKeyPressed(KEY_F5))
+    {
+        saveArcCurve();
+    }
+    if (IsKeyPressed(KEY_F6))
+    {
+        loadArcCurve();
+    }
+
+    float delta = GetFrameTime();
+    Vector3 deltaPoint = {0.0f, 0.0f, 0.0f};
+    const float sideStep = 2.4f * delta;
+    const float heightStep = 2.0f * delta;
+    const float forwardStep = 3.0f * delta;
+
+    if (IsKeyDown(KEY_UP))    { deltaPoint.y += heightStep; }
+    if (IsKeyDown(KEY_DOWN))  { deltaPoint.y -= heightStep; }
+    if (IsKeyDown(KEY_LEFT))  { deltaPoint.x -= sideStep; }
+    if (IsKeyDown(KEY_RIGHT)) { deltaPoint.x += sideStep; }
+    if (IsKeyDown(KEY_COMMA)) { deltaPoint.z -= forwardStep; }
+    if (IsKeyDown(KEY_PERIOD)){ deltaPoint.z += forwardStep; }
+
+    if (Vector3LengthSqr(deltaPoint) > 0.0f)
+    {
+        nudgeArcPoint(selectedPoint, deltaPoint);
+    }
+}
+
+void SeismicSlamAttack::refreshDebugArc(const Vector3 &forward, const Vector3 &right, const Vector3 &basePos)
+{
+    if (!tweakModeEnabled)
+        return;
+
+    lastForward = forward;
+    lastRight = right;
+    lastBasePos = basePos;
+
+    if (debugArcPoints.size() != arcDebugSamples)
+        debugArcPoints.resize(arcDebugSamples);
+
+    for (int i = 0; i < arcDebugSamples; ++i)
+    {
+        float t = (arcDebugSamples == 1) ? 0.0f : (float)i / (float)(arcDebugSamples - 1);
+        Vector3 pos = evalArcPoint(arcCurve, t, forward, right, basePos);
+        debugArcPoints[i].pos = pos;
+        debugArcPoints[i].setAsSphere(debugParticleRadius);
+        debugArcPoints[i].tint = Color{255, 120, 200, 200};
+        debugArcPoints[i].useTexture = false;
+        debugArcPoints[i].UpdateOBB();
+    }
+}
+
+void SeismicSlamAttack::applyTweakCamera(const Me &player, Camera &cam)
+{
+    if (!tweakModeEnabled)
+        return;
+
+    Vector2 rot = player.getLookRotation();
+    Vector3 forward = {sinf(rot.x), 0.0f, cosf(rot.x)}; // Horizontal forward (same as DragonClaw)
+    forward = Vector3Normalize(forward);
+    const Vector3 up = {0.0f, 1.0f, 0.0f};
+
+    Vector3 playerPos = player.pos();
+    Vector3 offsetBack = Vector3Scale(forward, -6.0f);
+    Vector3 offsetUp = {0.0f, 6.0f, 0.0f};
+    cam.position = Vector3Add(Vector3Add(playerPos, offsetBack), offsetUp);
+    cam.target = Vector3Add(playerPos, Vector3Scale(forward, 1.5f));
+    cam.up = up;
+    cam.fovy = 65.0f;
+}
+
+void SeismicSlamAttack::drawTweakHud(const Me &player)
+{
+    if (!tweakModeEnabled)
+        return;
+
+    const int baseX = 20;
+    int y = 20;
+    int line = 18;
+    DrawText("Seismic Slam Tweak Mode", baseX, y, 20, ORANGE); y += line + 4;
+    DrawText("F3: Toggle tweak mode", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("TAB: Switch to Dragon Claw tweak", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Q/W/E/T: Select Point", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Arrow keys: Side/Height", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("</>: Forward/Back control", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("R: Reset | F5: Save | F6: Load", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Camera set to third-person view", baseX, y, 16, LIGHTGRAY);
+}
+
+void SeismicSlamAttack::resetArcDefaults()
+{
+    arcCurve = defaultArcCurve;
+}
+
+void SeismicSlamAttack::nudgeArc(const Vector3 &deltaP1, const Vector3 &deltaP2)
+{
+    arcCurve.p1 = Vector3Add(arcCurve.p1, deltaP1);
+    arcCurve.p2 = Vector3Add(arcCurve.p2, deltaP2);
+}
+
+void SeismicSlamAttack::nudgeArcPoint(int pointIndex, const Vector3 &delta)
+{
+    switch (pointIndex)
+    {
+    case 0: arcCurve.p0 = Vector3Add(arcCurve.p0, delta); break;
+    case 1: arcCurve.p1 = Vector3Add(arcCurve.p1, delta); break;
+    case 2: arcCurve.p2 = Vector3Add(arcCurve.p2, delta); break;
+    case 3: arcCurve.p3 = Vector3Add(arcCurve.p3, delta); break;
+    }
+}
+
+bool SeismicSlamAttack::saveArcCurve() const
+{
+    std::ofstream out(arcSaveFilename);
+    if (!out.is_open())
+        return false;
+
+    out << arcCurve.p0.x << ' ' << arcCurve.p0.y << ' ' << arcCurve.p0.z << ' '
+        << arcCurve.p1.x << ' ' << arcCurve.p1.y << ' ' << arcCurve.p1.z << ' '
+        << arcCurve.p2.x << ' ' << arcCurve.p2.y << ' ' << arcCurve.p2.z << ' '
+        << arcCurve.p3.x << ' ' << arcCurve.p3.y << ' ' << arcCurve.p3.z << '\n';
+    return true;
+}
+
+bool SeismicSlamAttack::loadArcCurve()
+{
+    std::ifstream in(arcSaveFilename);
+    if (!in.is_open())
+        return false;
+
+    ArcCurve loaded = defaultArcCurve;
+    if (!(in >> loaded.p0.x >> loaded.p0.y >> loaded.p0.z
+            >> loaded.p1.x >> loaded.p1.y >> loaded.p1.z
+            >> loaded.p2.x >> loaded.p2.y >> loaded.p2.z
+            >> loaded.p3.x >> loaded.p3.y >> loaded.p3.z))
+    {
+        return false;
+    }
+    arcCurve = loaded;
+    if (tweakModeEnabled)
+    {
+        refreshDebugArc(lastForward, lastRight, lastBasePos);
+    }
+    return true;
 }

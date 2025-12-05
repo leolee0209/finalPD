@@ -14,11 +14,6 @@ void AttackSlotElement::setEntries(const std::vector<SlotTileEntry> *entriesRef)
     entries = entriesRef;
 }
 
-void AttackSlotElement::setActive(bool value)
-{
-    isActive = value;
-}
-
 void AttackSlotElement::setKeyLabel(const std::string &label)
 {
     keyLabel = label;
@@ -51,9 +46,11 @@ void AttackSlotElement::draw()
 {
     // Frame + label ---------------------------------------------------------
     Rectangle rect = getBounds();
-    Color base = isActive ? Color{70, 120, 160, 230} : Color{30, 35, 45, 230};
+    Color base = Color{30, 35, 45, 230};
     DrawRectangleRounded(rect, 0.18f, 8, base);
-    DrawRectangleRoundedLines(rect, 0.18f, 8, Fade(RAYWHITE, 0.9f));
+    Color outline = isValidCombo ? Fade(RAYWHITE, 0.9f) : RED;
+    float thick = isValidCombo ? 1.0f : 3.0f;
+    DrawRectangleRoundedLinesEx(rect, 0.18f, 8, thick, outline);
 
     if (!keyLabel.empty())
     {

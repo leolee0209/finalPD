@@ -455,6 +455,7 @@ public:
     bool isInMeleeWindup() const;
     void addCameraShake(float magnitude, float durationSeconds);
     void addCameraFovKick(float magnitude, float durationSeconds);
+    void addCameraPitchKick(float magnitude, float durationSeconds);
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
     bool damage(DamageResult &dResult);
     int getHealth() const { return this->health; }

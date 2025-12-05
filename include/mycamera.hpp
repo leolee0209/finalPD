@@ -88,4 +88,9 @@ public:
      * @brief Temporarily boosts FOV for speed effects.
      */
     void addFovKick(float magnitude, float durationSeconds);
+
+    /**
+     * @brief Temporarily kicks pitch up/down for recoil effects.
+     */
+    void addPitchKick(float magnitude, float durationSeconds);
 };
