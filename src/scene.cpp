@@ -1653,6 +1653,8 @@ void Scene::DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 posi
     // Set desired texture to be enabled while drawing following vertex data
     rlSetTexture(texture.id);
 
+    BeginBlendMode(BLEND_ALPHA);
+
     // We calculate the normalized texture coordinates for the desired texture-source-rectangle
     // It means converting from (tex.width, tex.height) coordinates to [0.0f, 1.0f] equivalent
     rlBegin(RL_QUADS);
@@ -1725,6 +1727,7 @@ void Scene::DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 posi
     rlVertex3f(x - width / 2, y + height / 2, z - length / 2);
 
     rlEnd();
+    EndBlendMode();
 
     rlSetTexture(0);
 }

@@ -68,6 +68,7 @@ void EnemyManager::damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc
 
     if (!enemy->damage(dResult))
     {
+        TraceLog(LOG_ERROR, "enemy died\n");
         // Call virtual OnDeath handler for special cleanup (e.g., Summoner minion cleanup)
         SummonerEnemy *summoner = dynamic_cast<SummonerEnemy*>(enemy);
         if (summoner)

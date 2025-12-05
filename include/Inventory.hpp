@@ -19,7 +19,6 @@ inline void Inventory::CreatePlayerHand()
 
     // Phase 3 testing setup - skills for each suit
     // Character suit: Dragon Claw (basic), Seismic Slam (2-2-2), Dash (1-2-3)
-    this->tiles.push_back(Tile(TileStats(), TileType::CHARACTER_1));
     this->tiles.push_back(Tile(TileStats(), TileType::CHARACTER_2));
     this->tiles.push_back(Tile(TileStats(), TileType::CHARACTER_2));
     this->tiles.push_back(Tile(TileStats(), TileType::CHARACTER_2));
@@ -27,16 +26,17 @@ inline void Inventory::CreatePlayerHand()
     // Bamboo suit: Rapid Throw (basic), Bamboo Bomb (2-2-2), Fan Shot (1-2-3)
     this->tiles.push_back(Tile(TileStats(), TileType::BAMBOO_1));
     this->tiles.push_back(Tile(TileStats(), TileType::BAMBOO_2));
-    this->tiles.push_back(Tile(TileStats(), TileType::BAMBOO_2));
-    this->tiles.push_back(Tile(TileStats(), TileType::BAMBOO_2));
     this->tiles.push_back(Tile(TileStats(), TileType::BAMBOO_3));
     // Dot suit: Arcane Orb (basic)
     this->tiles.push_back(Tile(TileStats(), TileType::DOT_1));
     this->tiles.push_back(Tile(TileStats(), TileType::DOT_1));
     this->tiles.push_back(Tile(TileStats(), TileType::DOT_1));
-    // Extra tiles for variety
-    this->tiles.push_back(Tile(TileStats(), TileType::DRAGON_RED));
-    this->tiles.push_back(Tile(TileStats(), TileType::DRAGON_GREEN));
+    this->tiles.push_back(Tile(TileStats(), TileType::DOT_1));
+    this->tiles.push_back(Tile(TileStats(), TileType::DOT_2));
+    this->tiles.push_back(Tile(TileStats(), TileType::DOT_3));
+    this->tiles.push_back(Tile(TileStats(), TileType::DOT_2));
+    this->tiles.push_back(Tile(TileStats(), TileType::DOT_2));
+    this->tiles.push_back(Tile(TileStats(), TileType::DOT_2));
 }
 
 inline Inventory::Inventory(/* args */)

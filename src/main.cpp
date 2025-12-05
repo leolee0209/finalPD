@@ -234,7 +234,7 @@ int main(void)
                 else if (selectedTile == TileType::DRAGON_GREEN)
                 {
                     // Green Dragon -> Ranger mode (Rapid Throw)
-                    BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                    BambooBasicAttack *basicAttack = scene.am.getBasicTileAttack(&player);
                     if (basicAttack)
                     {
                         basicAttack->spawnProjectile(uc);
@@ -243,7 +243,7 @@ int main(void)
                 else
                 {
                     // Bamboo tiles and others -> Ranger mode (Rapid Throw)
-                    BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                    BambooBasicAttack *basicAttack = scene.am.getBasicTileAttack(&player);
                     if (basicAttack)
                     {
                         basicAttack->spawnProjectile(uc);

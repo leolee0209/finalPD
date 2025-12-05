@@ -5,14 +5,15 @@
 #include <raymath.h>
 #include "updateContext.hpp"
 #include <algorithm>
+#include <cmath>
 #include "scene.hpp"
 
 Texture2D BambooBombAttack::explosionTexture{};
 bool BambooBombAttack::explosionTextureLoaded = false;
 int BambooBombAttack::explosionTextureUsers = 0;
 
-// --- BambooTripleAttack: rapid-fire mode triggered by three same bamboo tiles ---
-void BambooTripleAttack::trigger(UpdateContext &uc)
+// --- BambooBasicBuffAttack: rapid-fire mode triggered by three same bamboo tiles ---
+void BambooBasicBuffAttack::trigger(UpdateContext &uc)
 {
     if (this->cooldownRemaining > 0.0f)
         return;
@@ -21,7 +22,7 @@ void BambooTripleAttack::trigger(UpdateContext &uc)
     this->cooldownRemaining = cooldownDuration;
 }
 
-void BambooTripleAttack::update(UpdateContext &uc)
+void BambooBasicBuffAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
 
@@ -36,20 +37,20 @@ void BambooTripleAttack::update(UpdateContext &uc)
     }
 }
 
-float BambooTripleAttack::getCooldownPercent() const
+float BambooBasicBuffAttack::getCooldownPercent() const
 {
     if (cooldownDuration <= 0.0f)
         return 1.0f;
     return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
 }
 
-float BambooTripleAttack::getReducedCooldown() const
+float BambooBasicBuffAttack::getReducedCooldown() const
 {
     return this->isActive() ? reducedCooldown : normalCooldown;
 }
 
-// --- BasicTileAttack: simple horizontal shooting ---
-void BasicTileAttack::spawnProjectile(UpdateContext &uc)
+// --- BambooBasicAttack: simple horizontal shooting ---
+void BambooBasicAttack::spawnProjectile(UpdateContext &uc)
 {
     if (!uc.scene || !this->spawnedBy)
         return;
@@ -154,7 +155,7 @@ void BasicTileAttack::spawnProjectile(UpdateContext &uc)
     }
 }
 
-void BasicTileAttack::update(UpdateContext &uc)
+void BambooBasicAttack::update(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     
@@ -246,56 +247,7 @@ Quaternion GetQuaternionFromForward(Vector3 forward)
     return QuaternionFromAxisAngle(rotAxis, angleRad);
 }
 
-// --- ThousandTileAttack: thousand-mode implementation (moved from ThousandAttack) ---
-void ThousandTileAttack::startThousandMode()
-{
-    if (this->projectiles.empty())
-        return;
-    this->mode = MODE_THOUSAND_FINAL;
-    // compute average destination
-    float x = 0, y = 0, z = 0;
-    for (const auto &p : this->projectiles)
-    {
-        x += p.pos().x;
-        y += p.pos().y;
-        z += p.pos().z;
-    }
-    float size = (float)this->projectiles.size();
-    this->thousandDest = {x / size, y / size, z / size};
-
-    // set each projectile to fly towards dest
-    for (auto &p : this->projectiles)
-    {
-        Vector3 toDest = Vector3Subtract(this->thousandDest, p.pos());
-        Vector3 newDir = Vector3Normalize(toDest);
-        Vector3 newVel = Vector3Scale(newDir, ThousandTileAttack::thousandFinalVel);
-        // preserve grounded state and object rotation
-        p = Projectile(p.pos(), newVel, newDir, p.isGrounded(), p.obj(), 1.0f, 1.0f, p.type);
-    }
-}
-
-bool ThousandTileAttack::thousandEndFinal()
-{
-    // remove projectiles that reached or overshot destination, like previous endFinal
-    auto should_remove = [&](const Projectile &p)
-    {
-        if (Vector3DistanceSqr(p.pos(), this->thousandDest) <= 0.04f) // small margin (0.2^2)
-            return true;
-        Vector3 toDest = Vector3Subtract(this->thousandDest, p.pos());
-        if (Vector3DotProduct(toDest, p.vel()) <= 0)
-            return true;
-        return false;
-    };
-
-    size_t old_size = this->projectiles.size();
-    this->projectiles.erase(
-        std::remove_if(this->projectiles.begin(), this->projectiles.end(), should_remove),
-        this->projectiles.end());
-    this->count -= (old_size - this->projectiles.size());
-    return this->projectiles.empty();
-}
-
-// --- BambooBombAttack (renamed from DotBombAttack) --------------------------------------------------------------------
+// --- BambooBombAttack --------------------------------------------------------------------
 
 BambooBombAttack::BambooBombAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
 {
@@ -668,182 +620,6 @@ void BambooBombAttack::updateExplosionBillboard(Bomb &bomb, UpdateContext &uc, f
         bomb.spriteActive = false;
         bomb.explosionSprite.setVisible(false);
     }
-}
-
-// --- Triplet integration (connectors) moved into ThousandTileAttack ---
-void ThousandTileAttack::startTripletMode()
-{
-    if (this->projectiles.size() < 3)
-        return;
-    this->mode = MODE_TRIPLET_CONNECTING;
-    this->connectingTimer = 0.0f;
-    this->connectors.clear();
-    this->connectorForward.clear();
-}
-
-// helper used inside update to perform triplet connector spawn / animation
-void ThousandTileAttack::updateTriplet(UpdateContext &uc)
-{
-    // update physics of projectiles still
-    for (auto &p : this->projectiles)
-        p.UpdateBody(uc);
-
-    connectingTimer += GetFrameTime();
-
-    auto spawnConnector = [&](int startIdx, int endIdx)
-    {
-        Vector3 start = projectiles[startIdx].pos();
-        Vector3 end = projectiles[endIdx].pos();
-        Vector3 delta = Vector3Subtract(end, start);
-        float length = Vector3Length(delta);
-        Vector3 mid = Vector3Scale(Vector3Add(start, end), 0.5f);
-        Vector3 forward = Vector3Normalize(delta);
-        Object conn({connectorThickness, connectorThickness, length}, mid);
-        conn.setRotationFromForward(forward);
-        this->connectors.push_back(conn);
-        this->connectorForward.push_back(0.0f);
-    };
-
-    // spawn connectors sequentially
-    if (this->connectors.size() < 1 && connectingTimer > 0.0f)
-    {
-        spawnConnector(0, 1);
-    }
-    if (this->connectors.size() < 2 && connectingTimer > 0.5f)
-    {
-        spawnConnector(1, 2);
-    }
-    if (this->connectors.size() < 3 && connectingTimer > 1.0f)
-    {
-        spawnConnector(2, 0);
-    }
-
-    // after spawning connectors, grow them (FINAL stage)
-    if (connectingTimer > 2.0f)
-    {
-        // transition to FINAL stage where we animate connectors growing/rotating
-        this->mode = MODE_TRIPLET_FINAL;
-    }
-}
-
-void ThousandTileAttack::update(UpdateContext &uc)
-{
-    // Always update base projectile physics if not handled by mode-specific code above
-    if (this->mode != MODE_TRIPLET_CONNECTING && this->mode != MODE_TRIPLET_FINAL)
-    {
-        for (auto &p : this->projectiles)
-            p.UpdateBody(uc);
-    }
-
-    // Mode handling
-    switch (this->mode)
-    {
-    case MODE_THOUSAND_FINAL:
-        if (thousandEndFinal())
-        {
-            this->mode = MODE_IDLE;
-            this->thousandActivated = false;
-            this->count = 0;
-            this->thousandDest = {0};
-        }
-        break;
-    case MODE_TRIPLET_CONNECTING:
-    case MODE_TRIPLET_FINAL:
-    {
-        // animate connectors expanding / rotating to final height
-        bool allAtTarget = true;
-        for (size_t i = 0; i < connectors.size(); ++i)
-        {
-            Object &c = connectors[i];
-            if (c.size.y < tripletFinalHeight)
-            {
-                c.size.y += tripletGrowthRate;
-                if (c.size.y >= tripletFinalHeight)
-                    c.size.y = tripletFinalHeight;
-                allAtTarget = false;
-            }
-            // rotate connector forward (visual) using rotate helper
-            Vector3 forwardDir = Vector3RotateByQuaternion({0.0f, 0.0f, 1.0f}, c.getRotation());
-            c.rotate(forwardDir, 1.0f); // small rotation per frame
-        }
-        if (allAtTarget)
-        {
-            // cleanup and reset
-            this->projectiles.clear();
-            this->connectors.clear();
-            this->connectorForward.clear();
-            this->mode = MODE_IDLE;
-            this->count = 0;
-        }
-    }
-    break;
-    default:
-        // MODE_IDLE etc. nothing special
-        break;
-    }
-}
-void ThousandTileAttack::spawnProjectile(UpdateContext &uc)
-{
-    if (!uc.scene)
-        return;
-    AttackManager &am = uc.scene->am;
-    if (am.isAttackLockedByOther(this))
-        return;
-
-    float yaw;
-    float pitch;
-
-    // Determine spawner orientation without RTTI: use category() then static_cast
-    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
-    {
-        Me *player = static_cast<Me *>(this->spawnedBy);
-        yaw = player->getLookRotation().x;
-        pitch = player->getLookRotation().y;
-    }
-    else if (this->spawnedBy && this->spawnedBy->category() == ENTITY_ENEMY)
-    {
-        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
-        yaw = enemy->dir().x;
-        pitch = enemy->dir().y;
-    }
-    else
-    {
-        return;
-    }
-
-    Vector3 forward = {
-        cosf(pitch) * sinf(yaw),
-        0.0f,
-        cosf(pitch) * cosf(yaw)};
-    forward = Vector3Normalize(forward);
-
-    Vector3 vel = {-forward.x * shootHoriSpeed + this->spawnedBy->vel().x, shootVertSpeed, -forward.z * shootHoriSpeed + this->spawnedBy->vel().z};
-    Vector3 pos{this->spawnedBy->pos().x, this->spawnedBy->pos().y + 1.8f, this->spawnedBy->pos().z};
-    Object o({1, 1, 1}, pos);
-    o.setRotationFromForward(forward);
-    o.useTexture = true;
-
-    TileType tile = TileType::BAMBOO_1;
-    if (uc.uiManager && uc.player)
-    {
-        tile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
-    }
-    o.texture = &uc.uiManager->muim.getSpriteSheet();
-    o.sourceRect = uc.uiManager->muim.getTile(tile);
-
-    Projectile projectile(
-        pos,
-        vel,
-        forward,
-        false,
-        o,
-        FRICTION,
-        AIR_DRAG,
-        tile);
-
-    this->projectiles.push_back(projectile);
-    uc.scene->am.recordThrow(uc);
-    // this->lifetime.push_back(2.0f); // 2 seconds lifetime
 }
 
 // --- MeleePushAttack ------------------------------------------------------------------
@@ -1388,6 +1164,8 @@ float DashAttack::getCooldownPercent() const
 
 bool DragonClawAttack::tweakModeEnabled = false;
 int DragonClawAttack::tweakSelectedCombo = 0;
+float DragonClawAttack::spiritTileOpacity = 0.5f;
+float DragonClawAttack::spiritTileOpacityFadeRate = 1.0f;
 
 DragonClawAttack::DragonClawAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
 {
@@ -1632,16 +1410,7 @@ std::vector<Object *> DragonClawAttack::obj()
     std::vector<Object *> ret;
     for (auto &slash : activeSlashes)
     {
-        // Only fade opacity in follow-through phase (70-100%)
-        float followThruStart = (windupDuration + strikeDuration) / attackDuration;
-        float alpha = spiritTileOpacity;
-        
-        if (slash.animationProgress >= followThruStart)
-        {
-            // Fade out during follow-through
-            float fadeProgress = (slash.animationProgress - followThruStart) / (1.0f - followThruStart);
-            alpha = spiritTileOpacity * (1.0f - fadeProgress);
-        }
+        float alpha = spiritTileOpacity * (1.0f - powf(slash.animationProgress, spiritTileOpacityFadeRate));
         
         unsigned char alphaVal = (unsigned char)(alpha * 255.0f);
         slash.spiritTile.tint.a = alphaVal;
@@ -1865,6 +1634,14 @@ void DragonClawAttack::handleTweakHotkeys()
     const float heightStep = 2.0f * delta;
     const float forwardStep = 3.0f * delta;
 
+    if (IsKeyDown(KEY_PAGE_UP)) { spiritTileOpacity += 0.5f * delta; }
+    if (IsKeyDown(KEY_PAGE_DOWN)) { spiritTileOpacity -= 0.5f * delta; }
+    spiritTileOpacity = Clamp(spiritTileOpacity, 0.0f, 1.0f);
+
+    if (IsKeyDown(KEY_HOME)) { spiritTileOpacityFadeRate += 0.5f * delta; }
+    if (IsKeyDown(KEY_END)) { spiritTileOpacityFadeRate -= 0.5f * delta; }
+    spiritTileOpacityFadeRate = fmaxf(spiritTileOpacityFadeRate, 0.0f);
+    
     if (IsKeyDown(KEY_UP))   { deltaPoint.y += heightStep; }
     if (IsKeyDown(KEY_DOWN)) { deltaPoint.y -= heightStep; }
     if (IsKeyDown(KEY_LEFT)) { deltaPoint.x -= sideStep; }
@@ -1986,6 +1763,8 @@ void DragonClawAttack::drawTweakHud(const Me &player)
     DrawText("Arrow keys: Side/Height", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("</>: Forward/Back control", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("F5: Save arcs", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText(TextFormat("Opacity: %.2f (PageUp/Down)", spiritTileOpacity), baseX, y, 16, YELLOW); y += line;
+    DrawText(TextFormat("Fade Rate: %.2f (Home/End)", spiritTileOpacityFadeRate), baseX, y, 16, YELLOW); y += line;
     DrawText("F6: Load arcs", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("Left Click: Use attack during tweak", baseX, y, 16, LIGHTGRAY); y += line;
     DrawText("Camera set to top-back view", baseX, y, 16, LIGHTGRAY);
@@ -2247,6 +2026,735 @@ std::vector<Object *> ArcaneOrbAttack::obj()
         }
     }
     return ret;
+}
+
+// ============================================================================
+// GravityWellAttack Implementation
+// ============================================================================
+
+bool GravityWellAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f || this->projectile.active || this->activeWell.active)
+        return false;
+    if (!this->spawnedBy || !uc.player)
+        return false;
+
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    Vector3 spawnPos = this->spawnedBy->pos();
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        const Camera &cam = uc.player->getCamera();
+        forward = Vector3Subtract(cam.target, cam.position);
+    }
+    if (Vector3LengthSqr(forward) < 0.0001f)
+        forward = {0.0f, 0.0f, -1.0f};
+    forward = Vector3Normalize(forward);
+
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    Vector3 wiggleAxis = Vector3CrossProduct(forward, up);
+    if (Vector3LengthSqr(wiggleAxis) < 1e-4f)
+        wiggleAxis = {1.0f, 0.0f, 0.0f};
+    wiggleAxis = Vector3Normalize(wiggleAxis);
+
+    spawnPos = Vector3Add(spawnPos, Vector3Scale(forward, 2.2f));
+    spawnPos.y += 1.2f;
+
+    this->projectile.active = true;
+    this->projectile.position = spawnPos;
+    this->projectile.velocity = Vector3Scale(forward, flightSpeed);
+    this->projectile.velocity.y += flightLift;
+    this->projectile.wiggleAxis = wiggleAxis;
+    this->projectile.sinePhase = 0.0f;
+    this->projectile.visual.setAsSphere(projectileRadius);
+    this->projectile.visual.pos = spawnPos;
+    this->projectile.visual.tint = Color{8, 8, 12, 230};
+    this->projectile.visual.useTexture = false;
+    this->projectile.visual.texture = nullptr;
+    this->projectile.visual.setVisible(true);
+    this->projectile.visual.UpdateOBB();
+
+    this->cooldownRemaining = cooldownDuration;
+    return true;
+}
+
+void GravityWellAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    if (this->cooldownRemaining > 0.0f)
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+
+    // Flight phase: slow projectile with sine wiggle and light gravity
+    if (this->projectile.active)
+    {
+        this->projectile.velocity.y -= projectileGravity * delta;
+        this->projectile.sinePhase += flightSineFrequency * delta;
+        float wiggle = sinf(this->projectile.sinePhase) * flightSineAmplitude;
+        Vector3 wiggleVel = Vector3Scale(this->projectile.wiggleAxis, wiggle);
+        Vector3 step = Vector3Add(this->projectile.velocity, wiggleVel);
+        this->projectile.position = Vector3Add(this->projectile.position, Vector3Scale(step, delta));
+        this->projectile.visual.pos = this->projectile.position;
+        this->projectile.visual.UpdateOBB();
+
+        if (this->projectile.position.y <= projectileRadius)
+        {
+            this->projectile.position.y = projectileRadius;
+            this->projectile.visual.pos = this->projectile.position;
+            this->projectile.visual.UpdateOBB();
+            this->projectile.active = false;
+            this->projectile.visual.setVisible(false);
+
+            this->activeWell.active = true;
+            this->activeWell.opening = true;
+            this->activeWell.collapsing = false;
+            this->activeWell.lifetime = wellDuration;
+            this->activeWell.openTimer = openingDuration;
+            this->activeWell.collapseTimer = collapseDuration;
+            this->activeWell.currentRadius = projectileRadius;
+
+            this->activeWell.core.setAsSphere(projectileRadius * 0.7f);
+            this->activeWell.core.pos = this->projectile.position;
+            this->activeWell.core.tint = Color{8, 8, 12, 240};
+            this->activeWell.core.useTexture = false;
+            this->activeWell.core.texture = nullptr;
+            this->activeWell.core.setVisible(true);
+            this->activeWell.core.UpdateOBB();
+
+            this->activeWell.outerRing.setVisible(false);
+            this->activeWell.innerRing.setVisible(false);
+
+            if (uc.scene)
+            {
+                uc.scene->particles.spawnRing(this->projectile.position, projectileRadius * 1.4f, 24, Color{120, 60, 190, 220}, 1.5f, true);
+                uc.scene->particles.spawnRing(this->projectile.position, projectileRadius * 0.9f, 18, Color{80, 30, 140, 210}, 1.1f, true);
+            }
+        }
+    }
+
+    if (!this->activeWell.active)
+        return;
+
+    this->activeWell.lifetime = fmaxf(0.0f, this->activeWell.lifetime - delta);
+
+    if (this->activeWell.opening)
+    {
+        this->activeWell.openTimer = fmaxf(0.0f, this->activeWell.openTimer - delta);
+        float t = 1.0f - (this->activeWell.openTimer / openingDuration);
+        t = Clamp(t, 0.0f, 1.0f);
+        float eased = t * t * (3.0f - 2.0f * t); // smoothstep
+        this->activeWell.currentRadius = Lerp(projectileRadius, pullRadius, eased);
+
+        float innerR = Lerp(projectileRadius * 0.6f, suppressRadius, eased);
+        this->activeWell.core.setAsSphere(Lerp(projectileRadius * 0.7f, coreRadius, eased));
+        this->activeWell.outerRing.size = {this->activeWell.currentRadius * 2.0f, horizonHeight, this->activeWell.currentRadius * 2.0f};
+        this->activeWell.innerRing.size = {innerR * 2.0f, horizonHeight * 0.7f, innerR * 2.0f};
+
+        if (this->activeWell.openTimer <= 0.0f)
+            this->activeWell.opening = false;
+    }
+
+    if (this->activeWell.lifetime <= this->activeWell.collapseTimer)
+    {
+        this->activeWell.collapsing = true;
+    }
+
+    float collapseT = this->activeWell.collapsing ? Clamp(this->activeWell.lifetime / this->activeWell.collapseTimer, 0.0f, 1.0f) : 1.0f;
+    float ringPulse = 1.0f + 0.12f * sinf(GetTime() * 9.0f);
+    float shownRadius = this->activeWell.currentRadius * collapseT * ringPulse;
+
+    this->activeWell.core.tint.a = (unsigned char)Clamp(200.0f * collapseT, 0.0f, 200.0f);
+    this->activeWell.core.UpdateOBB();
+
+    Vector3 center = this->activeWell.core.pos;
+
+    // Suction logic and suppression
+    if (uc.scene)
+    {
+        for (Entity *entity : uc.scene->em.getEntities())
+        {
+            if (!entity || entity->category() != ENTITY_ENEMY)
+                continue;
+            Enemy *enemy = static_cast<Enemy *>(entity);
+            Vector3 deltaPos = Vector3Subtract(center, enemy->pos());
+            deltaPos.y = 0.0f; // keep pull planar to avoid launch
+            float distSq = Vector3LengthSqr(deltaPos);
+            if (distSq > pullRadius * pullRadius)
+                continue;
+
+            float dist = sqrtf(fmaxf(distSq, 0.0001f));
+            Vector3 dir = Vector3Scale(deltaPos, 1.0f / dist);
+            
+            // Planar velocity (horizontal only)
+            Vector3 planarVel{enemy->vel().x, 0.0f, enemy->vel().z};
+            
+            // Component of velocity along pull direction
+            float alongPull = Vector3DotProduct(planarVel, dir);
+            
+            // If moving away from center, clamp to stop outward motion
+            if (alongPull < 0.0f)
+            {
+                // Extract component perpendicular to pull direction
+                Vector3 perpComponent = Vector3Subtract(planarVel, Vector3Scale(dir, alongPull));
+                // Keep only perpendicular motion, remove outward motion
+                planarVel = perpComponent;
+            }
+            
+            // Apply pull force always toward center
+            float strength = pullStrength * (1.0f - dist / pullRadius);
+            planarVel = Vector3Add(planarVel, Vector3Scale(dir, strength * delta));
+            
+            // Clamp horizontal speed
+            float planarSpeed = Vector3Length(planarVel);
+            float maxHVel = 15.0f;
+            if (planarSpeed > maxHVel)
+            {
+                planarVel = Vector3Scale(planarVel, maxHVel / planarSpeed);
+            }
+            
+            // Reconstruct full velocity
+            Vector3 vel = enemy->vel();
+            vel.x = planarVel.x;
+            vel.z = planarVel.z;
+            vel.y = fminf(vel.y, 0.0f); // avoid upward kick
+            enemy->setVelocity(vel);
+
+            if (dist <= suppressRadius)
+            {
+                enemy->applyStun(suppressStunDuration);
+            }
+
+            if (GetRandomValue(0, 100) < 30)
+            {
+                uc.scene->particles.spawnDirectional(enemy->pos(), dir, 2, Color{140, 80, 190, 230}, 9.0f, 0.25f);
+            }
+        }
+
+        // Ambient lines collapsing into the singularity
+        if (GetRandomValue(0, 100) < 65)
+        {
+            float angle = ((float)GetRandomValue(0, 360)) * DEG2RAD;
+            float radius = pullRadius * ((float)GetRandomValue(40, 100) / 100.0f);
+            Vector3 start = {center.x + cosf(angle) * radius, center.y + 0.4f, center.z + sinf(angle) * radius};
+            Vector3 dir = Vector3Normalize(Vector3Subtract(center, start));
+            uc.scene->particles.spawnDirectional(start, dir, 2, Color{180, 120, 255, 220}, 13.0f, 0.32f);
+        }
+        if (GetRandomValue(0, 100) < 45)
+        {
+            float angle = ((float)GetRandomValue(0, 360)) * DEG2RAD;
+            float radius = pullRadius * 0.6f;
+            Vector3 start = {center.x + cosf(angle) * radius, center.y + 12.0f, center.z + sinf(angle) * radius};
+            Vector3 dir = Vector3Normalize(Vector3Subtract(center, start));
+            uc.scene->particles.spawnDirectional(start, dir, 2, Color{130, 70, 200, 220}, 16.0f, 0.36f);
+        }
+
+        // Soft indicator ring via particles to replace box visual
+        if (GetRandomValue(0, 100) < 18)
+        {
+            uc.scene->particles.spawnRing(center, shownRadius, 22, Color{120, 70, 200, 120}, 0.9f, true);
+        }
+    }
+
+    if (this->activeWell.lifetime <= 0.0f)
+    {
+        TraceLog(LOG_INFO, "[GravityWell] attack ended, clearing well state");
+        this->activeWell.active = false;
+        this->activeWell.core.setVisible(false);
+        this->activeWell.outerRing.setVisible(false);
+        this->activeWell.innerRing.setVisible(false);
+        
+        // When well ends, clamp enemy velocities to prevent fling-out
+        if (uc.scene)
+        {
+            for (Entity *entity : uc.scene->em.getEntities())
+            {
+                if (!entity || entity->category() != ENTITY_ENEMY)
+                    continue;
+                Enemy *enemy = static_cast<Enemy *>(entity);
+                Vector3 vel = enemy->vel();
+                
+                // Reduce horizontal speed to prevent outward fling
+                float hspeed = Vector3Length({vel.x, 0.0f, vel.z});
+                if (hspeed > 8.0f)
+                {
+                    float scale = 8.0f / hspeed;
+                    vel.x *= scale;
+                    vel.z *= scale;
+                    TraceLog(LOG_INFO, "[GravityWell] clamping fling velocity: enemy=%p hspeed_was=%.2f now=%.2f", (void*)enemy, hspeed, 8.0f);
+                    enemy->setVelocity(vel);
+                }
+            }
+        }
+    }
+}
+
+std::vector<Object *> GravityWellAttack::obj()
+{
+    std::vector<Object *> out;
+    if (this->projectile.active)
+    {
+        out.push_back(&this->projectile.visual);
+    }
+    if (this->activeWell.active)
+    {
+        out.push_back(&this->activeWell.core);
+    }
+    return out;
+}
+
+float GravityWellAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
+}
+
+// ============================================================================
+// ChainLightningAttack Implementation
+// ============================================================================
+
+Entity *ChainLightningAttack::findPrimaryTarget(UpdateContext &uc, Vector3 camPos, Vector3 camForward) const
+{
+    if (!uc.scene)
+        return nullptr;
+
+    Entity *best = nullptr;
+    float bestProj = maxRange;
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        if (!entity || entity->category() != ENTITY_ENEMY)
+            continue;
+        Vector3 toEnemy = Vector3Subtract(entity->pos(), camPos);
+        float proj = Vector3DotProduct(toEnemy, camForward);
+        if (proj < 0.0f || proj > maxRange)
+            continue;
+
+        Vector3 along = Vector3Scale(camForward, proj);
+        Vector3 perpendicular = Vector3Subtract(toEnemy, along);
+        float offset = Vector3Length(perpendicular);
+        if (offset > 2.2f)
+            continue;
+
+        if (proj < bestProj)
+        {
+            bestProj = proj;
+            best = entity;
+        }
+    }
+    return best;
+}
+
+std::vector<Entity *> ChainLightningAttack::findSecondaryTargets(UpdateContext &uc, Entity *primary) const
+{
+    std::vector<Entity *> candidates;
+    if (!uc.scene || !primary)
+        return candidates;
+
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        if (!entity || entity == primary || entity->category() != ENTITY_ENEMY)
+            continue;
+        float dist = Vector3Distance(entity->pos(), primary->pos());
+        if (dist <= chainRadius)
+            candidates.push_back(entity);
+    }
+
+    std::sort(candidates.begin(), candidates.end(), [primary](Entity *a, Entity *b)
+              { return Vector3Distance(a->pos(), primary->pos()) < Vector3Distance(b->pos(), primary->pos()); });
+
+    if (candidates.size() > 3)
+        candidates.resize(3);
+    return candidates;
+}
+
+void ChainLightningAttack::applyDamageAndStun(Entity *target, float damage, UpdateContext &uc)
+{
+    if (!target || target->category() != ENTITY_ENEMY || !uc.scene)
+        return;
+    Enemy *enemy = static_cast<Enemy *>(target);
+    int healthBefore = enemy->getHealth();
+    Vector3 enemyPos = enemy->pos();
+    TraceLog(LOG_INFO, "[ChainLightning] applyDamageAndStun: dmg=%.1f to enemy=%p health_before=%d", damage, (void*)enemy, healthBefore);
+    
+    CollisionResult cr{};
+    DamageResult d(damage, cr);
+    uc.scene->em.damage(enemy, d, uc);
+    
+    // Only apply stun and particles if enemy is still alive
+    if (healthBefore - (int)damage > 0)
+    {
+        enemy->applyStun(stunDuration);
+        enemy->applyElectrocute(stunDuration);
+        // Hit particles (white + light blue burst)
+        uc.scene->particles.spawnExplosion(enemyPos, 14, Color{210, 240, 255, 230}, 0.18f, 5.0f, 0.7f);
+        uc.scene->particles.spawnExplosion(enemyPos, 10, Color{140, 200, 255, 220}, 0.12f, 3.5f, 0.55f);
+        uc.scene->particles.spawnRing(enemyPos, 2.2f, 16, Color{180, 220, 255, 200}, 2.5f, true);
+    }
+    else
+    {
+        TraceLog(LOG_WARNING, "[ChainLightning] enemy killed by damage, skipping stun and particles");
+    }
+}
+
+void ChainLightningAttack::rebuildBoltGeometry(Bolt &bolt)
+{
+    bolt.points.clear();
+    bolt.segments.clear();
+    bolt.points.push_back(bolt.start);
+
+    Vector3 forward = Vector3Subtract(bolt.end, bolt.start);
+    float dist = Vector3Length(forward);
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    if (dist < 0.001f)
+        dist = 0.001f;
+    Vector3 dir = Vector3Scale(forward, 1.0f / dist);
+    Vector3 right = Vector3CrossProduct(dir, up);
+    if (Vector3LengthSqr(right) < 1e-4f)
+        right = {1.0f, 0.0f, 0.0f};
+    right = Vector3Normalize(right);
+    up = Vector3Normalize(Vector3CrossProduct(right, dir));
+
+    int joints = (int)Clamp((dist * 0.6f), (float)minSegments, (float)maxSegments);
+    for (int i = 1; i <= joints; ++i)
+    {
+        float t = (float)i / (float)(joints + 1);
+        Vector3 basePoint = Vector3Lerp(bolt.start, bolt.end, t);
+
+        float phase = ((float)GetRandomValue(0, 100) / 100.0f) * PI * 2.0f;
+        float radial = jitterAmount * (0.45f + (float)GetRandomValue(0, 60) / 100.0f);
+        Vector3 offset = Vector3Add(Vector3Scale(right, cosf(phase) * radial), Vector3Scale(up, sinf(phase) * radial));
+        bolt.points.push_back(Vector3Add(basePoint, offset));
+    }
+    bolt.points.push_back(bolt.end);
+
+    for (size_t i = 0; i + 1 < bolt.points.size(); ++i)
+    {
+        Vector3 a = bolt.points[i];
+        Vector3 b = bolt.points[i + 1];
+        Vector3 segDir = Vector3Subtract(b, a);
+        float segLen = Vector3Length(segDir);
+        if (segLen < 0.001f)
+            continue;
+        segDir = Vector3Scale(segDir, 1.0f / segLen);
+        Vector3 mid = Vector3Scale(Vector3Add(a, b), 0.5f);
+
+        float thicknessJitter = segmentThickness * (1.0f + ((float)GetRandomValue(-15, 15) / 100.0f));
+
+        Object core({thicknessJitter, thicknessJitter, segLen * 1.02f}, mid);
+        core.setRotationFromForward(segDir);
+        core.tint = Color{200, 240, 255, 235};
+        core.useTexture = false;
+        core.UpdateOBB();
+        bolt.segments.push_back(core);
+
+        Object glow({segmentGlowThickness, segmentGlowThickness, segLen * 1.05f}, mid);
+        glow.setRotationFromForward(segDir);
+        glow.tint = Color{90, 180, 255, 140};
+        glow.useTexture = false;
+        glow.UpdateOBB();
+        bolt.segments.push_back(glow);
+    }
+}
+
+bool ChainLightningAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f)
+    {
+        TraceLog(LOG_DEBUG, "[ChainLightning] trigger blocked: cooldown=%.2f", this->cooldownRemaining);
+        return false;
+    }
+    if (!uc.player)
+        return false;
+
+    TraceLog(LOG_INFO, "[ChainLightning] trigger() called");
+    const Camera &cam = uc.player->getCamera();
+    Vector3 camPos = cam.position;
+    Vector3 camForward = Vector3Subtract(cam.target, cam.position);
+    if (Vector3LengthSqr(camForward) < 0.0001f)
+        camForward = {0.0f, 0.0f, -1.0f};
+    camForward = Vector3Normalize(camForward);
+
+    Entity *primary = findPrimaryTarget(uc, camPos, camForward);
+    if (!primary)
+    {
+        TraceLog(LOG_INFO, "[ChainLightning] no primary target found");
+        return false;
+    }
+    
+    Enemy *primaryEnemy = dynamic_cast<Enemy *>(primary);
+    TraceLog(LOG_INFO, "[ChainLightning] found primary target=%p health=%d", (void*)primary, primaryEnemy ? primaryEnemy->getHealth() : -1);
+
+    // Apply damage
+    TraceLog(LOG_INFO, "[ChainLightning] applying primary dmg=%.1f", primaryDamage);
+    applyDamageAndStun(primary, primaryDamage, uc);
+    auto secondaries = findSecondaryTargets(uc, primary);
+    TraceLog(LOG_INFO, "[ChainLightning] found %zu secondary targets", secondaries.size());
+    for (Entity *e : secondaries)
+    {
+        Enemy *secEnemy = dynamic_cast<Enemy *>(e);
+        TraceLog(LOG_INFO, "[ChainLightning] applying secondary dmg=%.1f to enemy=%p health=%d", secondaryDamage, (void*)e, secEnemy ? secEnemy->getHealth() : -1);
+        applyDamageAndStun(e, secondaryDamage, uc);
+    }
+
+    if (uc.scene)
+    {
+        uc.scene->particles.spawnExplosion(primary->pos(), 18, Color{200, 240, 255, 220}, 0.22f, 8.0f, 0.8f);
+        uc.scene->particles.spawnRing(primary->pos(), 2.5f, 16, Color{0, 200, 255, 180}, 3.5f, true);
+        for (Entity *e : secondaries)
+        {
+            uc.scene->particles.spawnExplosion(e->pos(), 12, Color{120, 210, 255, 220}, 0.16f, 6.0f, 0.6f);
+        }
+    }
+
+    // Build bolts
+    this->activeBolts.clear();
+    Bolt primaryBolt;
+    primaryBolt.start = camPos;
+    primaryBolt.end = primary->pos();
+    primaryBolt.lifetime = boltLifetime;
+    rebuildBoltGeometry(primaryBolt);
+    this->activeBolts.push_back(primaryBolt);
+
+    for (Entity *e : secondaries)
+    {
+        Bolt b;
+        b.start = primary->pos();
+        b.end = e->pos();
+        b.lifetime = boltLifetime;
+        rebuildBoltGeometry(b);
+        this->activeBolts.push_back(b);
+    }
+
+    this->cooldownRemaining = cooldownDuration;
+    if (uc.player)
+        uc.player->addCameraShake(0.35f, 0.18f);
+    return true;
+}
+
+void ChainLightningAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    if (this->cooldownRemaining > 0.0f)
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+
+    for (auto &b : this->activeBolts)
+    {
+        b.lifetime -= delta;
+        rebuildBoltGeometry(b);
+    }
+
+    this->activeBolts.erase(
+        std::remove_if(this->activeBolts.begin(), this->activeBolts.end(), [](const Bolt &b)
+                       { return b.lifetime <= 0.0f; }),
+        this->activeBolts.end());
+}
+
+std::vector<Object *> ChainLightningAttack::obj()
+{
+    std::vector<Object *> out;
+    for (auto &b : this->activeBolts)
+    {
+        for (auto &seg : b.segments)
+            out.push_back(&seg);
+    }
+    return out;
+}
+
+float ChainLightningAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
+}
+
+// ============================================================================
+// OrbitalShieldAttack Implementation
+// ============================================================================
+
+std::vector<OrbitalShieldAttack *> OrbitalShieldAttack::registry;
+
+OrbitalShieldAttack::OrbitalShieldAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
+{
+    registry.push_back(this);
+}
+
+OrbitalShieldAttack::~OrbitalShieldAttack()
+{
+    registry.erase(std::remove(registry.begin(), registry.end(), this), registry.end());
+}
+
+bool OrbitalShieldAttack::trigger(UpdateContext &uc)
+{
+    if (this->cooldownRemaining > 0.0f)
+        return false;
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+        return false;
+
+    if (this->orbs.empty())
+    {
+        this->baseAngle = GetTime();
+        TileType selected = TileType::DOT_2;
+        if (uc.uiManager && uc.player)
+            selected = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+
+        this->orbs.clear();
+        for (int i = 0; i < maxOrbs; ++i)
+        {
+            Orb orb;
+            orb.angle = this->baseAngle + (2.0f * PI * ((float)i / (float)maxOrbs));
+            orb.visual.setAsSphere(0.42f);
+            orb.visual.useTexture = uc.uiManager != nullptr;
+            if (uc.uiManager)
+            {
+                orb.visual.texture = &uc.uiManager->muim.getSpriteSheet();
+                orb.visual.sourceRect = uc.uiManager->muim.getTile(selected);
+            }
+            orb.visual.tint = Color{90, 170, 255, 200};
+            orb.visual.UpdateOBB();
+            this->orbs.push_back(orb);
+        }
+    }
+    else
+    {
+        // Launch remaining orbs toward crosshair
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        const Camera &cam = player->getCamera();
+        Vector3 forward = Vector3Subtract(cam.target, cam.position);
+        if (Vector3LengthSqr(forward) < 0.0001f)
+            forward = {0.0f, 0.0f, -1.0f};
+        forward = Vector3Normalize(forward);
+        for (auto &orb : this->orbs)
+        {
+            orb.launching = true;
+            orb.velocity = Vector3Scale(forward, launchSpeed);
+        }
+        player->addCameraShake(0.3f, 0.2f);
+    }
+
+    this->cooldownRemaining = cooldownDuration;
+    return true;
+}
+
+void OrbitalShieldAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    if (this->cooldownRemaining > 0.0f)
+        this->cooldownRemaining = fmaxf(0.0f, this->cooldownRemaining - delta);
+
+    if (!this->spawnedBy || this->spawnedBy->category() != ENTITY_PLAYER)
+    {
+        this->orbs.clear();
+        return;
+    }
+
+    Me *player = static_cast<Me *>(this->spawnedBy);
+    Vector3 playerPos = player->pos();
+
+    // Update orbiting / launched orbs
+    for (auto &orb : this->orbs)
+    {
+        if (!orb.launching)
+        {
+            orb.angle += orbitSpeed * delta;
+            float c = cosf(orb.angle);
+            float s = sinf(orb.angle);
+            Vector3 offset = {c * orbitRadius, orbitHeight, s * orbitRadius};
+            orb.visual.pos = Vector3Add(playerPos, offset);
+            Vector3 outward = {c, 0.0f, s};
+            orb.visual.setRotationFromForward(Vector3Normalize(outward));
+            if (uc.scene && GetRandomValue(0, 100) < 24)
+            {
+                uc.scene->particles.spawnDirectional(orb.visual.pos, outward, 1, Color{120, 190, 255, 180}, 1.5f, 0.15f);
+            }
+        }
+        else
+        {
+            orb.visual.pos = Vector3Add(orb.visual.pos, Vector3Scale(orb.velocity, delta));
+            orb.velocity = Vector3Scale(orb.velocity, 0.985f);
+
+            // Collision vs enemies
+            if (uc.scene)
+            {
+                for (Entity *entity : uc.scene->em.getEntities())
+                {
+                    if (!entity || entity->category() != ENTITY_ENEMY)
+                        continue;
+                    Enemy *enemy = static_cast<Enemy *>(entity);
+                    CollisionResult result = Object::collided(orb.visual, enemy->obj());
+                    if (result.collided)
+                    {
+                        DamageResult damage(shieldDamage, result);
+                        uc.scene->em.damage(enemy, damage, uc);
+                        enemy->applyKnockback(Vector3Scale(orb.velocity, 0.2f), 0.35f, 2.5f);
+                        orb.launching = false;
+                        orb.visual.setVisible(false);
+                        orb.velocity = {0.0f, 0.0f, 0.0f};
+                        break;
+                    }
+                }
+            }
+
+            float travelDist = Vector3Distance(orb.visual.pos, playerPos);
+            if (travelDist > 80.0f || orb.visual.pos.y < -2.0f)
+            {
+                orb.launching = false;
+                orb.visual.setVisible(false);
+            }
+        }
+
+        orb.visual.UpdateOBB();
+    }
+
+    // Remove spent orbs
+    this->orbs.erase(
+        std::remove_if(this->orbs.begin(), this->orbs.end(), [](const Orb &o)
+                       { return !o.launching && !o.visual.isVisible(); }),
+        this->orbs.end());
+}
+
+std::vector<Object *> OrbitalShieldAttack::obj()
+{
+    std::vector<Object *> out;
+    for (auto &orb : this->orbs)
+        out.push_back(&orb.visual);
+    return out;
+}
+
+float OrbitalShieldAttack::getCooldownPercent() const
+{
+    if (cooldownDuration <= 0.0f)
+        return 1.0f;
+    return Clamp(1.0f - (this->cooldownRemaining / cooldownDuration), 0.0f, 1.0f);
+}
+
+bool OrbitalShieldAttack::consumeOneShield(Me *player, UpdateContext *uc)
+{
+    if (!player || this->spawnedBy != player)
+        return false;
+    for (auto &orb : this->orbs)
+    {
+        if (!orb.launching)
+        {
+            orb.visual.setVisible(false);
+            orb.launching = false;
+            if (uc && uc->scene)
+            {
+                uc->scene->particles.spawnRing(player->pos(), 2.0f, 12, Color{90, 170, 255, 220}, 2.0f, true);
+            }
+            player->addCameraShake(0.25f, 0.2f);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TryConsumeOrbitalShield(Me *player, DamageResult &dResult)
+{
+    (void)dResult; // damage amount unused; shield negates fully
+    for (auto *shield : OrbitalShieldAttack::registry)
+    {
+        if (shield && shield->consumeOneShield(player, nullptr))
+            return true;
+    }
+    return false;
 }
 
 // ============================================================================
