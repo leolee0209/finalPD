@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <array>
 #include <raylib.h>
 #include "uiManager.hpp"
 #include "updateContext.hpp"
@@ -40,12 +41,17 @@ private:
     std::vector<Projectile> projectiles;
     float cooldownRemaining = 0.0f;
     float activeCooldownModifier = 1.0f; // 1.0 = normal, 0.4 = 40% of normal (faster shooting)
-    static constexpr float shootSpeed = 70.0f;
-    static constexpr float projectileSize = 0.025f;
-    static constexpr float projectileDamage = 10.0f;
-    static constexpr float cooldownDuration = 0.5f;
-    static constexpr float movementSlowDuration = 0.3f;
-    static constexpr float movementSlowFactor = 0.4f; // Reduces speed to 40% of normal
+    
+    // Tweakable Bamboo/Ranger attack parameters
+    static constexpr float shootSpeed = 70.0f;             // Projectile speed
+    static constexpr float projectileSize = 0.025f;        // Size multiplier
+    static constexpr float projectileDamage = 10.0f;       // Base damage
+    static constexpr float cooldownDuration = 0.5f;        // Fire rate cooldown
+    static constexpr float movementSlowDuration = 0.3f;    // Slow duration after shot
+    static constexpr float movementSlowFactor = 0.4f;      // Reduces speed to 40% of normal
+    static constexpr float horizontalSpinSpeed = 450.0f;     // How fast tile spins horizontally (tweakable)
+    static constexpr float trailWidth = 0.3f;              // Width of wind trail (tweakable)
+    static constexpr float trailLength = 2.0f;             // Length of trail behind tile (tweakable)
 
 public:
     BasicTileAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
@@ -343,4 +349,175 @@ private:
     static bool explosionTextureLoaded;
     static int explosionTextureUsers;
     static constexpr const char *explosionTexturePath = "wabbit_alpha.png";
+};
+
+/**
+ * @brief Dragon's Claw melee attack - 3-hit combo with spirit tile visuals.
+ *
+ * Creates animated spirit tiles that slash from different positions with rotation.
+ * Animation mimics MeleePushAttack with side positioning and forward rotation.
+ */
+class DragonClawAttack : public AttackController
+{
+private:
+    struct SlashEffect
+    {
+        Object spiritTile;
+        Vector3 startPos = {0.0f, 0.0f, 0.0f};
+        Vector3 swipeOrigin = {0.0f, 0.0f, 0.0f};
+        float animationProgress = 0.0f;
+        float lifetime = 0.0f;
+        int comboIndex = 0; // 0 = first slash, 1 = second, 2 = third
+        bool hasHit = false;
+        float rotationProgress = 0.0f; // 0 to 1, how far through the forward rotation
+    };
+
+    struct ArcCurve
+    {
+        // Local space control points (x=right, y=up, z=forward)
+        Vector3 p0;
+        Vector3 p1;
+        Vector3 p2;
+        Vector3 p3;
+    };
+
+    std::vector<SlashEffect> activeSlashes;
+    std::vector<Object> debugArcPoints;
+    std::array<ArcCurve, 3> arcCurves;
+    std::array<ArcCurve, 3> defaultArcCurves;
+    Vector3 lastForward = {0.0f, 0.0f, -1.0f};
+    Vector3 lastRight = {1.0f, 0.0f, 0.0f};
+    Vector3 lastBasePos = {0.0f, 0.0f, 0.0f};
+    float comboTimer = 0.0f;
+    int comboCount = 0; // 0, 1, or 2 (which slash in the combo)
+    float cooldownRemaining = 0.0f;
+    
+    // === Tweakable Animation Timing Parameters ===
+    static constexpr float attackDuration = 0.35f;       // Total duration of the swing animation
+    static constexpr float windupDuration = 0.07f;       // Windup phase (20% of animation)
+    static constexpr float strikeDuration = 0.175f;      // Strike phase (50% of animation)
+    static constexpr float followThruDuration = 0.105f;  // Follow-through phase (30% of animation)
+    
+    static constexpr float attackCooldown = 0.5f;        // Cooldown between combos
+    static constexpr float comboResetTime = 1.5f;        // Time to reset combo if no hit
+    
+    // === Tweakable Visual Parameters ===
+    static constexpr float spiritTileWidth = 1.0f;       // Width of the spirit tile
+    static constexpr float spiritTileHeight = 1.25f;     // Height of the spirit tile
+    static constexpr float spiritTileThickness = 0.3f;  // Thickness of the spirit tile
+    static constexpr float spiritTileOpacity = 0.5f;     // Base opacity (0.0 to 1.0, stays translucent)
+    static constexpr float slashDamage = 30.0f;          // Damage per slash
+    static constexpr int arcDebugSamples = 24;           // How many debug particles to show on arc
+    static constexpr float debugParticleRadius = 0.08f;  // Visual size of arc debug particles
+    
+    // === Tweakable Movement Parameters ===
+    static constexpr float startDistance = -1.0f;        // Starting distance (negative = behind player)
+    static constexpr float strikeDistance = 2.0f;        // Peak distance during strike (in front of player)
+    static constexpr float endDistance = 0.5f;           // Final distance after follow-through
+    
+    static constexpr float arcHeight = 1.2f;             // Height of the arc trajectory
+    static constexpr float sideOffset = 1.5f;            // How far to side for diagonal strikes
+    
+    static constexpr float playerStepDistance = 0.0f;    // How far player steps forward per swing
+    
+    // === Tweakable Rotation Parameters ===
+    static constexpr float windupRotation = -0.3f;       // Back-tilt angle during windup (radians)
+    static constexpr float strikeRotation = 1.0f;        // Forward rotation during strike (radians)
+    static constexpr float followThruRotation = 0.5f;    // Settle rotation after strike (radians)
+    
+    static constexpr float cameraShakeMagnitude = 0.3f;  // Camera shake intensity on hit
+    static constexpr float cameraShakeDuration = 0.15f;  // Camera shake duration
+    static constexpr const char *arcSaveFilename = "dragon_claw_arcs.txt"; // persisted tweak file
+    
+    static bool tweakModeEnabled;
+    static int tweakSelectedCombo;
+
+public:
+    DragonClawAttack(Entity *_spawnedBy);
+    
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj();
+    void spawnSlash(UpdateContext &uc);
+    bool canAttack() const { return cooldownRemaining <= 0.0f; }
+    float getCooldownPercent() const { return cooldownRemaining / attackCooldown; }
+    // Tweak helpers (callable from main loop)
+    void handleTweakHotkeys();
+    void refreshDebugArc(const Vector3 &forward, const Vector3 &right, const Vector3 &basePos);
+    
+private:
+    Vector3 getSlashOrientation(int comboIndex, float progress, const Vector3 &forward, const Vector3 &right) const;
+    Vector3 getSlashPosition(int comboIndex, float progress, const Vector3 &forward, const Vector3 &right, const Vector3 &basePos) const;
+    float getRotationAmount(float progress) const;
+    float easeInCubic(float t) const { return t * t * t; }
+    float easeOutCubic(float t) const { float f = t - 1.0f; return f * f * f + 1.0f; }
+    void checkSlashHits(SlashEffect &slash, UpdateContext &uc);
+    float mapProgressToArcT(float progress) const;
+    Vector3 evalArcPoint(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right, const Vector3 &basePos) const;
+    Vector3 evalArcTangent(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right) const;
+    void resetArcDefaults();
+    void nudgeArc(int comboIndex, const Vector3 &deltaP1, const Vector3 &deltaP2);
+    bool saveArcCurves() const;
+    bool loadArcCurves();
+public:
+    static bool isTweakModeEnabled() { return tweakModeEnabled; }
+    static int getTweakSelectedCombo() { return tweakSelectedCombo; }
+    static void toggleTweakMode() { tweakModeEnabled = !tweakModeEnabled; }
+    static void setTweakMode(bool enabled) { tweakModeEnabled = enabled; }
+    static void applyTweakCamera(const Me &player, Camera &cam);
+    static void drawTweakHud(const Me &player);
+};
+
+/**
+ * @brief Arcane Orb basic attack - homing projectile with sine-wave motion.
+ *
+ * Fires a slow, homing projectile that follows enemies with sine-wave tracking.
+ */
+class ArcaneOrbAttack : public AttackController
+{
+private:
+    struct OrbProjectile
+    {
+        Vector3 position;
+        Vector3 lastDirection;  // Direction from previous frame
+        Vector3 targetPos;
+        Entity *targetEnemy = nullptr;
+        float lifetime = 0.0f;
+        float sineWavePhase = 0.0f;
+        Object orbObj;
+        bool active = true;
+        
+        static constexpr float maxLifetime = 8.0f;
+        static constexpr float baseSpeed = 10.0f;       // Base movement speed (tweakable)
+        static constexpr float sineWaveAmplitude = 1.5f; // Vertical sine motion amplitude
+        static constexpr float sineWaveFrequency = 2.0f; // Speed of sine wave oscillation
+        static constexpr float trackingBlend = 0.25f;    // 0.0 = pure last direction, 1.0 = pure target tracking
+        static constexpr float damage = 12.0f;
+        static constexpr float orbRadius = 0.4f;
+        static constexpr float searchRadius = 35.0f;    // Max distance to search for enemies
+    };
+
+    std::vector<OrbProjectile> activeOrbs;
+    float cooldownRemaining = 0.0f;
+    
+    // Tweakable animation parameters
+    static constexpr float orbSize = 0.5f;         // Size of the orb visual
+    static constexpr float orbSpinSpeed = 3.0f;    // How fast the orb rotates on itself
+    static constexpr float muzzleHeight = 1.6f;    // Height to spawn orb from
+    static constexpr float cooldownDuration = 0.6f; // Time between shots
+
+public:
+    ArcaneOrbAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+    
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj();
+    void spawnOrb(UpdateContext &uc);
+    bool canShoot() const { return cooldownRemaining <= 0.0f; }
+    float getCooldownPercent() const { return cooldownRemaining / cooldownDuration; }
+    
+private:
+    Entity *findNearestEnemy(UpdateContext &uc, const Vector3 &position, float searchRadius) const;
+    void updateOrbMovement(OrbProjectile &orb, UpdateContext &uc, float deltaSeconds);
+    void checkOrbHits(OrbProjectile &orb, UpdateContext &uc);
 };

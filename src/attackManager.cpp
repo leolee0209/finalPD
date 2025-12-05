@@ -85,6 +85,10 @@ AttackManager::~AttackManager()
         delete b;
     for (auto &b : this->bambooTripleAttacks)
         delete b;
+    for (auto &d : this->dragonClawAttacks)
+        delete d;
+    for (auto &a : this->arcaneOrbAttacks)
+        delete a;
 }
 
 // Updates all ThousandAttack instances
@@ -102,6 +106,10 @@ void AttackManager::update(UpdateContext& uc)
         b->update(uc);
     for (auto &b : this->bambooTripleAttacks)
         b->update(uc);
+    for (auto &d : this->dragonClawAttacks)
+        d->update(uc);
+    for (auto &a : this->arcaneOrbAttacks)
+        a->update(uc);
 
     // Update BasicTileAttack cooldown modifiers based on BambooTripleAttack state
     for (auto &basic : this->basicTileAttacks)
@@ -563,6 +571,16 @@ std::vector<Object *> AttackManager::getObjects() const
         auto v = b->obj();
         ret.insert(ret.end(), v.begin(), v.end());
     }
+    for (const auto &d : this->dragonClawAttacks)
+    {
+        auto v = d->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
+    for (const auto &a : this->arcaneOrbAttacks)
+    {
+        auto v = a->obj();
+        ret.insert(ret.end(), v.begin(), v.end());
+    }
     // dash attack currently has no objects to render
     return ret;
 }
@@ -588,4 +606,26 @@ void AttackManager::releaseAttackLock(const AttackController *controller)
     {
         this->attackLockOwner = nullptr;
     }
+}
+
+DragonClawAttack *AttackManager::getDragonClawAttack(Entity *spawnedBy)
+{
+    for (const auto &d : this->dragonClawAttacks)
+    {
+        if (d->spawnedBy == spawnedBy)
+            return d;
+    }
+    this->dragonClawAttacks.push_back(new DragonClawAttack(spawnedBy));
+    return this->dragonClawAttacks.back();
+}
+
+ArcaneOrbAttack *AttackManager::getArcaneOrbAttack(Entity *spawnedBy)
+{
+    for (const auto &a : this->arcaneOrbAttacks)
+    {
+        if (a->spawnedBy == spawnedBy)
+            return a;
+    }
+    this->arcaneOrbAttacks.push_back(new ArcaneOrbAttack(spawnedBy));
+    return this->arcaneOrbAttacks.back();
 }

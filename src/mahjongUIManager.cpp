@@ -60,16 +60,8 @@ void MahjongUIManager::createHandUI(Inventory &inventory, int screenWidth, int s
 
 void MahjongUIManager::update(Inventory &inventory)
 {
-    float mouseWheelMove = GetMouseWheelMove();
-    if (mouseWheelMove > 0)
-    {
-        nextTile(inventory);
-    }
-    if (mouseWheelMove < 0)
-    {
-        previousTile(inventory);
-    }
-
+    // Tile selection via mouse wheel is disabled - only allow selection in pause menu by clicking
+    
     for (auto const &element : handElements)
     {
         element->update();

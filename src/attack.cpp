@@ -1,4 +1,5 @@
 #include "attack.hpp"
+#include <fstream>
 #include <raylib.h>
 #include "constant.hpp"
 #include <raymath.h>
@@ -172,6 +173,16 @@ void BasicTileAttack::update(UpdateContext &uc)
         newPos.y += p.vel().y * delta;
         newPos.z += p.vel().z * delta;
         p.setPosition(newPos);
+        
+        // Add horizontal spin rotation (like a frisbee/shuriken)
+        static float spinAngle = 0.0f;
+        spinAngle += horizontalSpinSpeed * delta;
+        if (spinAngle > 360.0f) spinAngle -= 360.0f;
+        
+        // Rotate around the Y-axis (horizontal spin)
+        Quaternion spinRotation = QuaternionFromAxisAngle({0.0f, 1.0f, 0.0f}, spinAngle * DEG2RAD);
+        p.obj().setRotation(spinRotation);
+        p.obj().UpdateOBB();
     }
 
     // Check for collisions and remove projectiles that hit something
@@ -1358,4 +1369,824 @@ float DashAttack::getCooldownPercent() const
     if (dashCooldown <= 0.0f)
         return 0.0f;
     return Clamp(this->cooldownRemaining / dashCooldown, 0.0f, 1.0f);
+}
+
+bool DragonClawAttack::tweakModeEnabled = false;
+int DragonClawAttack::tweakSelectedCombo = 0;
+
+DragonClawAttack::DragonClawAttack(Entity *_spawnedBy) : AttackController(_spawnedBy)
+{
+    this->resetArcDefaults();
+    this->debugArcPoints.resize(arcDebugSamples);
+    // Attempt to load persisted arcs; fall back to defaults if missing/invalid
+    this->loadArcCurves();
+}
+
+// --- DragonClawAttack: 3-phase claw swipe animation with arc motion + tweak helper ---
+void DragonClawAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        handleTweakHotkeys();
+    }
+    
+    // Update cooldown
+    if (cooldownRemaining > 0.0f)
+    {
+        cooldownRemaining = fmaxf(0.0f, cooldownRemaining - delta);
+    }
+    
+    // Update combo timer
+    if (comboCount > 0)
+    {
+        comboTimer -= delta;
+        if (comboTimer <= 0.0f)
+        {
+            // Reset combo
+            comboCount = 0;
+            comboTimer = 0.0f;
+        }
+    }
+    
+    Vector3 forward = lastForward;
+    Vector3 right = lastRight;
+    Vector3 basePos = lastBasePos;
+
+    if (this->spawnedBy)
+    {
+        forward = {0.0f, 0.0f, -1.0f};
+        right = {1.0f, 0.0f, 0.0f};
+        basePos = this->spawnedBy->pos();
+
+        if (this->spawnedBy->category() == ENTITY_PLAYER)
+        {
+            Me *player = static_cast<Me *>(this->spawnedBy);
+            const Camera &camera = player->getCamera();
+            forward = Vector3Subtract(camera.target, camera.position);
+            if (Vector3LengthSqr(forward) < 0.0001f)
+                forward = {0.0f, 0.0f, -1.0f};
+            forward = Vector3Normalize(forward);
+        }
+        else if (this->spawnedBy->category() == ENTITY_ENEMY)
+        {
+            Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
+            forward = enemy->dir();
+            if (Vector3LengthSqr(forward) < 0.0001f)
+                forward = {0.0f, 0.0f, -1.0f};
+            forward = Vector3Normalize(forward);
+        }
+
+        right = Vector3CrossProduct({0.0f, 1.0f, 0.0f}, forward);
+        right = Vector3Normalize(right);
+
+        lastForward = forward;
+        lastRight = right;
+        lastBasePos = basePos;
+
+        if (tweakModeEnabled)
+        {
+            refreshDebugArc(forward, right, basePos);
+        }
+    }
+
+    // Update and clean up active slashes with 3-phase animation
+    for (auto &slash : activeSlashes)
+    {
+        slash.lifetime -= delta;
+        slash.animationProgress = Clamp(slash.animationProgress + delta / attackDuration, 0.0f, 1.0f);
+        
+        // Update position and rotation based on current animation phase
+        slash.spiritTile.pos = getSlashPosition(slash.comboIndex, slash.animationProgress, forward, right, basePos);
+        
+        // Update slash rotation: face tangent of arc
+        Vector3 orientation = getSlashOrientation(slash.comboIndex, slash.animationProgress, forward, right);
+        slash.spiritTile.setRotationFromForward(orientation);
+        slash.spiritTile.UpdateOBB();
+        
+        // Check for hits during strike phase
+        if (slash.animationProgress >= 0.2f && slash.animationProgress <= 0.7f && !slash.hasHit)
+        {
+            checkSlashHits(slash, uc);
+        }
+    }
+    
+    // Remove expired slashes
+    activeSlashes.erase(
+        std::remove_if(activeSlashes.begin(), activeSlashes.end(),
+            [](const SlashEffect &s) { return s.lifetime <= 0.0f; }),
+        activeSlashes.end());
+}
+
+void DragonClawAttack::spawnSlash(UpdateContext &uc)
+{
+    if (cooldownRemaining > 0.0f)
+        return;
+    
+    if (!uc.scene || !this->spawnedBy)
+        return;
+    
+    // Determine forward direction
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    Vector3 right = {1.0f, 0.0f, 0.0f};
+    
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        forward = Vector3Subtract(camera.target, camera.position);
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        
+        // Calculate right vector
+        right = Vector3CrossProduct({0.0f, 1.0f, 0.0f}, forward);
+        right = Vector3Normalize(right);
+        
+        // Player takes a step forward with each swing
+        Vector3 stepForward = Vector3Scale(forward, playerStepDistance);
+        player->setPosition(Vector3Add(player->pos(), stepForward));
+        
+        // Add camera shake on swing
+        player->addCameraShake(0.1f, attackDuration * 0.5f);
+    }
+    else if (this->spawnedBy->category() == ENTITY_ENEMY)
+    {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
+        forward = enemy->dir();
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        right = Vector3CrossProduct({0.0f, 1.0f, 0.0f}, forward);
+        right = Vector3Normalize(right);
+    }
+
+    lastForward = forward;
+    lastRight = right;
+    lastBasePos = this->spawnedBy->pos();
+    if (tweakModeEnabled)
+    {
+        refreshDebugArc(forward, right, lastBasePos);
+    }
+    
+    // Create slash effect
+    SlashEffect slash;
+    slash.comboIndex = comboCount;
+    slash.animationProgress = 0.0f;
+    slash.lifetime = attackDuration;
+    slash.hasHit = false;
+    
+    // Calculate initial position (windup phase start)
+    Vector3 basePos = this->spawnedBy->pos();
+    slash.startPos = getSlashPosition(comboCount, 0.0f, forward, right, basePos);
+    
+    // Create spirit tile object with proper dimensions
+    slash.spiritTile.size = {spiritTileWidth, spiritTileHeight, spiritTileThickness};
+    slash.spiritTile.pos = slash.startPos;
+    slash.spiritTile.setAsBox(slash.spiritTile.size);
+    
+    // Get initial rotation
+    Vector3 orientation = getSlashOrientation(slash.comboIndex, 0.0f, forward, right);
+    slash.spiritTile.setRotationFromForward(orientation);
+    
+    // Set texture with translucent tint
+    slash.spiritTile.useTexture = uc.uiManager != nullptr;
+    if (uc.uiManager)
+    {
+        slash.spiritTile.texture = &uc.uiManager->muim.getSpriteSheet();
+        TileType selectedTile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        slash.spiritTile.sourceRect = uc.uiManager->muim.getTile(selectedTile);
+        // Translucent white tint (stays translucent throughout)
+        unsigned char alpha = (unsigned char)(spiritTileOpacity * 255.0f);
+        slash.spiritTile.tint = Color{255, 255, 255, alpha};
+    }
+    
+    slash.spiritTile.UpdateOBB();
+    activeSlashes.push_back(slash);
+    
+    // Update combo
+    comboCount = (comboCount + 1) % 3;
+    comboTimer = comboResetTime;
+    cooldownRemaining = attackCooldown;
+}
+
+void DragonClawAttack::checkSlashHits(SlashEffect &slash, UpdateContext &uc)
+{
+    if (slash.hasHit || !uc.scene)
+        return;
+    
+    // Check collision with enemies in range
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        if (!entity || entity->category() != ENTITY_ENEMY)
+            continue;
+        
+        Enemy *enemy = static_cast<Enemy *>(entity);
+        CollisionResult result = Object::collided(slash.spiritTile, enemy->obj());
+        
+        if (result.collided)
+        {
+            // Deal damage
+            DamageResult damage(slashDamage, result);
+            uc.scene->em.damage(enemy, damage, uc);
+            
+            // Apply knockback
+            Vector3 delta = Vector3Subtract(enemy->pos(), slash.spiritTile.pos);
+            Vector3 pushDir = Vector3Normalize(delta);
+            enemy->applyKnockback(Vector3Scale(pushDir, 20.0f), 0.3f, 0.0f);
+            
+            // Camera shake on hit
+            if (this->spawnedBy && this->spawnedBy->category() == ENTITY_PLAYER)
+            {
+                Me *player = static_cast<Me *>(this->spawnedBy);
+                player->addCameraShake(cameraShakeMagnitude, cameraShakeDuration);
+            }
+            
+            slash.hasHit = true;
+            break;
+        }
+    }
+}
+
+std::vector<Object *> DragonClawAttack::obj()
+{
+    std::vector<Object *> ret;
+    for (auto &slash : activeSlashes)
+    {
+        // Only fade opacity in follow-through phase (70-100%)
+        float followThruStart = (windupDuration + strikeDuration) / attackDuration;
+        float alpha = spiritTileOpacity;
+        
+        if (slash.animationProgress >= followThruStart)
+        {
+            // Fade out during follow-through
+            float fadeProgress = (slash.animationProgress - followThruStart) / (1.0f - followThruStart);
+            alpha = spiritTileOpacity * (1.0f - fadeProgress);
+        }
+        
+        unsigned char alphaVal = (unsigned char)(alpha * 255.0f);
+        slash.spiritTile.tint.a = alphaVal;
+        ret.push_back(&slash.spiritTile);
+    }
+
+    // Debug arc particles for tweak mode
+    if (tweakModeEnabled)
+    {
+        for (auto &p : debugArcPoints)
+        {
+            ret.push_back(&p);
+        }
+    }
+    return ret;
+}
+
+// Calculate slash position using predetermined cubic Bézier arc (local space)
+Vector3 DragonClawAttack::getSlashPosition(int comboIndex, float progress, const Vector3 &forward, const Vector3 &right, const Vector3 &basePos) const
+{
+    int idx = comboIndex % (int)arcCurves.size();
+    float arcT = mapProgressToArcT(progress);
+    return evalArcPoint(arcCurves[idx], arcT, forward, right, basePos);
+}
+
+// Calculate slash orientation so tile faces tangent of the arc
+Vector3 DragonClawAttack::getSlashOrientation(int comboIndex, float progress, const Vector3 &forward, const Vector3 &right) const
+{
+    int idx = comboIndex % (int)arcCurves.size();
+    float arcT = mapProgressToArcT(progress);
+    Vector3 tangent = evalArcTangent(arcCurves[idx], arcT, forward, right);
+    if (Vector3LengthSqr(tangent) < 0.0001f)
+        tangent = forward;
+    return Vector3Normalize(tangent);
+}
+
+// Calculate smooth rotation amount across animation phases
+float DragonClawAttack::getRotationAmount(float progress) const
+{
+    float windupEnd = windupDuration / attackDuration;
+    float strikeEnd = (windupDuration + strikeDuration) / attackDuration;
+    
+    if (progress < windupEnd)
+    {
+        // Windup phase: ease into windup rotation
+        float t = progress / windupEnd;
+        return windupRotation * easeInCubic(t);
+    }
+    else if (progress < strikeEnd)
+    {
+        // Strike phase: rapid rotation from windup to strike
+        float t = (progress - windupEnd) / (strikeEnd - windupEnd);
+        return windupRotation + (strikeRotation - windupRotation) * t;
+    }
+    else
+    {
+        // Follow-through phase: ease out to final rotation
+        float t = (progress - strikeEnd) / (1.0f - strikeEnd);
+        return strikeRotation + (followThruRotation - strikeRotation) * easeOutCubic(t);
+    }
+}
+
+float DragonClawAttack::mapProgressToArcT(float progress) const
+{
+    // Weight strike phase to cover most of the travel along the arc
+    float windupEnd = windupDuration / attackDuration;
+    float strikeEnd = (windupDuration + strikeDuration) / attackDuration;
+
+    if (progress < windupEnd)
+    {
+        float t = progress / windupEnd;
+        return 0.15f * easeInCubic(t);
+    }
+    else if (progress < strikeEnd)
+    {
+        float t = (progress - windupEnd) / (strikeEnd - windupEnd);
+        return 0.15f + 0.70f * t;
+    }
+    float t = (progress - strikeEnd) / (1.0f - strikeEnd);
+    return 0.85f + 0.15f * easeOutCubic(t);
+}
+
+Vector3 DragonClawAttack::evalArcPoint(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right, const Vector3 &basePos) const
+{
+    float u = 1.0f - t;
+    float uu = u * u;
+    float tt = t * t;
+    float uuu = uu * u;
+    float ttt = tt * t;
+
+    // Bézier in local space (x=right, y=up, z=forward)
+    Vector3 local = Vector3Zero();
+    local = Vector3Add(local, Vector3Scale(curve.p0, uuu));
+    local = Vector3Add(local, Vector3Scale(curve.p1, 3.0f * uu * t));
+    local = Vector3Add(local, Vector3Scale(curve.p2, 3.0f * u * tt));
+    local = Vector3Add(local, Vector3Scale(curve.p3, ttt));
+
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    Vector3 world = basePos;
+    world = Vector3Add(world, Vector3Scale(right, local.x));
+    world = Vector3Add(world, Vector3Scale(up, local.y));
+    world = Vector3Add(world, Vector3Scale(forward, local.z));
+    return world;
+}
+
+Vector3 DragonClawAttack::evalArcTangent(const ArcCurve &curve, float t, const Vector3 &forward, const Vector3 &right) const
+{
+    float u = 1.0f - t;
+    // Derivative of cubic Bézier in local space
+    Vector3 p0p1 = Vector3Subtract(curve.p1, curve.p0);
+    Vector3 p1p2 = Vector3Subtract(curve.p2, curve.p1);
+    Vector3 p2p3 = Vector3Subtract(curve.p3, curve.p2);
+
+    Vector3 local = Vector3Zero();
+    local = Vector3Add(local, Vector3Scale(p0p1, 3.0f * u * u));
+    local = Vector3Add(local, Vector3Scale(p1p2, 6.0f * u * t));
+    local = Vector3Add(local, Vector3Scale(p2p3, 3.0f * t * t));
+
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    Vector3 world = Vector3Zero();
+    world = Vector3Add(world, Vector3Scale(right, local.x));
+    world = Vector3Add(world, Vector3Scale(up, local.y));
+    world = Vector3Add(world, Vector3Scale(forward, local.z));
+    return world;
+}
+
+void DragonClawAttack::resetArcDefaults()
+{
+    defaultArcCurves = {
+        ArcCurve{ // Combo 1: left-to-right swipe
+            { -sideOffset, 0.4f, startDistance },
+            { -sideOffset * 0.7f, arcHeight, strikeDistance * 0.35f },
+            { sideOffset * 0.2f, arcHeight * 0.6f, strikeDistance * 0.85f },
+            { 0.2f, 0.0f, endDistance }
+        },
+        ArcCurve{ // Combo 2: right-to-left swipe
+            { sideOffset, 0.4f, startDistance },
+            { sideOffset * 0.7f, arcHeight, strikeDistance * 0.35f },
+            { -sideOffset * 0.2f, arcHeight * 0.6f, strikeDistance * 0.85f },
+            { -0.2f, 0.0f, endDistance }
+        },
+        ArcCurve{ // Combo 3: centered downward chop
+            { 0.0f, 0.6f, startDistance },
+            { 0.35f, arcHeight * 0.9f, strikeDistance * 0.4f },
+            { 0.0f, arcHeight * 0.35f, strikeDistance * 0.9f },
+            { 0.0f, -0.15f, endDistance + 0.4f }
+        }
+    };
+    arcCurves = defaultArcCurves;
+}
+
+void DragonClawAttack::nudgeArc(int comboIndex, const Vector3 &deltaP1, const Vector3 &deltaP2)
+{
+    int idx = comboIndex % (int)arcCurves.size();
+    arcCurves[idx].p1 = Vector3Add(arcCurves[idx].p1, deltaP1);
+    arcCurves[idx].p2 = Vector3Add(arcCurves[idx].p2, deltaP2);
+}
+
+void DragonClawAttack::handleTweakHotkeys()
+{
+    if (IsKeyPressed(KEY_F2))
+    {
+        tweakModeEnabled = !tweakModeEnabled;
+    }
+
+    if (!tweakModeEnabled)
+        return;
+
+    if (IsKeyPressed(KEY_ONE)) tweakSelectedCombo = 0;
+    if (IsKeyPressed(KEY_TWO)) tweakSelectedCombo = 1;
+    if (IsKeyPressed(KEY_THREE)) tweakSelectedCombo = 2;
+    if (IsKeyPressed(KEY_R))
+    {
+        arcCurves = defaultArcCurves;
+    }
+    if (IsKeyPressed(KEY_F5))
+    {
+        saveArcCurves();
+    }
+    if (IsKeyPressed(KEY_F6))
+    {
+        loadArcCurves();
+    }
+
+    float delta = GetFrameTime();
+    Vector3 deltaP1 = {0.0f, 0.0f, 0.0f};
+    Vector3 deltaP2 = {0.0f, 0.0f, 0.0f};
+    const float sideStep = 2.4f * delta;
+    const float heightStep = 2.0f * delta;
+    const float forwardStep = 3.0f * delta;
+
+    if (IsKeyDown(KEY_UP))   { deltaP1.y += heightStep; deltaP2.y += heightStep; }
+    if (IsKeyDown(KEY_DOWN)) { deltaP1.y -= heightStep; deltaP2.y -= heightStep; }
+    if (IsKeyDown(KEY_LEFT)) { deltaP1.x -= sideStep;   deltaP2.x -= sideStep; }
+    if (IsKeyDown(KEY_RIGHT)){ deltaP1.x += sideStep;   deltaP2.x += sideStep; }
+    if (IsKeyDown(KEY_COMMA)){ deltaP1.z -= forwardStep; deltaP2.z -= forwardStep; }
+    if (IsKeyDown(KEY_PERIOD)){ deltaP1.z += forwardStep; deltaP2.z += forwardStep; }
+
+    if (Vector3LengthSqr(deltaP1) > 0.0f || Vector3LengthSqr(deltaP2) > 0.0f)
+    {
+        nudgeArc(tweakSelectedCombo, deltaP1, deltaP2);
+    }
+}
+
+void DragonClawAttack::refreshDebugArc(const Vector3 &forward, const Vector3 &right, const Vector3 &basePos)
+{
+    if (!tweakModeEnabled)
+        return;
+
+    if (debugArcPoints.size() != arcDebugSamples)
+        debugArcPoints.resize(arcDebugSamples);
+
+    const ArcCurve &curve = arcCurves[tweakSelectedCombo % (int)arcCurves.size()];
+    for (int i = 0; i < arcDebugSamples; ++i)
+    {
+        float t = (arcDebugSamples == 1) ? 0.0f : (float)i / (float)(arcDebugSamples - 1);
+        Vector3 pos = evalArcPoint(curve, t, forward, right, basePos);
+        debugArcPoints[i].pos = pos;
+        debugArcPoints[i].setAsSphere(debugParticleRadius);
+        debugArcPoints[i].tint = Color{255, 200, 120, 200};
+        debugArcPoints[i].useTexture = false;
+        debugArcPoints[i].UpdateOBB();
+    }
+}
+
+bool DragonClawAttack::saveArcCurves() const
+{
+    std::ofstream out(arcSaveFilename);
+    if (!out.is_open())
+        return false;
+
+    for (const auto &c : arcCurves)
+    {
+        out << c.p0.x << ' ' << c.p0.y << ' ' << c.p0.z << ' '
+            << c.p1.x << ' ' << c.p1.y << ' ' << c.p1.z << ' '
+            << c.p2.x << ' ' << c.p2.y << ' ' << c.p2.z << ' '
+            << c.p3.x << ' ' << c.p3.y << ' ' << c.p3.z << '\n';
+    }
+    return true;
+}
+
+bool DragonClawAttack::loadArcCurves()
+{
+    std::ifstream in(arcSaveFilename);
+    if (!in.is_open())
+        return false;
+
+    std::array<ArcCurve, 3> loaded = defaultArcCurves;
+    for (auto &c : loaded)
+    {
+        if (!(in >> c.p0.x >> c.p0.y >> c.p0.z
+                >> c.p1.x >> c.p1.y >> c.p1.z
+                >> c.p2.x >> c.p2.y >> c.p2.z
+                >> c.p3.x >> c.p3.y >> c.p3.z))
+        {
+            return false;
+        }
+    }
+    arcCurves = loaded;
+    if (tweakModeEnabled)
+    {
+        refreshDebugArc(lastForward, lastRight, lastBasePos);
+    }
+    return true;
+}
+
+void DragonClawAttack::applyTweakCamera(const Me &player, Camera &cam)
+{
+    if (!tweakModeEnabled)
+        return;
+
+    Vector2 rot = player.getLookRotation();
+    Vector3 forward = {sinf(rot.x), 0.0f, cosf(rot.x)};
+    forward = Vector3Normalize(forward);
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+
+    Vector3 playerPos = player.pos();
+    Vector3 offsetBack = Vector3Scale(forward, -6.0f);
+    Vector3 offsetUp = {0.0f, 6.0f, 0.0f};
+    cam.position = Vector3Add(Vector3Add(playerPos, offsetBack), offsetUp);
+    cam.target = Vector3Add(playerPos, Vector3Scale(forward, 1.5f));
+    cam.up = up;
+    cam.fovy = 65.0f;
+}
+
+void DragonClawAttack::drawTweakHud(const Me &player)
+{
+    if (!tweakModeEnabled)
+        return;
+
+    const int baseX = 20;
+    int y = 20;
+    int line = 18;
+    DrawText("Claw Animation Tweak Mode", baseX, y, 20, ORANGE); y += line + 4;
+    DrawText(TextFormat("Selected arc: %d", tweakSelectedCombo + 1), baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("F2: Toggle tweak mode", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("1/2/3: Pick arc", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("R: Reset arc", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Arrow keys: Side/Height", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("</>: Forward/Back control", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("F5: Save arcs", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("F6: Load arcs", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Tile faces arc tangent", baseX, y, 16, LIGHTGRAY); y += line;
+    DrawText("Camera set to top-back view", baseX, y, 16, LIGHTGRAY);
+}
+
+// --- ArcaneOrbAttack: homing projectile with smooth tracking and sine-wave motion ---
+void ArcaneOrbAttack::update(UpdateContext &uc)
+{
+    float delta = GetFrameTime();
+    
+    // Update cooldown
+    if (cooldownRemaining > 0.0f)
+    {
+        cooldownRemaining = fmaxf(0.0f, cooldownRemaining - delta);
+    }
+    
+    // Update projectiles
+    for (auto &orb : activeOrbs)
+    {
+        if (!orb.active)
+            continue;
+        
+        orb.lifetime += delta;
+        
+        // Remove if too old
+        if (orb.lifetime >= OrbProjectile::maxLifetime)
+        {
+            orb.active = false;
+            continue;
+        }
+        
+        updateOrbMovement(orb, uc, delta);
+        checkOrbHits(orb, uc);
+    }
+    
+    // Remove inactive orbs
+    activeOrbs.erase(
+        std::remove_if(activeOrbs.begin(), activeOrbs.end(),
+            [](const OrbProjectile &o) { return !o.active; }),
+        activeOrbs.end());
+}
+
+void ArcaneOrbAttack::spawnOrb(UpdateContext &uc)
+{
+    if (cooldownRemaining > 0.0f)
+        return;
+    
+    if (!uc.scene || !this->spawnedBy)
+        return;
+    
+    // Determine forward direction
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    Vector3 spawnPos = this->spawnedBy->pos();
+    
+    if (this->spawnedBy->category() == ENTITY_PLAYER)
+    {
+        Me *player = static_cast<Me *>(this->spawnedBy);
+        const Camera &camera = player->getCamera();
+        forward = Vector3Subtract(camera.target, camera.position);
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        spawnPos.y += muzzleHeight;
+    }
+    else if (this->spawnedBy->category() == ENTITY_ENEMY)
+    {
+        Enemy *enemy = static_cast<Enemy *>(this->spawnedBy);
+        forward = enemy->dir();
+        if (Vector3LengthSqr(forward) < 0.0001f)
+        {
+            forward = {0.0f, 0.0f, -1.0f};
+        }
+        forward = Vector3Normalize(forward);
+        spawnPos.y += 1.0f;
+    }
+    
+    OrbProjectile orb;
+    orb.position = spawnPos;
+    orb.lastDirection = forward;  // Initial direction
+    orb.lifetime = 0.0f;
+    orb.sineWavePhase = 0.0f;
+    orb.targetEnemy = nullptr;
+    orb.active = true;
+    
+    // Find nearest enemy for homing
+    orb.targetEnemy = findNearestEnemy(uc, spawnPos, OrbProjectile::searchRadius);
+    if (orb.targetEnemy)
+    {
+        orb.targetPos = orb.targetEnemy->pos();
+    }
+    else
+    {
+        orb.targetPos = Vector3Add(spawnPos, Vector3Scale(forward, 50.0f));
+    }
+    
+    // Create orb object
+    orb.orbObj.setAsSphere(orbSize);
+    orb.orbObj.pos = orb.position;
+    orb.orbObj.useTexture = uc.uiManager != nullptr;
+    if (uc.uiManager)
+    {
+        orb.orbObj.texture = &uc.uiManager->muim.getSpriteSheet();
+        TileType selectedTile = uc.uiManager->muim.getSelectedTile(uc.player->hand);
+        orb.orbObj.sourceRect = uc.uiManager->muim.getTile(selectedTile);
+        orb.orbObj.tint = Color{100, 200, 255, 180}; // Blue tint for magic orb
+    }
+    orb.orbObj.UpdateOBB();
+    
+    activeOrbs.push_back(orb);
+    cooldownRemaining = cooldownDuration;
+}
+
+void ArcaneOrbAttack::updateOrbMovement(OrbProjectile &orb, UpdateContext &uc, float deltaSeconds)
+{
+    // Update target if enemy is still alive
+    if (orb.targetEnemy)
+    {
+        if (orb.targetEnemy->category() == ENTITY_ENEMY)
+        {
+            Enemy *enemy = static_cast<Enemy *>(orb.targetEnemy);
+            orb.targetPos = enemy->pos();
+        }
+        else
+        {
+            orb.targetEnemy = nullptr;
+        }
+    }
+    
+    // Find new target if needed
+    if (!orb.targetEnemy && uc.scene)
+    {
+        orb.targetEnemy = findNearestEnemy(uc, orb.position, OrbProjectile::searchRadius);
+        if (orb.targetEnemy)
+        {
+            orb.targetPos = orb.targetEnemy->pos();
+        }
+    }
+    
+    // Compute desired direction to target
+    Vector3 toTarget = Vector3Subtract(orb.targetPos, orb.position);
+    Vector3 targetDir = Vector3Normalize(toTarget);
+    
+    // Blend between last direction and target direction for smooth tracking
+    // trackingBlend = 0.4f means 40% target tracking, 60% inertia from previous direction
+    Vector3 blendedDir = Vector3Lerp(
+        orb.lastDirection,
+        targetDir,
+        OrbProjectile::trackingBlend);
+    blendedDir = Vector3Normalize(blendedDir);
+    
+    // Apply sine-wave motion for magical feel (vertical oscillation)
+    orb.sineWavePhase += deltaSeconds * OrbProjectile::sineWaveFrequency;
+    float verticalSineWave = sinf(orb.sineWavePhase) * OrbProjectile::sineWaveAmplitude;
+    
+    // Get perpendicular vector for sine wave offset
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    Vector3 right = Vector3CrossProduct(blendedDir, up);
+    if (Vector3LengthSqr(right) < 0.0001f)
+    {
+        right = {1.0f, 0.0f, 0.0f};
+    }
+    right = Vector3Normalize(right);
+    
+    // Apply sine wave to vertical component
+    Vector3 finalDir = blendedDir;
+    finalDir.y += verticalSineWave * 0.1f;  // Add vertical oscillation
+    finalDir = Vector3Normalize(finalDir);
+    
+    // Store direction for next frame tracking
+    orb.lastDirection = finalDir;
+    
+    // Update position
+    orb.position = Vector3Add(orb.position, Vector3Scale(finalDir, OrbProjectile::baseSpeed * deltaSeconds));
+    
+    // Update object
+    orb.orbObj.pos = orb.position;
+    
+    // Add rotation to orb for visual interest
+    static float orbRotation = 0.0f;
+    orbRotation += orbSpinSpeed * deltaSeconds;
+    if (orbRotation > 360.0f) orbRotation -= 360.0f;
+    Quaternion rot = QuaternionFromEuler(orbRotation * DEG2RAD, orbRotation * DEG2RAD * 0.5f, orbRotation * DEG2RAD * 0.3f);
+    orb.orbObj.setRotation(rot);
+    
+    orb.orbObj.UpdateOBB();
+}
+
+void ArcaneOrbAttack::checkOrbHits(OrbProjectile &orb, UpdateContext &uc)
+{
+    if (!uc.scene)
+        return;
+    
+    // Check collision with enemies
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        if (!entity || entity->category() != ENTITY_ENEMY)
+            continue;
+        
+        Enemy *enemy = static_cast<Enemy *>(entity);
+        CollisionResult result = Object::collided(orb.orbObj, enemy->obj());
+        
+        if (result.collided)
+        {
+            // Deal damage
+            DamageResult damage(OrbProjectile::damage, result);
+            uc.scene->em.damage(enemy, damage, uc);
+            
+            // Apply knockback
+            Vector3 delta = Vector3Subtract(enemy->pos(), orb.position);
+            Vector3 pushDir = Vector3Normalize(delta);
+            enemy->applyKnockback(Vector3Scale(pushDir, 15.0f), 0.2f, 0.0f);
+            
+            orb.active = false;
+            break;
+        }
+    }
+    
+    // Check if hit ground
+    if (orb.position.y <= 0.1f)
+    {
+        orb.active = false;
+    }
+}
+
+Entity *ArcaneOrbAttack::findNearestEnemy(UpdateContext &uc, const Vector3 &position, float searchRadius) const
+{
+    if (!uc.scene)
+        return nullptr;
+    
+    Entity *nearest = nullptr;
+    float minDistSq = searchRadius * searchRadius;
+    
+    for (Entity *entity : uc.scene->em.getEntities())
+    {
+        if (!entity || entity->category() != ENTITY_ENEMY)
+            continue;
+        
+        float distSq = Vector3DistanceSqr(position, entity->pos());
+        if (distSq < minDistSq)
+        {
+            minDistSq = distSq;
+            nearest = entity;
+        }
+    }
+    
+    return nearest;
+}
+
+std::vector<Object *> ArcaneOrbAttack::obj()
+{
+    std::vector<Object *> ret;
+    for (auto &orb : activeOrbs)
+    {
+        if (orb.active)
+        {
+            ret.push_back(&orb.orbObj);
+        }
+    }
+    return ret;
 }
