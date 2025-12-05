@@ -24,6 +24,50 @@ bool isBambooTile(TileType tile)
 {
     return tile >= TileType::BAMBOO_1 && tile <= TileType::BAMBOO_9;
 }
+
+// Determine the attack archetype based on the selected tile
+enum class AttackArchetype
+{
+    MELEE,    // Character suit, Red Dragon, Winds
+    RANGER,   // Bamboo suit, Green Dragon
+    MAGE      // Dot suit, White Dragon
+};
+
+AttackArchetype getAttackArchetype(TileType tile)
+{
+    // Character tiles -> Melee
+    if (isCharacterTile(tile))
+        return AttackArchetype::MELEE;
+    
+    // Bamboo tiles -> Ranger
+    if (isBambooTile(tile))
+        return AttackArchetype::RANGER;
+    
+    // Dot tiles -> Mage
+    if (isDotTile(tile))
+        return AttackArchetype::MAGE;
+    
+    // Dragon and Wind tiles
+    switch (tile)
+    {
+        case TileType::DRAGON_RED:
+        case TileType::WIND_EAST:
+        case TileType::WIND_SOUTH:
+        case TileType::WIND_WEST:
+        case TileType::WIND_NORTH:
+            return AttackArchetype::MELEE;
+        
+        case TileType::DRAGON_GREEN:
+            return AttackArchetype::RANGER;
+        
+        case TileType::DRAGON_WHITE:
+            return AttackArchetype::MAGE;
+        
+        default:
+            // Default to Ranger for other tiles
+            return AttackArchetype::RANGER;
+    }
+}
 }
 
 // Destructor cleans up dynamically allocated ThousandAttack instances

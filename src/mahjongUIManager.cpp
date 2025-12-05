@@ -80,16 +80,52 @@ void MahjongUIManager::draw()
 {
     for (int i = 0; i < handElements.size(); i++)
     {
-        handElements[i]->draw();
+        // Apply offset for selected tile to make it "pop up"
+        float yOffset = 0.0f;
         if (i == selectedTileIndex)
         {
-            // Draw a rectangle around the selected tile
-            DrawRectangleLinesEx(handElements[i]->getBounds(), 2.0f, YELLOW);
+            yOffset = -15.0f; // Raise the selected tile
         }
-        if (i < tileUsed.size() && tileUsed[i])
+        
+        // Get original bounds
+        Rectangle originalBounds = handElements[i]->getBounds();
+        
+        // Check if it's a UITexturedSquare to access tile texture
+        if (UITexturedSquare *elem = dynamic_cast<UITexturedSquare*>(handElements[i]))
         {
-            Rectangle bounds = handElements[i]->getBounds();
-            DrawRectangleRec(bounds, Fade(DARKGRAY, 0.5f));
+            Vector2 pos = {originalBounds.x, originalBounds.y + yOffset};
+            Vector2 sz = {originalBounds.width, originalBounds.height};
+            
+            // Draw the tile texture with offset
+            Rectangle source = elem->getSourceRect();
+            DrawTexturePro(spriteSheet, source, 
+                          {pos.x, pos.y, sz.x, sz.y}, 
+                          {0, 0}, 0.0f, WHITE);
+            
+            // Draw selection indicator
+            if (i == selectedTileIndex)
+            {
+                DrawRectangleLinesEx({pos.x, pos.y, sz.x, sz.y}, 3.0f, YELLOW);
+            }
+            
+            // Draw used overlay
+            if (i < tileUsed.size() && tileUsed[i])
+            {
+                DrawRectangleRec({pos.x, pos.y, sz.x, sz.y}, Fade(DARKGRAY, 0.5f));
+            }
+        }
+        else
+        {
+            // Fallback for non-UITexturedSquare elements - shouldn't happen
+            handElements[i]->draw();
+            if (i == selectedTileIndex)
+            {
+                DrawRectangleLinesEx(originalBounds, 2.0f, YELLOW);
+            }
+            if (i < tileUsed.size() && tileUsed[i])
+            {
+                DrawRectangleRec(originalBounds, Fade(DARKGRAY, 0.5f));
+            }
         }
     }
 }

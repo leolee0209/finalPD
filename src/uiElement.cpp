@@ -1,5 +1,7 @@
 #include "uiElement.hpp"
 #include "me.hpp"
+#include "uiManager.hpp"
+#include "Inventory.hpp"
 
 UITexturedSquare::UITexturedSquare(Texture2D *_texture, Vector2 _position, Vector2 _size)
 {
@@ -118,4 +120,60 @@ void UIHealthBar::draw()
     {
         DrawRectangleLinesEx(baseRect, this->outlineThickness, this->outlineColor);
     }
+}
+
+// --- UISelectedTileDisplay Implementation ---
+
+UISelectedTileDisplay::UISelectedTileDisplay(MahjongUIManager *muimPtr, Inventory *inv)
+    : muim(muimPtr), inventory(inv)
+{
+    this->position = {0, 0};
+    this->size = {60, 80}; // Tile size
+}
+
+void UISelectedTileDisplay::update()
+{
+    // Nothing to update
+}
+
+void UISelectedTileDisplay::draw()
+{
+    if (!muim || !inventory)
+        return;
+
+    int selectedIdx = muim->getSelectedTileIndex();
+    auto &tiles = inventory->getTiles();
+    
+    if (selectedIdx < 0 || selectedIdx >= (int)tiles.size())
+        return;
+
+    TileType selectedType = tiles[selectedIdx].type;
+    
+    // Position above health bar, slightly to the right
+    float screenHeight = static_cast<float>(GetScreenHeight());
+    float margin = 20.0f;
+    float healthBarHeight = 20.0f;
+    
+    // Calculate position: above health bar with some spacing
+    Vector2 pos = {margin + 10.0f, screenHeight - margin - healthBarHeight - this->size.y - 10.0f};
+    
+    // Draw background frame
+    Rectangle frame = {pos.x - 5.0f, pos.y - 5.0f, this->size.x + 10.0f, this->size.y + 10.0f};
+    DrawRectangleRounded(frame, 0.2f, 4, Color{20, 25, 35, 200});
+    DrawRectangleRoundedLines(frame, 0.2f, 4, Fade(YELLOW, 0.8f));
+    
+    // Draw the tile
+    Rectangle source = muim->getTile(selectedType);
+    Rectangle dest = {pos.x, pos.y, this->size.x, this->size.y};
+    DrawTexturePro(muim->getSpriteSheet(), source, dest, {0, 0}, 0.0f, WHITE);
+    
+    // // Draw "BASIC ATTACK" label below
+    // const char *label = "BASIC";
+    // int fontSize = 12;
+    // int textWidth = MeasureText(label, fontSize);
+    // DrawText(label, 
+    //          (int)(pos.x + this->size.x / 2.0f - textWidth / 2.0f),
+    //          (int)(pos.y + this->size.y + 2.0f),
+    //          fontSize,
+    //          YELLOW);
 }

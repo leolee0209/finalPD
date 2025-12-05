@@ -23,6 +23,7 @@ int main(void)
     UIManager uiManager("mahjong.png", 9, 44, 60);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
+    uiManager.addElement(new UISelectedTileDisplay(&uiManager.muim, &player.hand));
     
     // Set player spawn position
     player.setSpawnPosition({0.0f, 0.0f, 0.0f});
@@ -147,10 +148,59 @@ int main(void)
             // Handle basic attack (left click)
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
-                BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
-                if (basicAttack)
+                // Get the selected tile type to determine attack mode
+                TileType selectedTile = uiManager.muim.getSelectedTile(player.hand);
+                
+                // For now, only Bamboo/Ranger mode (existing BasicTileAttack) is implemented
+                // TODO: Implement Melee (Character) and Mage (Dot) attacks in future phases
+                
+                // Determine if we should use the basic tile attack
+                bool useBasicAttack = true;
+                
+                // Check tile type
+                if (selectedTile >= TileType::CHARACTER_1 && selectedTile <= TileType::CHARACTER_9)
                 {
-                    basicAttack->spawnProjectile(uc);
+                    // Character tile - Melee mode (not yet implemented)
+                    // TODO: Implement Dragon's Claw melee attack
+                    useBasicAttack = false;
+                    // For now, show a debug message
+                    TraceLog(LOG_INFO, "Melee attack selected (not yet implemented)");
+                }
+                else if (selectedTile >= TileType::DOT_1 && selectedTile <= TileType::DOT_9)
+                {
+                    // Dot tile - Mage mode (not yet implemented)
+                    // TODO: Implement Arcane Orb magic attack
+                    useBasicAttack = false;
+                    // For now, show a debug message
+                    TraceLog(LOG_INFO, "Magic attack selected (not yet implemented)");
+                }
+                else if (selectedTile == TileType::DRAGON_WHITE)
+                {
+                    // White Dragon -> Mage mode
+                    useBasicAttack = false;
+                    TraceLog(LOG_INFO, "Magic attack selected (White Dragon, not yet implemented)");
+                }
+                else if (selectedTile == TileType::DRAGON_RED ||
+                         (selectedTile >= TileType::WIND_EAST && selectedTile <= TileType::WIND_NORTH))
+                {
+                    // Red Dragon or Winds -> Melee mode
+                    useBasicAttack = false;
+                    TraceLog(LOG_INFO, "Melee attack selected (Red Dragon/Wind, not yet implemented)");
+                }
+                else if (selectedTile == TileType::DRAGON_GREEN)
+                {
+                    // Green Dragon -> Ranger mode
+                    useBasicAttack = true;
+                }
+                // Bamboo tiles and others default to basic attack (Ranger mode)
+                
+                if (useBasicAttack)
+                {
+                    BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                    if (basicAttack)
+                    {
+                        basicAttack->spawnProjectile(uc);
+                    }
                 }
             }
 
