@@ -441,9 +441,9 @@ private:
     static constexpr float comboResetTime = 1.5f;        // Time to reset combo if no hit
     
     // === Tweakable Visual Parameters ===
-    static constexpr float spiritTileWidth = 1.0f;       // Width of the spirit tile
-    static constexpr float spiritTileHeight = 1.25f;     // Height of the spirit tile
-    static constexpr float spiritTileThickness = 0.3f;  // Thickness of the spirit tile
+    static constexpr float spiritTileWidth = 1.4f;       // Width of the spirit tile
+    static constexpr float spiritTileHeight = 1.75f;     // Height of the spirit tile
+    static constexpr float spiritTileThickness = 0.4f;  // Thickness of the spirit tile
     static constexpr float spiritTileOpacity = 0.5f;     // Base opacity (0.0 to 1.0, stays translucent)
     static constexpr float slashDamage = 30.0f;          // Damage per slash
     static constexpr int arcDebugSamples = 24;           // How many debug particles to show on arc
