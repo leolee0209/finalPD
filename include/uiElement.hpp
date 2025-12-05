@@ -53,6 +53,7 @@ public:
 
     void draw() override;
     void update() override;
+    Rectangle getSourceRect() const { return sourceRect; }
 
 private:
     Rectangle sourceRect;
@@ -103,4 +104,24 @@ private:
     Color fillColor{230, 41, 55, 255};
     Color outlineColor{0, 0, 0, 255};
     float displayedPercent = 1.0f;
+};
+
+/**
+ * @brief Displays the currently selected tile above the health bar.
+ */
+class MahjongUIManager;
+class Inventory;
+
+class UISelectedTileDisplay : public UIElement
+{
+public:
+    UISelectedTileDisplay(MahjongUIManager *muim, Inventory *inventory);
+    ~UISelectedTileDisplay() override = default;
+
+    void update() override;
+    void draw() override;
+
+private:
+    MahjongUIManager *muim = nullptr;
+    Inventory *inventory = nullptr;
 };

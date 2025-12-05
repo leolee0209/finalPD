@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-const char *UIManager::slotKeyLabels[slotCount] = {"Left Click", "R", "E"};
+const char *UIManager::slotKeyLabels[slotCount] = {"Right Click", "R", "E"};
 
 void UIManager::cleanup()
 {
@@ -589,8 +589,19 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
     // Hover hand tile
     hoveredTileIndex = muim.getTileIndexAt(mouse);
 
-    // Start drag from hand
+    // Handle left click on hand tiles - for selection
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredTileIndex >= 0)
+    {
+        auto &tiles = playerInventory.getTiles();
+        if (hoveredTileIndex < (int)tiles.size())
+        {
+            // Select this tile as the basic attack tile
+            muim.selectTileByIndex(hoveredTileIndex);
+        }
+    }
+
+    // Handle right click on hand tiles - for dragging to slots
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hoveredTileIndex >= 0)
     {
         auto &tiles = playerInventory.getTiles();
         if (hoveredTileIndex < (int)tiles.size())
@@ -599,8 +610,8 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
         }
     }
 
-    // Start drag from slot
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredTileIndex < 0)
+    // Start drag from slot with right-click
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hoveredTileIndex < 0)
     {
         for (int s = 0; s < slotCount; ++s)
         {
@@ -630,7 +641,7 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
 
     if (isDraggingTile)
     {
-        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+        if (IsMouseButtonReleased(MOUSE_BUTTON_RIGHT))
         {
             endTileDrag(mouse);
         }

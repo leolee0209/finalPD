@@ -31,6 +31,8 @@ private:
     std::vector<DashAttack *> dashAttacks;
     std::vector<DotBombAttack *> dotBombAttacks;
     std::vector<BambooTripleAttack *> bambooTripleAttacks;
+    std::vector<DragonClawAttack *> dragonClawAttacks;
+    std::vector<ArcaneOrbAttack *> arcaneOrbAttacks;
     std::vector<std::pair<TileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
@@ -68,6 +70,8 @@ public:
     DashAttack *getDashAttack(Entity *spawnedBy);
     DotBombAttack *getDotBombAttack(Entity *spawnedBy);
     BambooTripleAttack *getBambooTripleAttack(Entity *spawnedBy);
+    DragonClawAttack *getDragonClawAttack(Entity *spawnedBy);
+    ArcaneOrbAttack *getArcaneOrbAttack(Entity *spawnedBy);
     bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**

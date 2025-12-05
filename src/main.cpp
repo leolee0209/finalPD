@@ -3,6 +3,7 @@
 #include "me.hpp"
 #include "scene.hpp"
 #include "attackManager.hpp"
+#include "attack.hpp"
 #include "uiManager.hpp"
 #include "resource_dir.hpp"
 #include "updateContext.hpp"
@@ -23,6 +24,7 @@ int main(void)
     UIManager uiManager("mahjong.png", 9, 44, 60);
     uiManager.addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
     uiManager.addElement(new UIHealthBar(&player));
+    uiManager.addElement(new UISelectedTileDisplay(&uiManager.muim, &player.hand));
     
     // Set player spawn position
     player.setSpawnPosition({0.0f, 0.0f, 0.0f});
@@ -31,6 +33,8 @@ int main(void)
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 
     bool gamePaused = false;
+    bool tweakPauseActive = false;
+    bool tweakPrevGamePaused = false;
     struct SlotBinding
     {
         enum class Type
@@ -67,13 +71,52 @@ int main(void)
             }
         }
 
+        // Process tweak hotkeys even when the game is paused so tweaking is responsive
+        DragonClawAttack *claw = scene.am.getDragonClawAttack(&player);
+        if (claw)
+        {
+            claw->handleTweakHotkeys();
+            // If tweak mode toggled on, pause game logic (but do NOT show pause menu)
+            if (DragonClawAttack::isTweakModeEnabled() && !tweakPauseActive)
+            {
+                tweakPrevGamePaused = gamePaused;
+                // Do not change `gamePaused` or the pause menu visibility — only stop updates
+                EnableCursor();
+                tweakPauseActive = true;
+            }
+            else if (!DragonClawAttack::isTweakModeEnabled() && tweakPauseActive)
+            {
+                // restore cursor and leave the actual pause menu state as it was before tweak mode
+                if (!tweakPrevGamePaused)
+                {
+                    DisableCursor();
+                }
+                else
+                {
+                    EnableCursor();
+                }
+                tweakPauseActive = false;
+            }
+
+            // Always refresh debug arc for tweak mode from main (camera/player state)
+            if (DragonClawAttack::isTweakModeEnabled())
+            {
+                Camera cam = player.getCamera();
+                Vector3 forward = Vector3Subtract(cam.target, cam.position);
+                if (Vector3LengthSqr(forward) < 0.0001f) forward = {0.0f, 0.0f, -1.0f};
+                forward = Vector3Normalize(forward);
+                Vector3 right = Vector3Normalize(Vector3CrossProduct({0.0f,1.0f,0.0f}, forward));
+                claw->refreshDebugArc(forward, right, player.pos());
+            }
+        }
+
         // Always initialize frameInput to prevent input sticking
         char sideway = 0;
         char forward = 0;
         bool jumpPressed = false;
         bool crouching = false;
         
-        if (!gamePaused)
+        if (!gamePaused && !tweakPauseActive)
         {
             Vector2 mouseDelta = GetMouseDelta();
             player.getLookRotation().x -= mouseDelta.x * sensitivity.x;
@@ -86,7 +129,7 @@ int main(void)
         }
         else
         {
-            // Consume the delta so it does not accumulate while the cursor is visible.
+            // Consume the delta so it does not accumulate while the cursor is visible or tweak mode is active.
             GetMouseDelta();
         }
         
@@ -94,7 +137,7 @@ int main(void)
 
         UpdateContext uc(&scene, &player, frameInput, &uiManager);
 
-        if (!gamePaused)
+        if (!gamePaused && !tweakPauseActive)
         {
             // Handle interaction with briefcases and doors (C key)
             if (IsKeyPressed(KEY_C))
@@ -147,10 +190,64 @@ int main(void)
             // Handle basic attack (left click)
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
-                BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
-                if (basicAttack)
+                // Get the selected tile type to determine attack mode
+                TileType selectedTile = uiManager.muim.getSelectedTile(player.hand);
+                
+                // Check tile type and use appropriate attack
+                if (selectedTile >= TileType::CHARACTER_1 && selectedTile <= TileType::CHARACTER_9)
                 {
-                    basicAttack->spawnProjectile(uc);
+                    // Character tile - Melee mode (Dragon's Claw)
+                    DragonClawAttack *clawAttack = scene.am.getDragonClawAttack(&player);
+                    if (clawAttack && clawAttack->canAttack())
+                    {
+                        clawAttack->spawnSlash(uc);
+                    }
+                }
+                else if (selectedTile >= TileType::DOT_1 && selectedTile <= TileType::DOT_9)
+                {
+                    // Dot tile - Mage mode (Arcane Orb)
+                    ArcaneOrbAttack *orbAttack = scene.am.getArcaneOrbAttack(&player);
+                    if (orbAttack && orbAttack->canShoot())
+                    {
+                        orbAttack->spawnOrb(uc);
+                    }
+                }
+                else if (selectedTile == TileType::DRAGON_WHITE)
+                {
+                    // White Dragon -> Mage mode (Arcane Orb)
+                    ArcaneOrbAttack *orbAttack = scene.am.getArcaneOrbAttack(&player);
+                    if (orbAttack && orbAttack->canShoot())
+                    {
+                        orbAttack->spawnOrb(uc);
+                    }
+                }
+                else if (selectedTile == TileType::DRAGON_RED ||
+                         (selectedTile >= TileType::WIND_EAST && selectedTile <= TileType::WIND_NORTH))
+                {
+                    // Red Dragon or Winds -> Melee mode (Dragon's Claw)
+                    DragonClawAttack *clawAttack = scene.am.getDragonClawAttack(&player);
+                    if (clawAttack && clawAttack->canAttack())
+                    {
+                        clawAttack->spawnSlash(uc);
+                    }
+                }
+                else if (selectedTile == TileType::DRAGON_GREEN)
+                {
+                    // Green Dragon -> Ranger mode (Rapid Throw)
+                    BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                    if (basicAttack)
+                    {
+                        basicAttack->spawnProjectile(uc);
+                    }
+                }
+                else
+                {
+                    // Bamboo tiles and others -> Ranger mode (Rapid Throw)
+                    BasicTileAttack *basicAttack = scene.am.getBasicTileAttack(&player);
+                    if (basicAttack)
+                    {
+                        basicAttack->spawnProjectile(uc);
+                    }
                 }
             }
 
@@ -218,6 +315,10 @@ int main(void)
         ClearBackground(scene.getSkyColor());
 
         Camera camera = player.getCamera();
+        if (DragonClawAttack::isTweakModeEnabled())
+        {
+            DragonClawAttack::applyTweakCamera(player, camera);
+        }
         scene.SetViewPosition(camera.position);
         BeginMode3D(camera);
         scene.DrawScene(camera);
@@ -228,6 +329,7 @@ int main(void)
         scene.DrawInteractionPrompts(player.pos(), camera);
 
         uiManager.draw(uc, player.hand);
+        DragonClawAttack::drawTweakHud(player);
         
         // Draw damage flash (red screen edge vignette)
         if (player.getDamageFlashAlpha() > 0.0f)
