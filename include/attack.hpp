@@ -562,6 +562,153 @@ private:
     void checkOrbHits(OrbProjectile &orb, UpdateContext &uc);
 };
 
+/** @brief Gravity Well - stationary singularity that pulls and suppresses enemies. */
+class GravityWellAttack : public AttackController
+{
+public:
+    explicit GravityWellAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj();
+    bool trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+
+private:
+    struct WellField
+    {
+        Object core;
+        Object outerRing;
+        Object innerRing;
+        float lifetime = 0.0f;
+        float openTimer = 0.0f;
+        float collapseTimer = 0.0f;
+        float currentRadius = 0.0f;
+        bool active = false;
+        bool opening = false;
+        bool collapsing = false;
+    };
+
+    struct WellProjectile
+    {
+        bool active = false;
+        Vector3 position{0.0f, 0.0f, 0.0f};
+        Vector3 velocity{0.0f, 0.0f, 0.0f};
+        Vector3 wiggleAxis{1.0f, 0.0f, 0.0f};
+        float sinePhase = 0.0f;
+        Object visual;
+    };
+
+    WellField activeWell{};
+    WellProjectile projectile{};
+    float cooldownRemaining = 0.0f;
+
+    static constexpr float cooldownDuration = 7.0f;
+    static constexpr float flightSpeed = 18.0f;
+    static constexpr float flightLift = 4.5f;
+    static constexpr float projectileGravity = 6.0f;
+    static constexpr float flightSineAmplitude = 1.2f;
+    static constexpr float flightSineFrequency = 3.2f;
+    static constexpr float projectileRadius = 0.6f;
+    static constexpr float openingDuration = 0.45f;
+    static constexpr float collapseDuration = 0.35f;
+    static constexpr float wellDuration = 10.0f;
+    static constexpr float pullRadius = 20.0f;
+    static constexpr float suppressRadius = 10.0f;
+    static constexpr float pullStrength = 48.0f; // velocity impulse toward center
+    static constexpr float suppressDuration = 0.25f; // keeps enemies rooted while inside
+    static constexpr float suppressStunDuration = 0.2f;
+    static constexpr float horizonHeight = 0.35f;
+    static constexpr float coreRadius = 2.2f;
+};
+
+/** @brief Chain Lightning - instant hitscan that jumps across nearby enemies. */
+class ChainLightningAttack : public AttackController
+{
+public:
+    explicit ChainLightningAttack(Entity *_spawnedBy) : AttackController(_spawnedBy) {}
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj();
+    bool trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+
+private:
+    struct Bolt
+    {
+        Vector3 start;
+        Vector3 end;
+        float lifetime = 0.0f;
+        std::vector<Vector3> points;
+        std::vector<Object> segments;
+    };
+
+    std::vector<Bolt> activeBolts;
+    float cooldownRemaining = 0.0f;
+
+    static constexpr float cooldownDuration = 3.0f;
+    static constexpr float maxRange = 32.0f;
+    static constexpr float chainRadius = 25.0f;
+    static constexpr float boltLifetime = 0.28f;
+    static constexpr int minSegments = 6;
+    static constexpr int maxSegments = 18;
+    static constexpr float jitterAmount = 0.65f;
+    static constexpr float segmentThickness = 0.22f;
+    static constexpr float segmentGlowThickness = 0.34f;
+    static constexpr float primaryDamage = 28.0f;
+    static constexpr float secondaryDamage = 18.0f;
+    static constexpr float stunDuration = 1.5f;
+
+    Entity *findPrimaryTarget(UpdateContext &uc, Vector3 camPos, Vector3 camForward) const;
+    std::vector<Entity *> findSecondaryTargets(UpdateContext &uc, Entity *primary) const;
+    void applyDamageAndStun(Entity *target, float damage, UpdateContext &uc);
+    void rebuildBoltGeometry(Bolt &bolt);
+};
+
+/** @brief Orbital Shield - three orbiting tiles that block hits and can be fired. */
+class OrbitalShieldAttack : public AttackController
+{
+public:
+    explicit OrbitalShieldAttack(Entity *_spawnedBy);
+    ~OrbitalShieldAttack();
+
+    void update(UpdateContext &uc) override;
+    std::vector<Entity *> getEntities() override { return {}; }
+    std::vector<Object *> obj();
+    bool trigger(UpdateContext &uc);
+    float getCooldownPercent() const;
+
+    bool consumeOneShield(Me *player, UpdateContext *uc);
+
+private:
+    struct Orb
+    {
+        Object visual;
+        float angle = 0.0f;
+        bool launching = false;
+        Vector3 velocity = {0.0f, 0.0f, 0.0f};
+    };
+
+    std::vector<Orb> orbs;
+    float baseAngle = 0.0f;
+    float cooldownRemaining = 0.0f;
+
+    static std::vector<OrbitalShieldAttack *> registry;
+    friend bool TryConsumeOrbitalShield(Me *player, DamageResult &dResult);
+
+    static constexpr float cooldownDuration = 5.0f;
+    static constexpr float orbitRadius = 1.8f;
+    static constexpr float orbitHeight = 1.3f;
+    static constexpr float orbitSpeed = 2.4f; // radians per second
+    static constexpr float launchSpeed = 65.0f;
+    static constexpr float shieldDamage = 18.0f;
+    static constexpr int maxOrbs = 3;
+};
+
+// Damage hook so the player can consume orbital shields before taking damage
+bool TryConsumeOrbitalShield(Me *player, DamageResult &dResult);
+
 /** @brief Seismic Slam - leap and ground pound with arc motion and camera control.
  *
  * Player follows a Bézier arc, faces tangent direction, slams ground with shockwave.

@@ -2,6 +2,7 @@
 #include "scene.hpp"
 #include "constant.hpp"
 #include "raymath.h"
+#include "attack.hpp"
 #include <iostream>
 
 // Updates the player's state based on user input and physics
@@ -179,6 +180,12 @@ void Me::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, floa
 
 bool Me::damage(DamageResult &dResult)
 {
+    // Allow orbital shields to absorb the hit before applying damage
+    if (TryConsumeOrbitalShield(this, dResult))
+    {
+        return true;
+    }
+
     int appliedDamage = (int)(dResult.damage);
     if (appliedDamage <= 0)
         appliedDamage = 1;

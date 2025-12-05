@@ -12,6 +12,14 @@
 void MinionEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float dist = Vector3Length(toPlayer);
@@ -87,6 +95,13 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
         settings.facingHint = toPlayer;
     }
 
+    if (this->isMovementDisabled())
+    {
+        desiredDir = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
+
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->UpdateDialog(uc);
 }
@@ -103,6 +118,11 @@ void Enemy::UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirect
         moveDir = Vector3Normalize(moveDir);
     }
     else
+    {
+        moveDir = Vector3Zero();
+    }
+
+    if (this->isMovementDisabled())
     {
         moveDir = Vector3Zero();
     }
@@ -276,12 +296,27 @@ void Enemy::snapToGroundWithRotation(const Quaternion &rotation)
 void Enemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
     Vector3 directionToPlayer = Vector3Subtract(uc.player->pos(), this->position);
     directionToPlayer.y = 0.0f;
 
     MovementSettings settings;
     settings.maxSpeed = 3.0f;
     settings.facingHint = directionToPlayer;
+
+    if (this->isMovementDisabled())
+    {
+        directionToPlayer = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
 
     this->UpdateCommonBehavior(uc, directionToPlayer, delta, settings);
     // Update health dialog owned by this enemy (position/text/orientation)
@@ -291,6 +326,14 @@ void Enemy::UpdateBody(UpdateContext &uc)
 void ChargingEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float distanceToPlayer = Vector3Length(toPlayer);
@@ -354,6 +397,13 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
     settings.lockToGround = true;
     settings.enableLean = (this->state != ChargeState::Charging);
     settings.enableBobAndSway = (this->state != ChargeState::Charging);
+
+    if (this->isMovementDisabled())
+    {
+        desiredDirection = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
 
     if (this->state == ChargeState::Charging)
     {
@@ -529,7 +579,13 @@ bool ChargingEnemy::updatePoseTowards(float targetAngleDeg, float deltaSeconds)
 
 bool Enemy::damage(DamageResult &dResult)
 {
-    this->health -= dResult.damage;
+    int healthBefore = this->health;
+    this->health -= (int)dResult.damage;
+    TraceLog(LOG_ERROR, "[Enemy] damage applied: before=%d damage=%.1f after=%d obj=%p", healthBefore, dResult.damage, this->health, (void*)this);
+    if (this->health <= 0)
+    {
+        TraceLog(LOG_ERROR, "[Enemy] DEATH: obj=%p was at %d hp, took %.1f dmg", (void*)this, healthBefore, dResult.damage);
+    }
     return this->health > 0;
 }
 
@@ -548,6 +604,63 @@ void Enemy::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, f
         this->grounded = false;
     }
     this->knockbackTimer = fmaxf(this->knockbackTimer, durationSeconds);
+}
+
+void Enemy::applyStun(float durationSeconds)
+{
+    this->stunTimer = fmaxf(this->stunTimer, durationSeconds);
+    this->stunShakePhase = 0.0f;
+    this->disableVoluntaryMovement(durationSeconds);
+}
+
+void Enemy::tickStatusTimers(float deltaSeconds)
+{
+    if (this->movementDisableTimer > 0.0f)
+    {
+        this->movementDisableTimer = fmaxf(0.0f, this->movementDisableTimer - deltaSeconds);
+    }
+    if (this->electrocuteTimer > 0.0f)
+    {
+        this->electrocuteTimer = fmaxf(0.0f, this->electrocuteTimer - deltaSeconds);
+    }
+}
+
+bool Enemy::updateStun(UpdateContext &uc, float deltaSeconds)
+{
+    if (this->stunTimer <= 0.0f)
+        return false;
+
+    this->stunTimer = fmaxf(0.0f, this->stunTimer - deltaSeconds);
+    // For long stuns (>0.5s like lightning's 1.5s), zero velocity to prevent explosion from ApplyPhysics.
+    // For short stuns (<0.5s like gravity's 0.2s suppress), preserve velocity so external forces (gravity well) still act.
+    if (this->stunTimer > 0.5f)
+    {
+        this->velocity = Vector3Zero();
+        this->grounded = true;
+
+        // Snap to ground to keep position stable during long stun
+        float floory = this->computeSupportHeightForRotation(this->o.getRotation());
+        this->position.y = floory;
+        this->o.pos = this->position;
+    }
+
+    // Stun itself does not animate; electrocute animation is handled separately by updateElectrocute().
+    return true;
+}
+
+bool Enemy::updateElectrocute(float deltaSeconds)
+{
+    if (this->electrocuteTimer <= 0.0f)
+        return false;
+
+    this->electrocuteTimer = fmaxf(0.0f, this->electrocuteTimer - deltaSeconds);
+    this->electrocutePhase += deltaSeconds * 18.0f;
+
+    // Visual electrocution: yaw-only shake (left-right). Avoid tilt so enemies don't tumble.
+    float yawShakeDeg = sinf(this->electrocutePhase * 2.8f) * 8.0f;
+    this->o.rotate({0, 1, 0}, yawShakeDeg);
+    this->o.UpdateOBB();
+    return true;
 }
 
 void Enemy::gatherObjects(std::vector<Object *> &out) const
@@ -583,6 +696,7 @@ ShooterEnemy::ShooterEnemy() : Enemy(250)  // Sniper: 250 HP
 {
     this->setMaxHealth(250);
     this->setTileType(TileType::BAMBOO_7); // Sniper uses Bamboo tiles
+    TraceLog(LOG_WARNING, "[ShooterEnemy] spawned: this=%p health=%d maxHealth=%d", (void*)this, this->getHealth(), 250);
     
     // Set default bullet pattern (single bullet)
     this->bulletPattern.bulletCount = 1;
@@ -852,6 +966,14 @@ void SummonerEnemy::Draw() const
 void SummonerEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
     
     // Always update animation (handles idle countdown and active animation states)
     UpdateSummonAnimation(uc, delta);
@@ -889,6 +1011,13 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
         settings.facingHint = toPlayer;
     }
 
+    if (this->isMovementDisabled())
+    {
+        desiredDir = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
+
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->UpdateDialog(uc);
 }
@@ -896,6 +1025,15 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
 void ShooterEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float distance = Vector3Length(toPlayer);
@@ -928,6 +1066,13 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
     settings.lockToGround = true;
     settings.enableLean = command.speed > 0.1f;
     settings.enableBobAndSway = command.speed > 0.1f;
+
+    if (this->isMovementDisabled())
+    {
+        command.direction = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
 
     this->UpdateCommonBehavior(uc, command.direction, delta, settings);
 
@@ -1451,8 +1596,6 @@ Enemy* SupportEnemy::FindBestTarget(UpdateContext &uc, bool forHealing)
             if (!ally) continue;
             
             // Skip minions
-            if (dynamic_cast<MinionEnemy*>(ally)) continue;
-            
             float dist = Vector3Distance(this->position, ally->pos());
             if (dist > actionSearchRadius) continue;
             
@@ -1555,6 +1698,13 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
         desiredDir = Vector3Zero();
         settings.facingHint = toPlayer;
     }
+
+    if (this->isMovementDisabled())
+    {
+        desiredDir = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
     
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->UpdateDialog(uc);
@@ -1644,7 +1794,14 @@ void SupportEnemy::UpdateHealMode(UpdateContext &uc)
             this->chargeParticleTimer = 0.0f;
         }
     }
-    
+
+    if (this->isMovementDisabled())
+    {
+        desiredDir = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
+
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->UpdateDialog(uc);
 }
@@ -1727,7 +1884,14 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
             this->chargeParticleTimer = 0.0f;
         }
     }
-    
+
+    if (this->isMovementDisabled())
+    {
+        desiredDir = Vector3Zero();
+        settings.maxSpeed = 0.0f;
+        settings.maxAccel = 0.0f;
+    }
+
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->UpdateDialog(uc);
 }
@@ -1735,6 +1899,14 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
 void SupportEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
     
     // Decrement cooldown timer
     if (this->actionCooldownTimer > 0.0f)
@@ -2547,6 +2719,14 @@ void VanguardEnemy::UnloadSharedResources()
 void VanguardEnemy::UpdateBody(UpdateContext &uc)
 {
     float delta = GetFrameTime();
+    this->tickStatusTimers(delta);
+    if (this->updateStun(uc, delta))
+    {
+        this->updateElectrocute(delta);
+        this->UpdateDialog(uc);
+        return;
+    }
+    this->updateElectrocute(delta);
     // Cache camera info for use during Draw (Draw is const and has no UpdateContext)
     const Camera &cam = uc.player->getCamera();
     this->cachedCameraPos = cam.position;

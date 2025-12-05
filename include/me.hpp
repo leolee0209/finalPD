@@ -147,6 +147,11 @@ private:
     Vector3 facingDirection; // Added for smooth turning
     float knockbackTimer = 0.0f;
     float hitTilt = 0.0f;
+    float stunTimer = 0.0f;
+    float stunShakePhase = 0.0f;
+    float electrocuteTimer = 0.0f;
+    float electrocutePhase = 0.0f;
+    float movementDisableTimer = 0.0f;
 
 protected:
     struct MovementSettings
@@ -169,8 +174,12 @@ protected:
     void UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirection, float deltaSeconds, const MovementSettings &settings);
     void UpdateDialog(UpdateContext &uc, float verticalOffset = 1.4f);
     bool isKnockbackActive() const { return this->knockbackTimer > 0.0f; }
+    bool isStunned() const { return this->stunTimer > 0.0f; }
     float computeSupportHeightForRotation(const Quaternion &rotation) const;
     void snapToGroundWithRotation(const Quaternion &rotation);
+    bool updateStun(UpdateContext &uc, float deltaSeconds);
+    bool updateElectrocute(float deltaSeconds);
+    void tickStatusTimers(float deltaSeconds);
 
 public:
     // Default constructor initializes the enemy with default values
@@ -209,6 +218,8 @@ public:
     void UpdateBody(UpdateContext& uc) override;
     bool damage(DamageResult &dResult);
     void applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift = 0.0f);
+    void applyStun(float durationSeconds);
+    float getStunTime() const { return this->stunTimer; }
     // Identify this entity as an enemy for filtered queries
     EntityCategory category() const override;
     Vector3 getFacingDirection() const { return this->facingDirection; }
@@ -224,6 +235,9 @@ public:
     }
     TileType getTileType() const { return this->tileType; }
     void setTileType(TileType type) { this->tileType = type; }
+    void disableVoluntaryMovement(float durationSeconds) { this->movementDisableTimer = fmaxf(this->movementDisableTimer, durationSeconds); }
+    bool isMovementDisabled() const { return this->movementDisableTimer > 0.0f; }
+    void applyElectrocute(float durationSeconds) { this->electrocuteTimer = fmaxf(this->electrocuteTimer, durationSeconds); this->electrocutePhase = 0.0f; }
     float getHealthPercent() const
     {
         if (this->maxHealth <= 0)

@@ -23,7 +23,10 @@ private:
         Dash,
         BambooTriple,
         FanShot,
-        SeismicSlam
+        SeismicSlam,
+        GravityWell,
+        ChainLightning,
+        OrbitalShield
     };
     //std::vector<ThousandAttack *> thousandAttack; // List of ThousandAttack instances
     //std::vector<TripletAttack *> tripletAttack;
@@ -37,6 +40,9 @@ private:
     std::vector<ArcaneOrbAttack *> arcaneOrbAttacks;
     std::vector<FanShotAttack *> fanShotAttacks;
     std::vector<SeismicSlamAttack *> seismicSlamAttacks;
+    std::vector<GravityWellAttack *> gravityWellAttacks;
+    std::vector<ChainLightningAttack *> chainLightningAttacks;
+    std::vector<OrbitalShieldAttack *> orbitalShieldAttacks;
     std::vector<std::pair<TileType, Rectangle>> thrownTiles; // History of thrown tiles and their texture rects
     AttackController *attackLockOwner = nullptr;
 
@@ -88,6 +94,9 @@ public:
     ArcaneOrbAttack *getArcaneOrbAttack(Entity *spawnedBy);
     FanShotAttack *getFanShotAttack(Entity *spawnedBy);
     SeismicSlamAttack *getSeismicSlamAttack(Entity *spawnedBy);
+    GravityWellAttack *getGravityWellAttack(Entity *spawnedBy);
+    ChainLightningAttack *getChainLightningAttack(Entity *spawnedBy);
+    OrbitalShieldAttack *getOrbitalShieldAttack(Entity *spawnedBy);
     bool triggerSlotAttack(int slotIndex, UpdateContext &uc);
 
     /**
