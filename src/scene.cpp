@@ -14,6 +14,7 @@
 #include <cfloat>
 #include <string>
 #include "Inventory.hpp"
+#include "world.hpp"
 
 namespace
 {
@@ -509,6 +510,8 @@ void Scene::InitializeLighting()
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
     }
+
+    this->tileModelManager.SetShader(this->lightingShader);
 }
 
 void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
@@ -628,6 +631,15 @@ void Scene::DrawScene(Camera camera) const
     {
         if (o && o->isVisible())
             DrawRectangle(*o);
+    }
+
+    // Draw tile obstacles
+    for (const auto &obstacle : this->tileObjects)
+    {
+        if (obstacle && obstacle->isVisible())
+        {
+            obstacle->Draw();
+        }
     }
 
     this->DrawDecorations();
@@ -808,140 +820,6 @@ Scene::Scene()
     // towerPos.x *= -1;
     // this->objects.push_back(new Object(towerSize, towerPos));
 
-    // const float roomWidth = 72.0f;  // Reduced to 60% of original (120.0f)
-    // const float roomLength = 60.0f; // Reduced to 60% of original (100.0f)
-    // const float wallThickness = 1.0f;
-    // const float wallHeight = 30.0f;
-    // const float floorThickness = 0.5f;
-    // float doorWidth = 12.0f;
-
-    // if (Model *doorSample = this->AcquireDecorationModel(doorModelPath))
-    // {
-    //     BoundingBox sourceBounds = GetModelBoundingBox(*doorSample);
-    //     float sourceHeight = sourceBounds.max.y - sourceBounds.min.y;
-    //     if (sourceHeight > boundingAxisEpsilon)
-    //     {
-    //         float uniformScale = doorTargetHeight / sourceHeight;
-    //         doorWidth = (sourceBounds.max.x - sourceBounds.min.x) * uniformScale;
-    //     }
-    // }
-
-    // const float sharedWidthSpacing = roomWidth - wallThickness;
-    // const float sharedLengthSpacing = roomLength - wallThickness;
-
-    // std::vector<Vector3> roomCenters;
-    // roomCenters.reserve(5);
-    // roomCenters.push_back({0.0f, 0.0f, 0.0f});                                                 // Spawn room
-    // roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                                  // Hub room
-    // roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});                      // West branch
-    // roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                       // East branch
-    // roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
-
-    // Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
-    // Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
-    // for (const Vector3 &center : roomCenters)
-    // {
-    //     minBounds.x = std::min(minBounds.x, center.x - roomWidth * 0.5f);
-    //     maxBounds.x = std::max(maxBounds.x, center.x + roomWidth * 0.5f);
-    //     minBounds.z = std::min(minBounds.z, center.z - roomLength * 0.5f);
-    //     maxBounds.z = std::max(maxBounds.z, center.z + roomLength * 0.5f);
-    // }
-
-    // Vector3 floorSize = {(maxBounds.x - minBounds.x) + wallThickness,
-    //                      floorThickness,
-    //                      (maxBounds.z - minBounds.z) + wallThickness};
-    // Vector3 floorCenter = {(minBounds.x + maxBounds.x) * 0.5f,
-    //                        -floorThickness / 2.0f,
-    //                        (minBounds.z + maxBounds.z) * 0.5f};
-
-
-    // struct RoomDoorConfig
-    // {
-    //     bool north = false;
-    //     bool south = false;
-    //     bool east = false;
-    //     bool west = false;
-    // };
-
-    // std::array<RoomDoorConfig, 5> doorConfigs{};
-    // doorConfigs[0].north = true; // Room 1 -> Room 2
-    // doorConfigs[1].south = true; // Room 2 -> Room 1
-    // doorConfigs[1].west = true;  // Room 2 -> Room 3
-    // doorConfigs[1].east = true;  // Room 2 -> Room 4
-    // doorConfigs[2].east = true;  // Room 3 -> Room 2
-    // doorConfigs[3].west = true;  // Room 4 -> Room 2
-    // doorConfigs[3].north = true; // Room 4 -> Room 5
-    // doorConfigs[4].south = true; // Room 5 -> Room 4
-
-    // auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
-    // {
-    //     float halfWidth = roomWidth * 0.5f;
-    //     float halfLength = roomLength * 0.5f;
-    //     float wallY = wallHeight / 2.0f;
-
-    //     auto addWallStrip = [&](float zPos, bool hasDoor)
-    //     {
-    //         bool canAddDoor = (doorWidth < roomWidth - 1.0f);
-    //         if (hasDoor && canAddDoor)
-    //         {
-    //             float sideWidth = (roomWidth - doorWidth) * 0.5f;
-    //             float doorHalf = doorWidth * 0.5f;
-    //             float segmentHalf = sideWidth * 0.5f;
-    //             if (sideWidth > 0.1f)
-    //             {
-    //                 createWall({sideWidth, wallHeight, wallThickness},
-    //                            {center.x - (doorHalf + segmentHalf), wallY, zPos});
-    //                 createWall({sideWidth, wallHeight, wallThickness},
-    //                            {center.x + (doorHalf + segmentHalf), wallY, zPos});
-    //             }
-    //         }
-    //         else
-    //         {
-    //             createWall({roomWidth, wallHeight, wallThickness}, {center.x, wallY, zPos});
-    //         }
-    //     };
-
-    //     addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorConfig.north);
-    //     addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorConfig.south);
-
-    //     auto addWallColumn = [&](float xPos, bool hasDoor)
-    //     {
-    //         bool canAddDoor = (doorWidth < roomLength - 1.0f);
-    //         if (hasDoor && canAddDoor)
-    //         {
-    //             float sideLength = (roomLength - doorWidth) * 0.5f;
-    //             float doorHalf = doorWidth * 0.5f;
-    //             float segmentHalf = sideLength * 0.5f;
-    //             if (sideLength > 0.1f)
-    //             {
-    //                 createWall({wallThickness, wallHeight, sideLength},
-    //                            {xPos, wallY, center.z - (doorHalf + segmentHalf)});
-    //                 createWall({wallThickness, wallHeight, sideLength},
-    //                            {xPos, wallY, center.z + (doorHalf + segmentHalf)});
-    //             }
-    //         }
-    //         else
-    //         {
-    //             createWall({wallThickness, wallHeight, roomLength}, {xPos, wallY, center.z});
-    //         }
-    //     };
-
-    //     float eastX = center.x + halfWidth - wallThickness / 2.0f;
-    //     float westX = center.x - halfWidth + wallThickness / 2.0f;
-    //     addWallColumn(eastX, doorConfig.east);
-    //     addWallColumn(westX, doorConfig.west);
-    // };
-
-    // for (size_t i = 0; i < roomCenters.size(); ++i)
-    // {
-    //     const RoomDoorConfig &config = (i < doorConfigs.size()) ? doorConfigs[i] : RoomDoorConfig{};
-    //     buildRoom(roomCenters[i], config);
-    // }
-
-    // this->InitializeRooms(roomWidth, roomLength, wallHeight, roomCenters);
-    // this->doors.clear();
-    // this->BuildDoorNetwork(roomCenters, roomWidth, roomLength, wallThickness);
-
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     this->cubeModel = LoadModelFromMesh(cubeMesh);
@@ -958,6 +836,9 @@ Scene::Scene()
 
     this->InitializeLighting();
 
+    // Generate the world biomes
+    WorldGenerator::Generate(this);
+
     // Apply lighting shader to walls after InitializeLighting
     if (this->lightingShader.id != 0)
     {
@@ -970,18 +851,18 @@ Scene::Scene()
             }
         }
     }
-
-    // // Load decorations directly
-    // this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
-    // this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
-    // this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
-    // this->AddDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
 }
 
 // Getter for the list of objects in the scene
 std::vector<Object *> Scene::getStaticObjects() const
 {
-    return this->objects;
+    std::vector<Object *> all = this->objects;
+    all.reserve(all.size() + this->tileObjects.size());
+    for (const auto &obs : this->tileObjects)
+    {
+        all.push_back(obs.get());
+    }
+    return all;
 }
 
 std::vector<Entity *> Scene::getEntities(EntityCategory cat)
@@ -1259,6 +1140,20 @@ void Scene::DrawTexturedSphere(Texture2D &texture, const Rectangle &source, cons
     }
 
     rlEnd();
-    rlSetTexture(0);
-    rlPopMatrix();
-}
+        rlSetTexture(0);
+        rlPopMatrix();
+    }
+    
+    void Scene::AddTileObject(TileType type, Vector3 position, Quaternion rotation, float scaleFactor)
+    {
+        auto obstacle = std::make_unique<TileObject>(&this->tileModelManager, type, position, rotation, scaleFactor);
+        this->tileObjects.push_back(std::move(obstacle));
+    }
+    
+    void Scene::AddStaticObject(Object* obj)
+    {
+        if (obj) {
+            this->objects.push_back(obj);
+        }
+    }
+    

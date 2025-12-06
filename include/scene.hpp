@@ -11,6 +11,7 @@
 #include "tileModelManager.hpp"
 #include "rewardBriefcase.hpp"
 #include "particle.hpp"
+#include "tileObject.hpp"
 
 struct DamageIndicator
 {
@@ -51,9 +52,11 @@ private:
     Shader lightingShader{};       // Shared lighting shader
     int ambientLoc = -1;
     int viewPosLoc = -1;
-    Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
+    // Evening/Night ambient color (darker, bluer)
+    Vector4 ambientColor = {0.05f, 0.05f, 0.1f, 1.0f}; 
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
-    Color skyColor = {12, 17, 32, 255};
+    // Evening/Night sky color (Dark Blue/Black)
+    Color skyColor = {5, 10, 25, 255}; 
 
     struct CachedModel
     {
@@ -69,6 +72,7 @@ private:
     std::unique_ptr<btCollisionWorld> bulletWorld;
 
     std::vector<std::unique_ptr<RewardBriefcase>> rewardBriefcases;
+    std::vector<std::unique_ptr<TileObject>> tileObjects;
     DamageIndicatorSystem damageIndicators;
     TileModelManager tileModelManager;
 
@@ -145,9 +149,13 @@ public:
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
     void SetViewPosition(const Vector3 &viewPosition);
     Color getSkyColor() const { return this->skyColor; }
-    void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
-    void DrawDamageIndicators(const Camera &camera) const;
-    void DrawEnemyHealthDialogs(const Camera &camera) const;
-
-    std::vector<RewardBriefcase *> GetRewardBriefcases();
-};
+        void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
+        void DrawDamageIndicators(const Camera &camera) const;
+        void DrawEnemyHealthDialogs(const Camera &camera) const;
+    
+        std::vector<RewardBriefcase *> GetRewardBriefcases();
+            
+        void AddTileObject(TileType type, Vector3 position, Quaternion rotation, float scaleFactor = 1.0f);
+        void AddStaticObject(Object* obj);
+    };
+    

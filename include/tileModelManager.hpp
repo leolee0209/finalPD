@@ -6,7 +6,8 @@ class TileModelManager {
 public:
     TileModelManager();
     ~TileModelManager();
-    void DrawTile(TileType type, Vector3 position) const;
+    void DrawTile(TileType type, Vector3 position, Quaternion rotation, Vector3 scale) const;
+    void SetShader(Shader shader);
 
 private:
     Model model;

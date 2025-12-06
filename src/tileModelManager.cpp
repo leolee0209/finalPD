@@ -12,7 +12,15 @@ TileModelManager::~TileModelManager()
     UnloadModel(this->model);
 }
 
-void TileModelManager::DrawTile(TileType type, Vector3 position) const
+void TileModelManager::SetShader(Shader shader)
+{
+    for (int i = 0; i < this->model.materialCount; i++)
+    {
+        this->model.materials[i].shader = shader;
+    }
+}
+
+void TileModelManager::DrawTile(TileType type, Vector3 position, Quaternion rotation, Vector3 scale) const
 {
     int tileIndex = (int)type;
     int baseMeshIndex = tileIndex * 3;
@@ -21,6 +29,14 @@ void TileModelManager::DrawTile(TileType type, Vector3 position) const
     {
         rlPushMatrix();
         rlTranslatef(position.x, position.y, position.z);
+
+        Vector3 axis;
+        float angle;
+        QuaternionToAxisAngle(rotation, &axis, &angle);
+        rlRotatef(angle * RAD2DEG, axis.x, axis.y, axis.z);
+
+        rlScalef(scale.x, scale.y, scale.z);
+
         DrawMesh(this->model.meshes[baseMeshIndex], this->model.materials[this->model.meshMaterial[baseMeshIndex]], MatrixIdentity());
         DrawMesh(this->model.meshes[baseMeshIndex + 1], this->model.materials[this->model.meshMaterial[baseMeshIndex + 1]], MatrixIdentity());
         DrawMesh(this->model.meshes[baseMeshIndex + 2], this->model.materials[this->model.meshMaterial[baseMeshIndex + 2]], MatrixIdentity());
