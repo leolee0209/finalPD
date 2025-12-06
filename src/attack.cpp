@@ -1682,6 +1682,10 @@ bool DragonClawAttack::saveArcCurves() const
     if (!out.is_open())
         return false;
 
+    // Save opacity settings first
+    out << spiritTileOpacity << ' ' << spiritTileOpacityFadeRate << '\n';
+
+    // Save arc curves
     for (const auto &c : arcCurves)
     {
         out << c.p0.x << ' ' << c.p0.y << ' ' << c.p0.z << ' '
@@ -1698,6 +1702,12 @@ bool DragonClawAttack::loadArcCurves()
     if (!in.is_open())
         return false;
 
+    // Load opacity settings first
+    float loadedOpacity = spiritTileOpacity;
+    float loadedFadeRate = spiritTileOpacityFadeRate;
+    if (!(in >> loadedOpacity >> loadedFadeRate))
+        return false;
+
     std::array<ArcCurve, 3> loaded = defaultArcCurves;
     for (auto &c : loaded)
     {
@@ -1709,7 +1719,12 @@ bool DragonClawAttack::loadArcCurves()
             return false;
         }
     }
+    
+    // Apply loaded values
+    spiritTileOpacity = loadedOpacity;
+    spiritTileOpacityFadeRate = loadedFadeRate;
     arcCurves = loaded;
+    
     if (tweakModeEnabled)
     {
         refreshDebugArc(lastForward, lastRight, lastBasePos);

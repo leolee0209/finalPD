@@ -1,0 +1,11 @@
+Model Information:
+* title:	Mahjong
+* source:	https://sketchfab.com/3d-models/mahjong-a0d118ec8fa84e9ab556a10529ef7bbb
+* author:	tsutomu.saito (https://sketchfab.com/tsutomu.saito)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Mahjong" (https://sketchfab.com/3d-models/mahjong-a0d118ec8fa84e9ab556a10529ef7bbb) by tsutomu.saito (https://sketchfab.com/tsutomu.saito) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

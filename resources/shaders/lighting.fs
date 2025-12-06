@@ -13,8 +13,6 @@ uniform vec4 colDiffuse;
 // Output fragment color
 out vec4 finalColor;
 
-// NOTE: Add your custom variables here
-
 #define     MAX_LIGHTS              4
 #define     LIGHT_DIRECTIONAL       0
 #define     LIGHT_POINT             1
@@ -43,13 +41,12 @@ void main()
 
     vec4 tint = colDiffuse*fragColor;
 
-    // NOTE: Implement here your fragment shader code
-
     for (int i = 0; i < MAX_LIGHTS; i++)
     {
         if (lights[i].enabled == 1)
         {
             vec3 light = vec3(0.0);
+            float attenuation = 1.0;
 
             if (lights[i].type == LIGHT_DIRECTIONAL)
             {
@@ -59,21 +56,33 @@ void main()
             if (lights[i].type == LIGHT_POINT)
             {
                 light = normalize(lights[i].position - fragPosition);
+                
+                // Calculate attenuation for point light
+                float distance = length(lights[i].position - fragPosition);
+                attenuation = 1.0 / (1.0 + 0.5 * distance + 0.2 * distance * distance);
             }
 
             float NdotL = max(dot(normal, light), 0.0);
-            lightDot += lights[i].color.rgb*NdotL;
+            lightDot += lights[i].color.rgb * NdotL * attenuation;
 
+            // Enhanced specular for glossy surfaces (like polished mahjong table)
             float specCo = 0.0;
-            if (NdotL > 0.0) specCo = pow(max(0.0, dot(viewD, reflect(-(light), normal))), 16.0); // 16 refers to shine
-            specular += specCo;
+            if (NdotL > 0.0) 
+            {
+                // Blinn-Phong model for better specular highlights
+                vec3 halfDir = normalize(light + viewD);
+                specCo = pow(max(0.0, dot(normal, halfDir)), 64.0); // Higher shininess for glossy table
+                specular += specCo * lights[i].color.rgb * attenuation * 0.6; // Stronger specular
+            }
         }
     }
 
-    finalColor = (texelColor*((tint + vec4(specular, 1.0))*vec4(lightDot, 1.0)));
-    finalColor += texelColor*(ambient/10.0)*tint;
+    // Combine diffuse and specular
+    vec3 diffuse = texelColor.rgb * tint.rgb * lightDot;
+    vec3 ambientLight = texelColor.rgb * (ambient.rgb / 10.0) * tint.rgb;
+    
+    finalColor = vec4(diffuse + specular + ambientLight, texelColor.a * tint.a);
 
-    // Gamma correction
-    finalColor = pow(finalColor, vec4(1.0/2.2));
-    finalColor.a = tint.a;
+    // Gamma correction for more realistic lighting
+    finalColor.rgb = pow(finalColor.rgb, vec3(1.0/2.2));
 }
