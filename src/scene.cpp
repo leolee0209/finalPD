@@ -149,8 +149,6 @@ Scene::~Scene()
 {
     this->RemoveDecorationColliders();
     this->decorations.clear();
-    this->doors.clear();
-    this->rooms.clear();
 
     // Unload shared briefcase model
     RewardBriefcase::UnloadSharedModel();
@@ -158,16 +156,6 @@ Scene::~Scene()
     // Only unload GPU resources if the window/context is still active.
     if (IsWindowReady())
     {
-        if (this->wallTexture.id != 0)
-        {
-            UnloadTexture(this->wallTexture);
-            this->wallTexture.id = 0;
-        }
-        if (this->floorTexture.id != 0)
-        {
-            UnloadTexture(this->floorTexture);
-            this->floorTexture.id = 0;
-        }
         this->ReleaseDecorationModels();
         this->ShutdownLighting();
         UnloadModel(this->cubeModel);
@@ -366,9 +354,7 @@ void Scene::ApplyFullTexture(Object &obj, Texture2D &texture)
 
 float Scene::GetFloorTop() const
 {
-    const Vector3 &floorPos = this->floor.getPos();
-    const Vector3 &floorSize = this->floor.getSize();
-    return floorPos.y + floorSize.y * 0.5f;
+    return 0;
 }
 
 Model *Scene::AcquireDecorationModel(const std::string &relativePath)
@@ -473,323 +459,6 @@ std::unique_ptr<CollidableModel> Scene::DetachDecoration(CollidableModel *target
     return nullptr;
 }
 
-void Scene::ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredCenter)
-{
-    if (!door)
-    {
-        return;
-    }
-
-    Model *doorModel = door->GetModel();
-    if (!doorModel)
-    {
-        return;
-    }
-
-    BoundingBox bounds = GetModelBoundingBox(*doorModel);
-    Vector3 scale = door->GetScale();
-
-    Vector3 localCenter = {
-        (bounds.min.x + bounds.max.x) * 0.5f,
-        (bounds.min.y + bounds.max.y) * 0.5f,
-        (bounds.min.z + bounds.max.z) * 0.5f};
-
-    Vector3 scaledCenter = {
-        localCenter.x * scale.x,
-        localCenter.y * scale.y,
-        localCenter.z * scale.z};
-
-    Vector3 axis = door->GetRotationAxis();
-    float angle = door->GetRotationAngleDeg();
-    if (Vector3Length(axis) > 0.0001f && fabsf(angle) > 0.0001f)
-    {
-        axis = Vector3Normalize(axis);
-        Quaternion rotation = QuaternionFromAxisAngle(axis, angle * DEG2RAD);
-        scaledCenter = Vector3RotateByQuaternion(scaledCenter, rotation);
-    }
-
-    Vector3 worldPosition = Vector3Subtract(desiredCenter, scaledCenter);
-    door->SetPosition(worldPosition);
-}
-
-void Scene::InitializeRooms(float roomWidth, float roomLength, float wallHeight,
-                            const std::vector<Vector3> &centers)
-{
-    this->rooms.clear();
-    this->rooms.reserve(centers.size());
-
-    for (size_t i = 0; i < centers.size(); ++i)
-    {
-        const Vector3 &center = centers[i];
-        BoundingBox bounds;
-        bounds.min = {center.x - roomWidth * 0.5f, 0.0f, center.z - roomLength * 0.5f};
-        bounds.max = {center.x + roomWidth * 0.5f, wallHeight, center.z + roomLength * 0.5f};
-        RoomType type = (i == 0) ? RoomType::Start : RoomType::Enemy;
-        std::string name = (i == 0) ? "Spawn Room" : "Room " + std::to_string(i + 1);
-        this->rooms.push_back(std::make_unique<Room>(name, bounds, type));
-    }
-}
-
-void Scene::BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float roomWidth, float roomLength, float wallThickness)
-{
-    if (roomCenters.size() < 5)
-    {
-        return;
-    }
-
-    float halfWidth = roomWidth * 0.5f;
-    float halfLength = roomLength * 0.5f;
-    float doorCenterY = this->GetFloorTop() + doorTargetHeight * 0.5f;
-
-    struct DoorLink
-    {
-        Vector3 center;
-        float rotationDeg;
-        int roomA;
-        int roomB;
-    };
-
-    std::vector<DoorLink> doorLinks;
-    doorLinks.reserve(4);
-    doorLinks.push_back({{roomCenters[0].x,
-                          doorCenterY,
-                          roomCenters[0].z + halfLength - wallThickness * 0.5f},
-                         0.0f,
-                         0,
-                         1});
-    doorLinks.push_back({{roomCenters[1].x - halfWidth + wallThickness * 0.5f,
-                          doorCenterY,
-                          roomCenters[1].z},
-                         90.0f,
-                         1,
-                         2});
-    doorLinks.push_back({{roomCenters[1].x + halfWidth - wallThickness * 0.5f,
-                          doorCenterY,
-                          roomCenters[1].z},
-                         90.0f,
-                         1,
-                         3});
-    doorLinks.push_back({{roomCenters[3].x,
-                          doorCenterY,
-                          roomCenters[3].z + halfLength - wallThickness * 0.5f},
-                         0.0f,
-                         3,
-                         4});
-
-    for (const DoorLink &link : doorLinks)
-    {
-        this->CreateDoorBetweenRooms(link.center, link.rotationDeg, link.roomA, link.roomB);
-    }
-}
-
-void Scene::CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg, int roomA, int roomB)
-{
-    if (roomA < 0 || roomB < 0)
-    {
-        return;
-    }
-
-    if (roomA >= static_cast<int>(this->rooms.size()) || roomB >= static_cast<int>(this->rooms.size()))
-    {
-        return;
-    }
-
-    CollidableModel *doorDecoration = this->AddDecoration(doorModelPath, doorCenter, doorTargetHeight, rotationYDeg, true);
-    if (!doorDecoration)
-    {
-        return;
-    }
-
-    auto owned = this->DetachDecoration(doorDecoration);
-    if (!owned)
-    {
-        return;
-    }
-
-    this->ConfigureDoorPlacement(owned.get(), doorCenter);
-
-    Shader *shaderPtr = (this->lightingShader.id != 0) ? &this->lightingShader : nullptr;
-    auto door = Door::Create(std::move(owned), this->bulletWorld.get(), shaderPtr, doorOpenDuration, doorOpenAngleDeg);
-    if (!door)
-    {
-        return;
-    }
-
-    Door *doorPtr = door.get();
-    doorPtr->roomA = this->rooms[roomA].get();
-    doorPtr->roomB = this->rooms[roomB].get();
-    this->rooms[roomA]->AttachDoor(doorPtr);
-    this->rooms[roomB]->AttachDoor(doorPtr);
-    this->doors.push_back(std::move(door));
-}
-
-void Scene::PopulateRoomEnemies(const std::vector<Vector3> &roomCenters)
-{
-    // No longer spawns enemies immediately; stored for delayed spawn on room entry
-    (void)roomCenters; // Suppress unused parameter warning
-}
-
-void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
-{
-    if (!room || room->GetType() != RoomType::Enemy)
-    {
-        return;
-    }
-
-    const Vector3 tileSize = Vector3Scale({44.0f, 60.0f, 30.0f}, 0.06f);
-    float floorY = this->GetFloorTop();
-
-    auto placeEnemy = [&](Enemy *enemy, const Vector3 &center, const Vector2 &offset)
-    {
-        enemy->obj().size = tileSize;
-        Vector3 position = {center.x + offset.x, floorY + tileSize.y * 0.5f, center.z + offset.y};
-        enemy->obj().pos = position;
-        enemy->setPosition(position);
-        this->em.addEnemy(enemy);
-    };
-
-    // Determine composition based on room name
-    std::vector<std::pair<std::string, Vector2>> composition;
-    const std::string &name = room->GetName();
-
-    if (name == "Room 2")
-    {
-        composition = {
-            {"vanguard", Vector2{-18.0f, -8.0f}},
-            {"support", Vector2{8.0f, 12.0f}}};
-    }
-
-    else if (name == "Room 3")
-    {
-        composition = {
-            {"tank", Vector2{0.0f, 0.0f}},
-            {"vanguard", Vector2{-10.0f, 8.0f}}};
-    }
-    else if (name == "Room 4")
-    {
-        composition = {
-            {"sniper", Vector2{-12.0f, 8.0f}},
-            {"sniper", Vector2{12.0f, -10.0f}},
-            {"summoner", Vector2{0.0f, 0.0f}}};
-    }
-    else if (name == "Room 5")
-    {
-        composition = {
-            {"tank", Vector2{-16.0f, 10.0f}},
-            {"summoner", Vector2{0.0f, -12.0f}},
-            {"sniper", Vector2{16.0f, 6.0f}},
-            {"support", Vector2{8.0f, 12.0f}}}; // Phase 4: Add support enemy
-    }
-
-    for (const auto &entry : composition)
-    {
-        const std::string &type = entry.first;
-        const Vector2 &offset = entry.second;
-        if (type == "sniper")
-        {
-            placeEnemy(new ShooterEnemy(), roomCenter, offset);
-        }
-        else if (type == "tank")
-        {
-            placeEnemy(new ChargingEnemy(), roomCenter, offset);
-        }
-        else if (type == "summoner")
-        {
-            placeEnemy(new SummonerEnemy(), roomCenter, offset);
-        }
-        else if (type == "support")
-        {
-            placeEnemy(new SupportEnemy(), roomCenter, offset);
-        }
-        else if (type == "vanguard")
-        {
-            placeEnemy(new VanguardEnemy(), roomCenter, offset);
-        }
-    }
-}
-
-void Scene::AssignEnemyTextures(UIManager *uiManager)
-{
-    if (!uiManager)
-        return;
-
-    // Assign tile textures based on each enemy's associated tile type
-    std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
-    for (Entity *entity : enemies)
-    {
-        if (Enemy *enemy = dynamic_cast<Enemy *>(entity))
-        {
-            TileType type = enemy->getTileType();
-            enemy->obj().texture = &uiManager->muim.getSpriteSheet();
-            enemy->obj().sourceRect = uiManager->muim.getTile(type);
-            enemy->obj().useTexture = true;
-        }
-    }
-}
-
-void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
-{
-    for (auto &room : this->rooms)
-    {
-        if (room)
-        {
-            bool wasCompleted = room->IsCompleted();
-            room->Update(enemies);
-
-            // Spawn briefcase when room is newly completed
-            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy)
-            {
-                // Calculate room center
-                BoundingBox bounds = room->GetBounds();
-                Vector3 center = {
-                    (bounds.min.x + bounds.max.x) * 0.5f,
-                    bounds.min.y + 1.0f, // Spawn slightly above floor
-                    (bounds.min.z + bounds.max.z) * 0.5f};
-
-                // Generate 3-5 reward tiles with random stats
-                Inventory inv;
-                auto &tiles = inv.getTiles();
-                int tileCount = 3 + (rand() % 3); // 3-5 tiles
-                for (int i = 0; i < tileCount; ++i)
-                {
-                    TileType type = (TileType)(rand() % (int)TileType::TILE_COUNT);
-                    float damage = 10.0f + (float)(rand() % 8);
-                    float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);
-                    tiles.emplace_back(TileStats(damage, fireRate), type);
-                }
-
-                // Create briefcase
-                this->rewardBriefcases.push_back(std::make_unique<RewardBriefcase>(center, std::move(inv)));
-            }
-        }
-    }
-}
-
-Room *Scene::GetRoomContainingPosition(const Vector3 &pos) const
-{
-    for (const auto &rptr : this->rooms)
-    {
-        if (!rptr) continue;
-        const BoundingBox &b = rptr->GetBounds();
-        if (pos.x >= b.min.x && pos.x <= b.max.x && pos.y >= b.min.y && pos.y <= b.max.y && pos.z >= b.min.z && pos.z <= b.max.z)
-        {
-            return rptr.get();
-        }
-    }
-    return nullptr;
-}
-
-void Scene::DrawDoors() const
-{
-    for (const auto &door : this->doors)
-    {
-        if (door)
-        {
-            door->Draw();
-        }
-    }
-}
-
 void Scene::DrawDecorations() const
 {
     for (const auto &decoration : this->decorations)
@@ -839,14 +508,6 @@ void Scene::InitializeLighting()
     if (this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
-    }
-
-    for (auto &door : this->doors)
-    {
-        if (door)
-        {
-            door->SetLightingShader(&this->lightingShader);
-        }
     }
 }
 
@@ -962,9 +623,6 @@ void Scene::DrawScene(Camera camera) const
         BeginShaderMode(this->lightingShader);
     }
 
-    // Draw floor
-    DrawRectangle(this->floor);
-
     // Draw all static objects in the scene (walls)
     for (auto &o : this->objects)
     {
@@ -973,7 +631,6 @@ void Scene::DrawScene(Camera camera) const
     }
 
     this->DrawDecorations();
-    this->DrawDoors();
 
     // Draw all reward briefcases
     for (const auto &briefcase : this->rewardBriefcases)
@@ -1102,66 +759,11 @@ void Scene::Update(UpdateContext &uc)
     // Update particle system
     this->particles.update(deltaSeconds);
 
-    // Check if player entered a new room and spawn enemies on first entry
-    Room *previousRoom = this->currentPlayerRoom;
-    this->currentPlayerRoom = nullptr;
-    for (auto &room : this->rooms)
-    {
-        if (room && room->IsPlayerInside(uc.player->pos()))
-        {
-            this->currentPlayerRoom = room.get();
-            break;
-        }
-    }
-
-    // Spawn enemies when player enters an enemy room for the first time
-    if (this->currentPlayerRoom && this->currentPlayerRoom != previousRoom)
-    {
-        if (this->currentPlayerRoom->GetType() == RoomType::Enemy)
-        {
-            if (!this->currentPlayerRoom->AreEnemiesSpawned())
-            {
-                BoundingBox bounds = this->currentPlayerRoom->GetBounds();
-                Vector3 roomCenter = {
-                    (bounds.min.x + bounds.max.x) * 0.5f,
-                    (bounds.min.y + bounds.max.y) * 0.5f,
-                    (bounds.min.z + bounds.max.z) * 0.5f};
-                this->SpawnEnemiesForRoom(this->currentPlayerRoom, roomCenter);
-                this->currentPlayerRoom->MarkEnemiesSpawned();
-                
-                // Close all doors to this room to trap enemies inside
-                for (Door *door : this->currentPlayerRoom->GetDoors())
-                {
-                    if (door)
-                    {
-                        door->Close();
-                    }
-                }
-                
-                // Assign textures to newly spawned enemies
-                if (uc.uiManager)
-                {
-                    this->AssignEnemyTextures(uc.uiManager);
-                }
-            }
-        }
-    }
-
     // Update all entities in the scene
     this->em.update(uc);
 
     // Monitor room completion after enemies update so door logic is in sync
     const std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
-    this->UpdateRooms(enemies);
-
-    // Advance any active door animations
-    for (auto &door : this->doors)
-    {
-        if (door)
-        {
-            door->Update(deltaSeconds);
-        }
-    }
 
     // Update all reward briefcases
     for (auto &briefcase : this->rewardBriefcases)
@@ -1206,157 +808,139 @@ Scene::Scene()
     // towerPos.x *= -1;
     // this->objects.push_back(new Object(towerSize, towerPos));
 
-    this->wallTexture = LoadTexture("rough_pine_door_4k.blend/textures/rough_pine_door_diff_4k.jpg");
-    this->floorTexture = LoadTexture("wood_cabinet_worn_long_4k.blend/textures/wood_cabinet_worn_long_diff_4k.jpg");
+    // const float roomWidth = 72.0f;  // Reduced to 60% of original (120.0f)
+    // const float roomLength = 60.0f; // Reduced to 60% of original (100.0f)
+    // const float wallThickness = 1.0f;
+    // const float wallHeight = 30.0f;
+    // const float floorThickness = 0.5f;
+    // float doorWidth = 12.0f;
 
-    const float roomWidth = 72.0f;  // Reduced to 60% of original (120.0f)
-    const float roomLength = 60.0f; // Reduced to 60% of original (100.0f)
-    const float wallThickness = 1.0f;
-    const float wallHeight = 30.0f;
-    const float floorThickness = 0.5f;
-    float doorWidth = 12.0f;
+    // if (Model *doorSample = this->AcquireDecorationModel(doorModelPath))
+    // {
+    //     BoundingBox sourceBounds = GetModelBoundingBox(*doorSample);
+    //     float sourceHeight = sourceBounds.max.y - sourceBounds.min.y;
+    //     if (sourceHeight > boundingAxisEpsilon)
+    //     {
+    //         float uniformScale = doorTargetHeight / sourceHeight;
+    //         doorWidth = (sourceBounds.max.x - sourceBounds.min.x) * uniformScale;
+    //     }
+    // }
 
-    if (Model *doorSample = this->AcquireDecorationModel(doorModelPath))
-    {
-        BoundingBox sourceBounds = GetModelBoundingBox(*doorSample);
-        float sourceHeight = sourceBounds.max.y - sourceBounds.min.y;
-        if (sourceHeight > boundingAxisEpsilon)
-        {
-            float uniformScale = doorTargetHeight / sourceHeight;
-            doorWidth = (sourceBounds.max.x - sourceBounds.min.x) * uniformScale;
-        }
-    }
+    // const float sharedWidthSpacing = roomWidth - wallThickness;
+    // const float sharedLengthSpacing = roomLength - wallThickness;
 
-    const float sharedWidthSpacing = roomWidth - wallThickness;
-    const float sharedLengthSpacing = roomLength - wallThickness;
+    // std::vector<Vector3> roomCenters;
+    // roomCenters.reserve(5);
+    // roomCenters.push_back({0.0f, 0.0f, 0.0f});                                                 // Spawn room
+    // roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                                  // Hub room
+    // roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});                      // West branch
+    // roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                       // East branch
+    // roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
 
-    std::vector<Vector3> roomCenters;
-    roomCenters.reserve(5);
-    roomCenters.push_back({0.0f, 0.0f, 0.0f});                                                 // Spawn room
-    roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                                  // Hub room
-    roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});                      // West branch
-    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                       // East branch
-    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
+    // Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
+    // Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
+    // for (const Vector3 &center : roomCenters)
+    // {
+    //     minBounds.x = std::min(minBounds.x, center.x - roomWidth * 0.5f);
+    //     maxBounds.x = std::max(maxBounds.x, center.x + roomWidth * 0.5f);
+    //     minBounds.z = std::min(minBounds.z, center.z - roomLength * 0.5f);
+    //     maxBounds.z = std::max(maxBounds.z, center.z + roomLength * 0.5f);
+    // }
 
-    Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
-    Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
-    for (const Vector3 &center : roomCenters)
-    {
-        minBounds.x = std::min(minBounds.x, center.x - roomWidth * 0.5f);
-        maxBounds.x = std::max(maxBounds.x, center.x + roomWidth * 0.5f);
-        minBounds.z = std::min(minBounds.z, center.z - roomLength * 0.5f);
-        maxBounds.z = std::max(maxBounds.z, center.z + roomLength * 0.5f);
-    }
+    // Vector3 floorSize = {(maxBounds.x - minBounds.x) + wallThickness,
+    //                      floorThickness,
+    //                      (maxBounds.z - minBounds.z) + wallThickness};
+    // Vector3 floorCenter = {(minBounds.x + maxBounds.x) * 0.5f,
+    //                        -floorThickness / 2.0f,
+    //                        (minBounds.z + maxBounds.z) * 0.5f};
 
-    Vector3 floorSize = {(maxBounds.x - minBounds.x) + wallThickness,
-                         floorThickness,
-                         (maxBounds.z - minBounds.z) + wallThickness};
-    Vector3 floorCenter = {(minBounds.x + maxBounds.x) * 0.5f,
-                           -floorThickness / 2.0f,
-                           (minBounds.z + maxBounds.z) * 0.5f};
 
-    this->floor = Object(floorSize, floorCenter);
-    if (this->floorTexture.id != 0)
-    {
-        this->ApplyFullTexture(this->floor, this->floorTexture);
-    }
+    // struct RoomDoorConfig
+    // {
+    //     bool north = false;
+    //     bool south = false;
+    //     bool east = false;
+    //     bool west = false;
+    // };
 
-    auto createWall = [&](Vector3 size, Vector3 pos)
-    {
-        Object *wall = new Object(size, pos);
-        if (this->wallTexture.id != 0)
-        {
-            this->ApplyFullTexture(*wall, this->wallTexture);
-        }
-        this->objects.push_back(wall);
-    };
+    // std::array<RoomDoorConfig, 5> doorConfigs{};
+    // doorConfigs[0].north = true; // Room 1 -> Room 2
+    // doorConfigs[1].south = true; // Room 2 -> Room 1
+    // doorConfigs[1].west = true;  // Room 2 -> Room 3
+    // doorConfigs[1].east = true;  // Room 2 -> Room 4
+    // doorConfigs[2].east = true;  // Room 3 -> Room 2
+    // doorConfigs[3].west = true;  // Room 4 -> Room 2
+    // doorConfigs[3].north = true; // Room 4 -> Room 5
+    // doorConfigs[4].south = true; // Room 5 -> Room 4
 
-    struct RoomDoorConfig
-    {
-        bool north = false;
-        bool south = false;
-        bool east = false;
-        bool west = false;
-    };
+    // auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
+    // {
+    //     float halfWidth = roomWidth * 0.5f;
+    //     float halfLength = roomLength * 0.5f;
+    //     float wallY = wallHeight / 2.0f;
 
-    std::array<RoomDoorConfig, 5> doorConfigs{};
-    doorConfigs[0].north = true; // Room 1 -> Room 2
-    doorConfigs[1].south = true; // Room 2 -> Room 1
-    doorConfigs[1].west = true;  // Room 2 -> Room 3
-    doorConfigs[1].east = true;  // Room 2 -> Room 4
-    doorConfigs[2].east = true;  // Room 3 -> Room 2
-    doorConfigs[3].west = true;  // Room 4 -> Room 2
-    doorConfigs[3].north = true; // Room 4 -> Room 5
-    doorConfigs[4].south = true; // Room 5 -> Room 4
+    //     auto addWallStrip = [&](float zPos, bool hasDoor)
+    //     {
+    //         bool canAddDoor = (doorWidth < roomWidth - 1.0f);
+    //         if (hasDoor && canAddDoor)
+    //         {
+    //             float sideWidth = (roomWidth - doorWidth) * 0.5f;
+    //             float doorHalf = doorWidth * 0.5f;
+    //             float segmentHalf = sideWidth * 0.5f;
+    //             if (sideWidth > 0.1f)
+    //             {
+    //                 createWall({sideWidth, wallHeight, wallThickness},
+    //                            {center.x - (doorHalf + segmentHalf), wallY, zPos});
+    //                 createWall({sideWidth, wallHeight, wallThickness},
+    //                            {center.x + (doorHalf + segmentHalf), wallY, zPos});
+    //             }
+    //         }
+    //         else
+    //         {
+    //             createWall({roomWidth, wallHeight, wallThickness}, {center.x, wallY, zPos});
+    //         }
+    //     };
 
-    auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
-    {
-        float halfWidth = roomWidth * 0.5f;
-        float halfLength = roomLength * 0.5f;
-        float wallY = wallHeight / 2.0f;
+    //     addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorConfig.north);
+    //     addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorConfig.south);
 
-        auto addWallStrip = [&](float zPos, bool hasDoor)
-        {
-            bool canAddDoor = (doorWidth < roomWidth - 1.0f);
-            if (hasDoor && canAddDoor)
-            {
-                float sideWidth = (roomWidth - doorWidth) * 0.5f;
-                float doorHalf = doorWidth * 0.5f;
-                float segmentHalf = sideWidth * 0.5f;
-                if (sideWidth > 0.1f)
-                {
-                    createWall({sideWidth, wallHeight, wallThickness},
-                               {center.x - (doorHalf + segmentHalf), wallY, zPos});
-                    createWall({sideWidth, wallHeight, wallThickness},
-                               {center.x + (doorHalf + segmentHalf), wallY, zPos});
-                }
-            }
-            else
-            {
-                createWall({roomWidth, wallHeight, wallThickness}, {center.x, wallY, zPos});
-            }
-        };
+    //     auto addWallColumn = [&](float xPos, bool hasDoor)
+    //     {
+    //         bool canAddDoor = (doorWidth < roomLength - 1.0f);
+    //         if (hasDoor && canAddDoor)
+    //         {
+    //             float sideLength = (roomLength - doorWidth) * 0.5f;
+    //             float doorHalf = doorWidth * 0.5f;
+    //             float segmentHalf = sideLength * 0.5f;
+    //             if (sideLength > 0.1f)
+    //             {
+    //                 createWall({wallThickness, wallHeight, sideLength},
+    //                            {xPos, wallY, center.z - (doorHalf + segmentHalf)});
+    //                 createWall({wallThickness, wallHeight, sideLength},
+    //                            {xPos, wallY, center.z + (doorHalf + segmentHalf)});
+    //             }
+    //         }
+    //         else
+    //         {
+    //             createWall({wallThickness, wallHeight, roomLength}, {xPos, wallY, center.z});
+    //         }
+    //     };
 
-        addWallStrip(center.z + halfLength - wallThickness / 2.0f, doorConfig.north);
-        addWallStrip(center.z - halfLength + wallThickness / 2.0f, doorConfig.south);
+    //     float eastX = center.x + halfWidth - wallThickness / 2.0f;
+    //     float westX = center.x - halfWidth + wallThickness / 2.0f;
+    //     addWallColumn(eastX, doorConfig.east);
+    //     addWallColumn(westX, doorConfig.west);
+    // };
 
-        auto addWallColumn = [&](float xPos, bool hasDoor)
-        {
-            bool canAddDoor = (doorWidth < roomLength - 1.0f);
-            if (hasDoor && canAddDoor)
-            {
-                float sideLength = (roomLength - doorWidth) * 0.5f;
-                float doorHalf = doorWidth * 0.5f;
-                float segmentHalf = sideLength * 0.5f;
-                if (sideLength > 0.1f)
-                {
-                    createWall({wallThickness, wallHeight, sideLength},
-                               {xPos, wallY, center.z - (doorHalf + segmentHalf)});
-                    createWall({wallThickness, wallHeight, sideLength},
-                               {xPos, wallY, center.z + (doorHalf + segmentHalf)});
-                }
-            }
-            else
-            {
-                createWall({wallThickness, wallHeight, roomLength}, {xPos, wallY, center.z});
-            }
-        };
+    // for (size_t i = 0; i < roomCenters.size(); ++i)
+    // {
+    //     const RoomDoorConfig &config = (i < doorConfigs.size()) ? doorConfigs[i] : RoomDoorConfig{};
+    //     buildRoom(roomCenters[i], config);
+    // }
 
-        float eastX = center.x + halfWidth - wallThickness / 2.0f;
-        float westX = center.x - halfWidth + wallThickness / 2.0f;
-        addWallColumn(eastX, doorConfig.east);
-        addWallColumn(westX, doorConfig.west);
-    };
-
-    for (size_t i = 0; i < roomCenters.size(); ++i)
-    {
-        const RoomDoorConfig &config = (i < doorConfigs.size()) ? doorConfigs[i] : RoomDoorConfig{};
-        buildRoom(roomCenters[i], config);
-    }
-
-    this->InitializeRooms(roomWidth, roomLength, wallHeight, roomCenters);
-    this->doors.clear();
-    this->BuildDoorNetwork(roomCenters, roomWidth, roomLength, wallThickness);
+    // this->InitializeRooms(roomWidth, roomLength, wallHeight, roomCenters);
+    // this->doors.clear();
+    // this->BuildDoorNetwork(roomCenters, roomWidth, roomLength, wallThickness);
 
     // Create a shared unit cube model (unit size) and store it for rendering rotated/scaled objects
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
@@ -1387,21 +971,11 @@ Scene::Scene()
         }
     }
 
-    if (this->lightingShader.id != 0)
-    {
-        for (const Vector3 &center : roomCenters)
-        {
-            this->CreatePointLight({center.x, 3.0f, center.z}, {255, 214, 180, 255}, 0.24f);
-        }
-    }
-
-    this->PopulateRoomEnemies(roomCenters);
-
-    // Load decorations directly
-    this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
-    this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
-    this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
-    this->AddDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
+    // // Load decorations directly
+    // this->AddDecoration("decorations/tables/table_and_chairs/scene.gltf", {-25.0f, 0.0f, 18.0f}, 8.0f, 90.0f);
+    // this->AddDecoration("decorations/tables/pool_table/scene.gltf", {24.0f, 0.0f, -6.0f}, 4.5f, 12.0f);
+    // this->AddDecoration("decorations/lights/floor_lamp/scene.gltf", {50.0f, 0.0f, -32.0f}, 13.0f, -25.0f);
+    // this->AddDecoration("decorations/lights/neon_cactus_lamp/scene.gltf", {-42.0f, 0.0f, -28.0f}, 9.0f, 0.0f);
 }
 
 // Getter for the list of objects in the scene
@@ -1445,116 +1019,7 @@ std::vector<RewardBriefcase *> Scene::GetRewardBriefcases()
     return result;
 }
 
-void Scene::UpdateRoomDoors(const Vector3 &playerPos)
-{
-    // Determine current player room
-    Room *newRoom = nullptr;
-    for (auto &room : this->rooms){
-        if (room && room->IsPlayerInside(playerPos))
-        {
-            newRoom = room.get();
-            break;
-        }
-    }
 
-    // If player changed rooms, close door behind them (unless both rooms are cleared)
-    if (newRoom != this->currentPlayerRoom)
-    {
-        if (this->currentPlayerRoom)
-        {
-            for (Door *door : this->currentPlayerRoom->GetDoors())
-            {
-                if (door && door->IsOpen())
-                {
-                    // Check if both connected rooms are cleared
-                    bool bothCleared = false;
-                    if (door->GetRoomA() && door->GetRoomB())
-                    {
-                        bothCleared = door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted();
-                    }
-                    
-                    // Close door unless both rooms are cleared
-                    if (!bothCleared)
-                    {
-                        door->Close();
-                    }
-                }
-            }
-        }
-        
-        // Also close any doors in the new room that shouldn't be open
-        // (in case player somehow skipped past a closed door)
-        if (newRoom)
-        {
-            for (Door *door : newRoom->GetDoors())
-            {
-                if (door && door->IsOpen())
-                {
-                    // Check if both connected rooms are cleared
-                    bool bothCleared = false;
-                    if (door->GetRoomA() && door->GetRoomB())
-                    {
-                        bothCleared = door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted();
-                    }
-                    
-                    // Close door unless both rooms are cleared
-                    if (!bothCleared)
-                    {
-                        door->Close();
-                    }
-                }
-            }
-        }
-    }
-
-    this->currentPlayerRoom = newRoom;
-}
-
-void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const
-{
-    const int screenW = GetScreenWidth();
-    const int screenH = GetScreenHeight();
-    const int fontSize = 22;
-    int y = screenH - 50;
-
-    // Briefcase prompt (if any nearby and UI not open)
-    bool briefcaseNearby = false;
-    for (const auto &briefcase : this->rewardBriefcases)
-    {
-        if (briefcase && briefcase->IsPlayerNearby(playerPos) && !briefcase->IsActivated())
-        {
-            briefcaseNearby = true;
-            break;
-        }
-    }
-    if (briefcaseNearby)
-    {
-        const char *text = "Press C to Open Briefcase";
-        int tw = MeasureText(text, fontSize);
-        DrawText(text, (screenW - tw) / 2, y, fontSize, YELLOW);
-        y -= 26;
-    }
-
-    // Door prompt (if near a closed door in a completed room)
-    if (this->currentPlayerRoom && this->currentPlayerRoom->IsCompleted())
-    {
-        bool doorNearby = false;
-        for (Door *door : this->currentPlayerRoom->GetDoors())
-        {
-            if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
-            {
-                doorNearby = true;
-                break;
-            }
-        }
-        if (doorNearby)
-        {
-            const char *text = "Press C to Open Door";
-            int tw = MeasureText(text, fontSize);
-            DrawText(text, (screenW - tw) / 2, y, fontSize, GREEN);
-        }
-    }
-}
 
 void Scene::DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color) const
 {

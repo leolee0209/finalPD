@@ -245,40 +245,7 @@ int main(void)
 
         if (inGameplay && !gamePaused)
         {
-            if (IsKeyPressed(KEY_C))
-            {
-                Vector3 playerPos = player->pos();
-                Room *currentRoom = scene->GetCurrentPlayerRoom();
-                if (currentRoom && currentRoom->IsCompleted())
-                {
-                    for (Door *door : currentRoom->GetDoors())
-                    {
-                        if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
-                        {
-                            bool canOpen = false;
-                            if (door->GetRoomA() && door->GetRoomB())
-                            {
-                                if (door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted())
-                                {
-                                    canOpen = true;
-                                }
-                                else if (currentRoom == door->GetRoomA() || currentRoom == door->GetRoomB())
-                                {
-                                    canOpen = true;
-                                }
-                            }
-                            else
-                            {
-                                canOpen = currentRoom->IsCompleted();
-                            }
-                            if (canOpen) door->Open();
-                            break;
-                        }
-                    }
-                }
-            }
 
-            scene->UpdateRoomDoors(player->pos());
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
@@ -459,9 +426,8 @@ int main(void)
                 BeginMode3D(camera);
                 scene->DrawScene(camera);
                 EndMode3D();
-                scene->DrawEnemyHealthDialogs(camera);
-                scene->DrawDamageIndicators(camera);
-                scene->DrawInteractionPrompts(player->pos(), camera);
+
+
             }
             EndTextureMode();
         }
@@ -498,9 +464,8 @@ int main(void)
                 BeginMode3D(camera);
                 scene->DrawScene(camera);
                 EndMode3D();
-                scene->DrawEnemyHealthDialogs(camera);
-                scene->DrawDamageIndicators(camera);
-                scene->DrawInteractionPrompts(player->pos(), camera);
+
+
             }
         }
 

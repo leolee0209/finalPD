@@ -8,7 +8,7 @@
 #include "updateContext.hpp"
 #include "enemyManager.hpp"
 #include "collidableModel.hpp"
-#include "room.hpp"
+#include "tileModelManager.hpp"
 #include "rewardBriefcase.hpp"
 #include "particle.hpp"
 
@@ -48,9 +48,6 @@ class Scene
 {
 private:
     std::vector<Object *> objects; // List of static objects in the scene (e.g., towers, obstacles)
-    Object floor;                  // Represents the floor of the scene
-    Texture2D wallTexture{};       // Procedural room walls texture
-    Texture2D floorTexture{};      // Procedural room floor texture
     Shader lightingShader{};       // Shared lighting shader
     int ambientLoc = -1;
     int viewPosLoc = -1;
@@ -71,11 +68,9 @@ private:
     std::unique_ptr<btBroadphaseInterface> bulletBroadphase;
     std::unique_ptr<btCollisionWorld> bulletWorld;
 
-    std::vector<std::unique_ptr<Room>> rooms;
-    std::vector<std::unique_ptr<Door>> doors;
     std::vector<std::unique_ptr<RewardBriefcase>> rewardBriefcases;
     DamageIndicatorSystem damageIndicators;
-    Room *currentPlayerRoom = nullptr;
+    TileModelManager tileModelManager;
 
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
@@ -93,9 +88,6 @@ private:
                                    float targetHeight,
                                    float rotationYDeg = 0.0f,
                                    bool addCollision = false);
-    void ConfigureDoorPlacement(CollidableModel *door, const Vector3 &desiredCenter);
-    void InitializeRooms(float roomWidth, float roomLength, float wallHeight,
-                         const std::vector<Vector3> &centers);
     void DrawDecorations() const;
     Model *AcquireDecorationModel(const std::string &relativePath);
     void ReleaseDecorationModels();
@@ -105,16 +97,9 @@ private:
     void AppendDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const;
     static btTransform BuildBtTransform(const Object &obj);
     static btCollisionShape *CreateShapeFromObject(const Object &obj);
-    void UpdateRooms(const std::vector<Entity *> &enemies);
-    void DrawDoors() const;
     std::unique_ptr<CollidableModel> DetachDecoration(CollidableModel *target);
-    void BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float roomWidth, float roomLength, float wallThickness);
-    void CreateDoorBetweenRooms(const Vector3 &doorCenter, float rotationYDeg, int roomA, int roomB);
-    void PopulateRoomEnemies(const std::vector<Vector3> &roomCenters);
-    void SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter);
     
 public:
-    void AssignEnemyTextures(UIManager *uiManager);
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
     ParticleSystem particles; // Particle system for visual effects
@@ -133,8 +118,6 @@ public:
      * Call while a 3D camera block is active.
      */
     void DrawScene(Camera camera) const;
-    void DrawEnemyHealthDialogs(const Camera &camera) const;
-    void DrawDamageIndicators(const Camera &camera) const;
 
     /**
      * @brief Advance scene simulation: update enemies, attacks and other systems.
@@ -163,13 +146,8 @@ public:
     void SetViewPosition(const Vector3 &viewPosition);
     Color getSkyColor() const { return this->skyColor; }
     void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
-    
-    // Room and door management
-    void UpdateRoomDoors(const Vector3 &playerPos);
-    void DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const;
+    void DrawDamageIndicators(const Camera &camera) const;
+    void DrawEnemyHealthDialogs(const Camera &camera) const;
+
     std::vector<RewardBriefcase *> GetRewardBriefcases();
-    Room *GetCurrentPlayerRoom() const { return this->currentPlayerRoom; }
-    // Return the room that contains the given world position, or nullptr
-    // if the position is not inside any room.
-    Room *GetRoomContainingPosition(const Vector3 &pos) const;
 };

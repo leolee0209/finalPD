@@ -1,4 +1,4 @@
-#include "me.hpp"       // Contains Enemy class definition
+#include "me.hpp" // Contains Enemy class definition
 #include "dialogBox.hpp"
 #include "scene.hpp"    // For Scene class and its methods
 #include "raymath.h"    // For Vector3 operations
@@ -66,7 +66,7 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
                     this->appliedDamage = true;
                 }
             }
-            
+
             // Return to cooldown when grounded
             if (this->isGrounded())
             {
@@ -574,10 +574,10 @@ bool Enemy::damage(DamageResult &dResult)
 {
     int healthBefore = this->health;
     this->health -= (int)dResult.damage;
-    TraceLog(LOG_ERROR, "[Enemy] damage applied: before=%d damage=%.1f after=%d obj=%p", healthBefore, dResult.damage, this->health, (void*)this);
+    TraceLog(LOG_ERROR, "[Enemy] damage applied: before=%d damage=%.1f after=%d obj=%p", healthBefore, dResult.damage, this->health, (void *)this);
     if (this->health <= 0)
     {
-        TraceLog(LOG_ERROR, "[Enemy] DEATH: obj=%p was at %d hp, took %.1f dmg", (void*)this, healthBefore, dResult.damage);
+        TraceLog(LOG_ERROR, "[Enemy] DEATH: obj=%p was at %d hp, took %.1f dmg", (void *)this, healthBefore, dResult.damage);
     }
     return this->health > 0;
 }
@@ -670,16 +670,16 @@ void Enemy::UpdateDialog(UpdateContext &uc, float verticalOffset)
     this->healthDialog->setFillPercent(this->getHealthPercent());
 }
 
-ShooterEnemy::ShooterEnemy() : Enemy(250)  // Sniper: 250 HP
+ShooterEnemy::ShooterEnemy() : Enemy(250) // Sniper: 250 HP
 {
     this->setMaxHealth(250);
     this->setTileType(TileType::BAMBOO_7); // Sniper uses Bamboo tiles
-    TraceLog(LOG_WARNING, "[ShooterEnemy] spawned: this=%p health=%d maxHealth=%d", (void*)this, this->getHealth(), 250);
-    
+    TraceLog(LOG_WARNING, "[ShooterEnemy] spawned: this=%p health=%d maxHealth=%d", (void *)this, this->getHealth(), 250);
+
     // Set default bullet pattern (single bullet)
     this->bulletPattern.bulletCount = 1;
     this->bulletPattern.arcDegrees = 0.0f;
-    
+
     // Load sun texture for bullets
     this->sunTexture = LoadTexture("sun.png");
     if (this->sunTexture.id == 0)
@@ -692,45 +692,27 @@ void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
 {
     int count = groupSize; // Fixed count of 5
     float radius = 4.0f;
-    
+
     // Calculate minion size: summoner size / 3
     Vector3 minionSize = Vector3Scale(this->obj().size, 1.0f / 3.0f);
     // Determine room bounds for summoner so spawned minions remain inside
-    Room *room = nullptr;
-    BoundingBox roomBounds{};
-    bool haveRoomBounds = false;
-    if (uc.scene)
-    {
-        room = uc.scene->GetRoomContainingPosition(this->position);
-        if (room)
-        {
-            roomBounds = room->GetBounds();
-            haveRoomBounds = true;
-        }
-    }
-    
+
     for (int i = 0; i < count; ++i)
     {
         float angle = (2.0f * PI) * ((float)i / (float)count);
         Vector3 offset = {cosf(angle) * radius, 0.0f, sinf(angle) * radius};
         Vector3 spawnPos = Vector3Add(this->position, offset);
         // Clamp spawn position into room bounds if available (keep a small margin)
-        if (haveRoomBounds)
-        {
-            const float margin = 0.5f;
-            spawnPos.x = fmaxf(roomBounds.min.x + margin, fminf(spawnPos.x, roomBounds.max.x - margin));
-            spawnPos.z = fmaxf(roomBounds.min.z + margin, fminf(spawnPos.z, roomBounds.max.z - margin));
-        }
-            MinionEnemy *m = new MinionEnemy(); // Create a new MinionEnemy instance
+        MinionEnemy *m = new MinionEnemy(); // Create a new MinionEnemy instance
         m->obj().size = minionSize;
         m->obj().pos = spawnPos;
         m->setPosition(spawnPos);
-        
+
         // Copy texture from summoner
         m->obj().texture = this->obj().texture;
         m->obj().sourceRect = this->obj().sourceRect;
         m->obj().useTexture = this->obj().useTexture;
-        
+
         // Track this minion so it can be cleaned up when summoner dies
         this->ownedMinions.push_back(m);
         uc.scene->em.addEnemy(m);
@@ -746,7 +728,7 @@ void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
 void SummonerEnemy::CleanupMinions(UpdateContext &uc)
 {
     // Remove all minions from the enemy manager
-    for (MinionEnemy* minion : this->ownedMinions)
+    for (MinionEnemy *minion : this->ownedMinions)
     {
         if (minion)
         {
@@ -776,7 +758,7 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
 {
     // Emit particles during animation
     EmitSummonParticles(this->position, (summonState != SummonState::Idle) ? 1.0f : 0.0f);
-    
+
     switch (summonState)
     {
     case SummonState::Idle:
@@ -798,7 +780,7 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
     {
         animationTimer += delta;
         float progress = animationTimer / ascendDuration;
-        
+
         if (progress >= 1.0f)
         {
             // Transition to descending at peak
@@ -806,16 +788,16 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
             animationTimer = 0.0f;
             progress = 1.0f;
         }
-        
+
         // Spiral upward: height follows arc, position spirals around center
         float heightFactor = sinf(progress * PI * 0.5f); // Smooth easing from 0 to 1
         float newHeight = startHeight + (jumpHeight * heightFactor);
         float spiralAngle = progress * twirls * PI * 2.0f;
-        
+
         // Calculate spiral offset from base position
         float spiralX = cosf(spiralAngle) * spiralRadius * progress;
         float spiralZ = sinf(spiralAngle) * spiralRadius * progress;
-        
+
         // Apply animation position relative to starting position
         Vector3 newPos = this->obj().pos;
         newPos.x = startAnimX + spiralX;
@@ -823,7 +805,7 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
         newPos.z = startAnimZ + spiralZ;
         this->obj().pos = newPos;
         this->position = newPos;
-        
+
         // Rotate during ascent (spin around Y axis)
         Vector3 upAxis = {0.0f, 1.0f, 0.0f};
         Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, spiralAngle);
@@ -841,7 +823,7 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
     {
         animationTimer += delta;
         float progress = animationTimer / descendDuration;
-        
+
         if (progress >= 1.0f)
         {
             // Transition to summoning peak
@@ -852,16 +834,16 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
             this->obj().rotation = QuaternionIdentity();
             progress = 1.0f;
         }
-        
+
         // Spiral downward: height falls from peak, continues spiral
         float heightFactor = cosf(progress * PI * 0.5f); // Smooth easing from 1 to 0
         float newHeight = startHeight + (jumpHeight * heightFactor);
         float spiralAngle = (1.0f - progress) * twirls * PI * 2.0f;
-        
+
         // Spiral continues during descent
         float spiralX = cosf(spiralAngle) * spiralRadius * (1.0f - progress);
         float spiralZ = sinf(spiralAngle) * spiralRadius * (1.0f - progress);
-        
+
         // Apply animation position
         Vector3 newPos = this->obj().pos;
         newPos.x = startAnimX + spiralX;
@@ -869,7 +851,7 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
         newPos.z = startAnimZ + spiralZ;
         this->obj().pos = newPos;
         this->position = newPos;
-        
+
         // Continue rotation
         Vector3 upAxis = {0.0f, 1.0f, 0.0f};
         Quaternion rotQuat = QuaternionFromAxisAngle(upAxis, spiralAngle);
@@ -894,14 +876,14 @@ void SummonerEnemy::UpdateSummonAnimation(UpdateContext &uc, float delta)
         {
             // Spawn the minions
             this->SpawnMinionGroup(uc);
-            
+
             // Spawn explosion of purple particles when minions appear
             if (uc.scene)
             {
                 uc.scene->particles.spawnExplosion(this->position, 30, PURPLE, 0.3f, 5.0f, 1.0f);
                 uc.scene->particles.spawnRing(this->position, 3.0f, 20, ColorAlpha(PURPLE, 200), 4.0f, true);
             }
-            
+
             // Return to idle
             summonState = SummonState::Idle;
             animationTimer = 0.0f;
@@ -952,13 +934,13 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
     {
         summonState = SummonState::Idle;
     }
-    
+
     // Animation logic runs only if not stunned.
     if (!isStunned && !this->isMovementDisabled())
     {
         UpdateSummonAnimation(uc, delta);
     }
-    
+
     // If the enemy is animating, its position is controlled by the animation, not physics.
     // So we can return early.
     if (summonState != SummonState::Idle)
@@ -967,7 +949,7 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
         // We don't call UpdateCommonBehavior because the animation is kinematic.
         return;
     }
-    
+
     // --- From here on, we are NOT animating, so normal physics/AI applies ---
 
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
@@ -995,7 +977,7 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
             settings.facingHint = toPlayer;
         }
     }
-    
+
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->updateElectrocute(delta);
     this->UpdateDialog(uc);
@@ -1181,7 +1163,7 @@ void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosit
         // Multiple bullets in a fan pattern
         Vector3 aimNormalized = Vector3Normalize(aimDirection);
         float halfArc = this->bulletPattern.arcDegrees * 0.5f * DEG2RAD;
-        
+
         // Calculate right vector perpendicular to aim direction (in horizontal plane)
         Vector3 up = {0.0f, 1.0f, 0.0f};
         Vector3 right = Vector3Normalize(Vector3CrossProduct(aimNormalized, up));
@@ -1190,7 +1172,7 @@ void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosit
             // If aiming straight up/down, use a default right vector
             right = {1.0f, 0.0f, 0.0f};
         }
-        
+
         // Spawn bullets spread across the arc
         for (int i = 0; i < this->bulletPattern.bulletCount; ++i)
         {
@@ -1205,13 +1187,13 @@ void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosit
                 float t = (float)i / (float)(this->bulletPattern.bulletCount - 1);
                 angle = Lerp(-halfArc, halfArc, t);
             }
-            
+
             // Rotate aim direction around the up axis by the angle
             Vector3 bulletDir = Vector3RotateByAxisAngle(aimNormalized, up, angle);
             this->spawnBullet(muzzlePosition, bulletDir);
         }
     }
-    
+
     this->fireCooldown = this->fireInterval;
 }
 
@@ -1252,7 +1234,8 @@ bool ShooterEnemy::SelectRepositionGoal(UpdateContext &uc, const Vector3 &planar
     Vector3 playerPos = uc.player->pos();
     float baseY = this->position.y;
 
-    auto rotateY = [](Vector3 v, float degrees) {
+    auto rotateY = [](Vector3 v, float degrees)
+    {
         float radians = degrees * DEG2RAD;
         float cs = cosf(radians);
         float sn = sinf(radians);
@@ -1348,7 +1331,7 @@ void ShooterEnemy::spawnBullet(const Vector3 &origin, const Vector3 &dir)
     bullet.visual.pos = origin;
     bullet.visual.tint = {255, 255, 255, 255};
     bullet.visual.visible = true;
-    
+
     // Apply sun texture if available
     if (this->sunTexture.id != 0)
     {
@@ -1356,7 +1339,7 @@ void ShooterEnemy::spawnBullet(const Vector3 &origin, const Vector3 &dir)
         bullet.visual.texture = &this->sunTexture;
         bullet.visual.sourceRect = {0.0f, 0.0f, (float)this->sunTexture.width, (float)this->sunTexture.height};
     }
-    
+
     bullet.visual.UpdateOBB();
 
     this->bullets.push_back(bullet);
@@ -1370,7 +1353,7 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
         bullet.position = Vector3Add(bullet.position, Vector3Scale(bullet.velocity, deltaSeconds));
         bullet.visual.pos = bullet.position;
         bullet.visual.UpdateOBB();
-        
+
         // Spawn trailing particles for Minecraft look
         if (uc.scene)
         {
@@ -1378,7 +1361,8 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
         }
     }
 
-    auto removeIt = std::remove_if(this->bullets.begin(), this->bullets.end(), [&](Bullet &bullet) {
+    auto removeIt = std::remove_if(this->bullets.begin(), this->bullets.end(), [&](Bullet &bullet)
+                                   {
         if (bullet.remainingLife <= 0.0f)
             return true;
 
@@ -1437,8 +1421,7 @@ void ShooterEnemy::updateBullets(UpdateContext &uc, float deltaSeconds)
             return true; // hit environment or other entity
         }
 
-        return false;
-    });
+        return false; });
 
     this->bullets.erase(removeIt, this->bullets.end());
 }
@@ -1468,59 +1451,65 @@ void ShooterEnemy::gatherObjects(std::vector<Object *> &out) const
 
 // ======================== SupportEnemy ========================
 
-Enemy* SupportEnemy::FindAllyToHideBehind(UpdateContext &uc)
+Enemy *SupportEnemy::FindAllyToHideBehind(UpdateContext &uc)
 {
     // Find allies within normal search radius
     std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
-    std::vector<Enemy*> candidateAllies;
-    
+    std::vector<Enemy *> candidateAllies;
+
     for (Entity *entity : enemies)
     {
-        if (!entity || entity == this) continue;
-        
-        Enemy *ally = dynamic_cast<Enemy*>(entity);
-        if (!ally) continue;
-        
+        if (!entity || entity == this)
+            continue;
+
+        Enemy *ally = dynamic_cast<Enemy *>(entity);
+        if (!ally)
+            continue;
+
         // Skip minions
-        if (dynamic_cast<MinionEnemy*>(ally)) continue;
-        
+        if (dynamic_cast<MinionEnemy *>(ally))
+            continue;
+
         float dist = Vector3Distance(this->position, ally->pos());
         if (dist <= normalSearchRadius)
         {
             candidateAllies.push_back(ally);
         }
     }
-    
+
     // Priority 1: Find a tank (ChargingEnemy)
-    for (Enemy* ally : candidateAllies)
+    for (Enemy *ally : candidateAllies)
     {
-        if (dynamic_cast<ChargingEnemy*>(ally))
+        if (dynamic_cast<ChargingEnemy *>(ally))
         {
             return ally;
         }
     }
-    
+
     // Priority 2: Pick a random ally from candidates
     if (!candidateAllies.empty())
     {
         int randomIdx = GetRandomValue(0, (int)candidateAllies.size() - 1);
         return candidateAllies[randomIdx];
     }
-    
+
     // Priority 3: Find closest enemy (even if far)
-    Enemy* closestAlly = nullptr;
+    Enemy *closestAlly = nullptr;
     float closestDist = 999999.0f;
-    
+
     for (Entity *entity : enemies)
     {
-        if (!entity || entity == this) continue;
-        
-        Enemy *ally = dynamic_cast<Enemy*>(entity);
-        if (!ally) continue;
-        
+        if (!entity || entity == this)
+            continue;
+
+        Enemy *ally = dynamic_cast<Enemy *>(entity);
+        if (!ally)
+            continue;
+
         // Skip minions
-        if (dynamic_cast<MinionEnemy*>(ally)) continue;
-        
+        if (dynamic_cast<MinionEnemy *>(ally))
+            continue;
+
         float dist = Vector3Distance(this->position, ally->pos());
         if (dist < closestDist)
         {
@@ -1528,36 +1517,41 @@ Enemy* SupportEnemy::FindAllyToHideBehind(UpdateContext &uc)
             closestAlly = ally;
         }
     }
-    
+
     return closestAlly;
 }
 
-Enemy* SupportEnemy::FindBestTarget(UpdateContext &uc, bool forHealing)
+Enemy *SupportEnemy::FindBestTarget(UpdateContext &uc, bool forHealing)
 {
     std::vector<Entity *> enemies = uc.scene->em.getEntities(ENTITY_ENEMY);
-    Enemy* bestTarget = nullptr;
-    
+    Enemy *bestTarget = nullptr;
+
     if (forHealing)
     {
         // Find lowest HP ally below healing threshold within search radius
         float lowestHealthPercent = 1.0f;
-        
+
         for (Entity *entity : enemies)
         {
-            if (!entity || entity == this) continue;
-            
-            Enemy *ally = dynamic_cast<Enemy*>(entity);
-            if (!ally) continue;
-            
+            if (!entity || entity == this)
+                continue;
+
+            Enemy *ally = dynamic_cast<Enemy *>(entity);
+            if (!ally)
+                continue;
+
             // Skip minions
-            if (dynamic_cast<MinionEnemy*>(ally)) continue;
-            
+            if (dynamic_cast<MinionEnemy *>(ally))
+                continue;
+
             float dist = Vector3Distance(this->position, ally->pos());
-            if (dist > actionSearchRadius) continue;
-            
+            if (dist > actionSearchRadius)
+                continue;
+
             float healthPercent = (float)ally->getHealth() / (float)ally->getMaxHealth();
-            if (healthPercent >= healingThreshold) continue;
-            
+            if (healthPercent >= healingThreshold)
+                continue;
+
             if (healthPercent < lowestHealthPercent)
             {
                 lowestHealthPercent = healthPercent;
@@ -1569,18 +1563,21 @@ Enemy* SupportEnemy::FindBestTarget(UpdateContext &uc, bool forHealing)
     {
         // Find any ally to buff (prioritize lowest health)
         float lowestHealthPercent = 1.0f;
-        
+
         for (Entity *entity : enemies)
         {
-            if (!entity || entity == this) continue;
-            
-            Enemy *ally = dynamic_cast<Enemy*>(entity);
-            if (!ally) continue;
-            
+            if (!entity || entity == this)
+                continue;
+
+            Enemy *ally = dynamic_cast<Enemy *>(entity);
+            if (!ally)
+                continue;
+
             // Skip minions
             float dist = Vector3Distance(this->position, ally->pos());
-            if (dist > actionSearchRadius) continue;
-            
+            if (dist > actionSearchRadius)
+                continue;
+
             float healthPercent = (float)ally->getHealth() / (float)ally->getMaxHealth();
             if (healthPercent < lowestHealthPercent)
             {
@@ -1589,32 +1586,32 @@ Enemy* SupportEnemy::FindBestTarget(UpdateContext &uc, bool forHealing)
             }
         }
     }
-    
+
     return bestTarget;
 }
 
-Vector3 SupportEnemy::CalculateHidePosition(UpdateContext &uc, Enemy* allyToHideBehind)
+Vector3 SupportEnemy::CalculateHidePosition(UpdateContext &uc, Enemy *allyToHideBehind)
 {
     if (!allyToHideBehind)
         return this->position;
-    
+
     // Calculate line from player to ally
     Vector3 playerPos = uc.player->pos();
     Vector3 allyPos = allyToHideBehind->pos();
     Vector3 playerToAlly = Vector3Subtract(allyPos, playerPos);
     playerToAlly.y = 0.0f;
-    
+
     float distToAlly = Vector3Length(playerToAlly);
     if (distToAlly < 0.1f)
     {
         // If player and ally are at same position, just retreat
         return Vector3Add(allyPos, Vector3Scale({0.0f, 0.0f, 1.0f}, normalHideDistance));
     }
-    
+
     // Normalize and extend beyond ally
     Vector3 hideDir = Vector3Normalize(playerToAlly);
     Vector3 hidePos = Vector3Add(allyPos, Vector3Scale(hideDir, normalHideDistance));
-    
+
     return hidePos;
 }
 
@@ -1622,7 +1619,7 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
 {
     float delta = GetFrameTime();
     float playerDist = Vector3Length(toPlayer);
-    
+
     Vector3 desiredDir = Vector3Zero();
     Enemy::MovementSettings settings;
     settings.lockToGround = true;
@@ -1630,11 +1627,11 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
     settings.maxAccel = MAX_ACCEL;
     settings.decelGround = FRICTION;
     settings.decelAir = AIR_DRAG;
-    
+
     // Check for targets to heal or buff
-    Enemy* healTarget = FindBestTarget(uc, true);
-    Enemy* buffTarget = FindBestTarget(uc, false);
-    
+    Enemy *healTarget = FindBestTarget(uc, true);
+    Enemy *buffTarget = FindBestTarget(uc, false);
+
     // Decide: heal takes priority over buff
     if (healTarget)
     {
@@ -1650,10 +1647,10 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
         this->actionTimer = 0.0f;
         return; // Will be handled by UpdateBuffMode next frame
     }
-    
+
     // Normal mode: hide behind allies or retreat
     this->targetAlly = FindAllyToHideBehind(uc);
-    
+
     if (this->targetAlly)
     {
         // Move toward hide position
@@ -1661,7 +1658,7 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
         Vector3 toHidePos = Vector3Subtract(hidePos, this->position);
         toHidePos.y = 0.0f;
         float hideDist = Vector3Length(toHidePos);
-        
+
         if (hideDist > 0.5f)
         {
             desiredDir = Vector3Normalize(toHidePos);
@@ -1687,7 +1684,7 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
         settings.maxSpeed = 0.0f;
         settings.maxAccel = 0.0f;
     }
-    
+
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->updateElectrocute(delta);
     this->UpdateDialog(uc);
@@ -1696,10 +1693,10 @@ void SupportEnemy::UpdateNormalMode(UpdateContext &uc, const Vector3 &toPlayer)
 void SupportEnemy::UpdateHealMode(UpdateContext &uc)
 {
     float delta = GetFrameTime();
-    
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
-    
+
     Vector3 desiredDir = Vector3Zero();
     Enemy::MovementSettings settings;
     settings.lockToGround = true;
@@ -1707,7 +1704,7 @@ void SupportEnemy::UpdateHealMode(UpdateContext &uc)
     settings.maxAccel = MAX_ACCEL;
     settings.decelGround = FRICTION;
     settings.decelAir = AIR_DRAG;
-    
+
     if (!this->targetAlly)
     {
         // Target died, go back to normal mode
@@ -1717,12 +1714,12 @@ void SupportEnemy::UpdateHealMode(UpdateContext &uc)
         UpdateNormalMode(uc, toPlayer);
         return;
     }
-    
+
     // Move toward target until within stand distance
     Vector3 toTarget = Vector3Subtract(this->targetAlly->pos(), this->position);
     toTarget.y = 0.0f;
     float targetDist = Vector3Length(toTarget);
-    
+
     if (targetDist > actionStandDistance)
     {
         desiredDir = Vector3Normalize(toTarget);
@@ -1754,21 +1751,21 @@ void SupportEnemy::UpdateHealMode(UpdateContext &uc)
                 this->chargeParticleTimer -= emitInterval;
             }
         }
-        
+
         // After charging, apply heal
         if (this->actionTimer >= actionChargeTime)
         {
             // Apply fixed heal amount at the instant the heal is fully charged
             int healAmount = 200; // fixed heal per request
             this->targetAlly->Heal(healAmount);
-            
+
             // Emit heal impact particles
             if (uc.scene)
             {
                 uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 20, YELLOW, 0.25f, 3.0f, 0.8f);
                 uc.scene->particles.spawnRing(this->targetAlly->pos(), 3.0f, 16, ColorAlpha(GOLD, 200), 2.5f, true);
             }
-            
+
             // Go into cooldown
             this->mode = SupportMode::Normal;
             this->actionCooldownTimer = actionCooldown;
@@ -1793,10 +1790,10 @@ void SupportEnemy::UpdateHealMode(UpdateContext &uc)
 void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
 {
     float delta = GetFrameTime();
-    
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
-    
+
     Vector3 desiredDir = Vector3Zero();
     Enemy::MovementSettings settings;
     settings.lockToGround = true;
@@ -1804,7 +1801,7 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
     settings.maxAccel = MAX_ACCEL;
     settings.decelGround = FRICTION;
     settings.decelAir = AIR_DRAG;
-    
+
     if (!this->targetAlly)
     {
         // Target died, go back to normal mode
@@ -1814,12 +1811,12 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
         UpdateNormalMode(uc, toPlayer);
         return;
     }
-    
+
     // Move toward target until within stand distance
     Vector3 toTarget = Vector3Subtract(this->targetAlly->pos(), this->position);
     toTarget.y = 0.0f;
     float targetDist = Vector3Length(toTarget);
-    
+
     if (targetDist > actionStandDistance)
     {
         desiredDir = Vector3Normalize(toTarget);
@@ -1849,7 +1846,7 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
                 this->chargeParticleTimer -= emitInterval;
             }
         }
-        
+
         // After charging, apply buff
         if (this->actionTimer >= actionChargeTime)
         {
@@ -1859,7 +1856,7 @@ void SupportEnemy::UpdateBuffMode(UpdateContext &uc)
                 uc.scene->particles.spawnExplosion(this->targetAlly->pos(), 25, SKYBLUE, 0.25f, 4.0f, 0.9f);
                 uc.scene->particles.spawnRing(this->targetAlly->pos(), 3.5f, 20, ColorAlpha(WHITE, 200), 3.0f, true);
             }
-            
+
             // Go into cooldown
             this->mode = SupportMode::Normal;
             this->actionCooldownTimer = actionCooldown;
@@ -1906,28 +1903,28 @@ void SupportEnemy::UpdateBody(UpdateContext &uc)
         this->UpdateDialog(uc);
         return;
     }
-    
+
     // Decrement cooldown timer
     if (this->actionCooldownTimer > 0.0f)
     {
         this->actionCooldownTimer -= delta;
     }
-    
+
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
-    
+
     // Dispatch to appropriate mode handler
     switch (this->mode)
     {
-        case SupportMode::Normal:
-            UpdateNormalMode(uc, toPlayer);
-            break;
-        case SupportMode::Heal:
-            UpdateHealMode(uc);
-            break;
-        case SupportMode::Buff:
-            UpdateBuffMode(uc);
-            break;
+    case SupportMode::Normal:
+        UpdateNormalMode(uc, toPlayer);
+        break;
+    case SupportMode::Heal:
+        UpdateHealMode(uc);
+        break;
+    case SupportMode::Buff:
+        UpdateBuffMode(uc);
+        break;
     }
 }
 
@@ -1969,47 +1966,48 @@ bool VanguardEnemy::CheckStabHit(UpdateContext &uc)
     // Piston Thrust: Use invisible box collision for consistent hit detection
     Vector3 forward = this->stabDirection;
     forward.y = 0.0f;
-    if (Vector3LengthSqr(forward) < 0.0001f) forward = {0, 0, 1};
+    if (Vector3LengthSqr(forward) < 0.0001f)
+        forward = {0, 0, 1};
     forward = Vector3Normalize(forward);
-    
+
     // Target player's center for stab collision
     Vector3 playerPos = uc.player->pos();
-    
+
     // Extend hitbox to cover entire spear length plus extra reach
     // Center the box from enemy position extended forward to cover full spear + reach
-    float totalReach = this->stabWeaponLength + 2.0f;  // Extra 2 units beyond spear tip
+    float totalReach = this->stabWeaponLength + 2.0f; // Extra 2 units beyond spear tip
     Vector3 boxCenter = Vector3Add(this->position, Vector3Scale(forward, totalReach * 0.5f));
-    boxCenter.y = playerPos.y;  // Align with player center height
-    
+    boxCenter.y = playerPos.y; // Align with player center height
+
     // Very wide box to catch the player anywhere along the spear: 4 units wide, 4 units tall (full vertical space), covers entire spear + reach
-    float halfWidth = 2.0f;   // Wide to catch side movement
-    float halfHeight = 2.0f;  // Tall to cover full vertical space
-    float halfLength = totalReach * 0.5f;  // Covers entire spear length
-    
+    float halfWidth = 2.0f;               // Wide to catch side movement
+    float halfHeight = 2.0f;              // Tall to cover full vertical space
+    float halfLength = totalReach * 0.5f; // Covers entire spear length
+
     // Check if player OBB intersects with stab box
     Vector3 toPlayer = Vector3Subtract(playerPos, boxCenter);
-    
+
     // Transform to local space (box aligned with forward direction)
     Vector3 right = Vector3Normalize(Vector3{forward.z, 0, -forward.x});
     float localX = fabsf(Vector3DotProduct(toPlayer, right));
     float localY = fabsf(toPlayer.y);
     float localZ = fabsf(Vector3DotProduct(toPlayer, forward));
-    
+
     if (localX <= halfWidth && localY <= halfHeight && localZ <= halfLength)
     {
         // Create collision result at player position
         CollisionResult c;
         c.collided = true;
         c.penetration = 0.5f;
-        c.normal = Vector3Scale(forward, -1.0f);  // Normal points away from enemy
+        c.normal = Vector3Scale(forward, -1.0f); // Normal points away from enemy
         c.with = nullptr;
-        
+
         DamageResult dmg(this->stabDamage, c);
         uc.player->damage(dmg);
-        
+
         // Strong forward knockback
         uc.player->applyKnockback(Vector3Scale(forward, 10.0f), 0.3f, 3.0f);
-        
+
         // Yellow flash at impact point
         if (uc.scene)
         {
@@ -2026,28 +2024,29 @@ bool VanguardEnemy::CheckSlashHit(UpdateContext &uc)
     Vector3 center = this->position;
     Vector3 forward = this->getFacingDirection();
     forward.y = 0.0f;
-    if (Vector3LengthSqr(forward) < 0.0001f) forward = {0, 0, 1};
+    if (Vector3LengthSqr(forward) < 0.0001f)
+        forward = {0, 0, 1};
     forward = Vector3Normalize(forward);
-    
+
     // Create large box in front of enemy for sweep hitbox, covering full vertical space
     Vector3 boxCenter = Vector3Add(center, Vector3Scale(forward, this->slashRange * 1.5f));
     Vector3 playerPos = uc.player->pos();
-    boxCenter.y = playerPos.y;  // Align with player center for full vertical coverage
-    
+    boxCenter.y = playerPos.y; // Align with player center for full vertical coverage
+
     // Very large box to catch player during dash: 8 units wide (full 180° coverage), 4 units tall (full vertical space), 3x slash range
-    float halfWidth = 4.0f;   // Wide arc coverage
-    float halfHeight = 2.0f;  // Tall to cover full vertical space below spear
+    float halfWidth = 4.0f;  // Wide arc coverage
+    float halfHeight = 2.0f; // Tall to cover full vertical space below spear
     float halfLength = this->slashRange * 1.5f;
-    
+
     // Check if player is in the box
     Vector3 toPlayer = Vector3Subtract(playerPos, boxCenter);
-    
+
     // Transform to local space
     Vector3 right = Vector3Normalize(Vector3{forward.z, 0, -forward.x});
     float localX = fabsf(Vector3DotProduct(toPlayer, right));
     float localY = fabsf(toPlayer.y);
     float localZ = fabsf(Vector3DotProduct(toPlayer, forward));
-    
+
     if (localX <= halfWidth && localY <= halfHeight && localZ <= halfLength)
     {
         // Create collision result at player position
@@ -2055,15 +2054,15 @@ bool VanguardEnemy::CheckSlashHit(UpdateContext &uc)
         CollisionResult c;
         c.collided = true;
         c.penetration = 0.5f;
-        c.normal = Vector3Scale(knockDir, -1.0f);  // Normal points away from enemy
+        c.normal = Vector3Scale(knockDir, -1.0f); // Normal points away from enemy
         c.with = nullptr;
-        
+
         DamageResult dmg(this->slashDamage, c);
         uc.player->damage(dmg);
-        
+
         // Strong knockback perpendicular to sweep
         uc.player->applyKnockback(Vector3Scale(knockDir, 12.0f), 0.35f, 4.0f);
-        
+
         // Orange arc visual effect
         if (uc.scene)
         {
@@ -2078,29 +2077,29 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
 {
     float delta = GetFrameTime();
     this->stateTimer -= delta;
-    
+
     if (this->comboStage == 1)
     {
         // STAGE 1: Piston Thrust (Lunge)
         float totalStabTime = this->stabWindupTime + this->stabActiveTime + this->stabRecoveryTime;
         float elapsed = totalStabTime - this->stateTimer;
-        
+
         if (elapsed < this->stabWindupTime)
         {
             // Wind-up: Slowly pull spear back for charge up (smooth ease-in)
             float windupProgress = elapsed / this->stabWindupTime;
             // Ease-in: slow at start, faster at end
-            this->spearRetractAmount = windupProgress * windupProgress;  // Quadratic ease-in
+            this->spearRetractAmount = windupProgress * windupProgress; // Quadratic ease-in
             this->spearThrustAmount = 0.0f;
             this->spearSwingAngle = 0.0f;
-            
+
             // Yellow flash telegraph at spear tip
             if (elapsed < 0.05f && uc.scene)
             {
                 Vector3 tipPos = Vector3Add(this->position, Vector3Scale(this->stabDirection, 2.0f));
                 uc.scene->particles.spawnExplosion(tipPos, 8, YELLOW, 0.15f, 3.0f, 0.4f);
             }
-            
+
             // Freeze in place during windup
             this->velocity = {0, 0, 0};
         }
@@ -2110,24 +2109,24 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
             float attackProgress = (elapsed - this->stabWindupTime) / this->stabActiveTime;
             // Quick snap: cubic ease-out for speed
             float snapCurve = 1.0f - powf(1.0f - attackProgress, 3.0f);
-            this->spearRetractAmount = fmaxf(0.0f, 1.0f - snapCurve * 5.0f);  // Retract disappears instantly
-            this->spearThrustAmount = snapCurve;  // Thrust snaps to full extension quickly
-            
+            this->spearRetractAmount = fmaxf(0.0f, 1.0f - snapCurve * 5.0f); // Retract disappears instantly
+            this->spearThrustAmount = snapCurve;                             // Thrust snaps to full extension quickly
+
             if (!this->comboHitPlayer)
             {
                 // Apply forward lunge velocity (sliding motion)
                 Vector3 lungeVel = Vector3Scale(this->stabDirection, this->stabLungeForce);
                 this->velocity.x = lungeVel.x;
                 this->velocity.z = lungeVel.z;
-                
+
                 // Check for hit
                 if (CheckStabHit(uc))
                 {
                     this->comboHitPlayer = true;
                 }
-                
+
                 // Particle trail along spear path
-                if (uc.scene && (int)(elapsed * 60) % 3 == 0)  // Every ~3 frames
+                if (uc.scene && (int)(elapsed * 60) % 3 == 0) // Every ~3 frames
                 {
                     Vector3 spearTipPos = Vector3Add(this->position, Vector3Scale(this->stabDirection, 2.0f + this->spearThrustAmount * 1.5f));
                     uc.scene->particles.spawnExplosion(spearTipPos, 4, YELLOW, 0.1f, 2.0f, 0.3f);
@@ -2147,24 +2146,24 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
             else
             {
                 // Slowly retract in second half
-                float retractProgress = (recoveryProgress - 0.5f) * 2.0f;  // 0 to 1
+                float retractProgress = (recoveryProgress - 0.5f) * 2.0f; // 0 to 1
                 this->spearRetractAmount = 0.0f;
                 this->spearThrustAmount = 1.0f - retractProgress;
             }
             this->velocity.x *= 0.85f;
             this->velocity.z *= 0.85f;
         }
-        
+
         // Apply ground physics
         Enemy::MovementSettings ms;
         ms.lockToGround = true;
-        ms.maxSpeed = 20.0f;  // Allow fast lunge
+        ms.maxSpeed = 20.0f; // Allow fast lunge
         ms.maxAccel = 200.0f;
-        ms.decelGround = FRICTION * 0.5f;  // Reduced friction for sliding
+        ms.decelGround = FRICTION * 0.5f; // Reduced friction for sliding
         ms.decelAir = AIR_DRAG;
         ms.facingHint = this->stabDirection;
         this->UpdateCommonBehavior(uc, {0, 0, 0}, delta, ms);
-        
+
         // Transition to slash
         if (this->stateTimer <= 0.0f)
         {
@@ -2179,21 +2178,21 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
         // STAGE 2: Crescent Sweep (Slash with Dash)
         float totalSlashTime = this->slashWindupTime + this->slashActiveTime + this->slashRecoveryTime;
         float elapsed = totalSlashTime - this->stateTimer;
-        
+
         if (elapsed < this->slashWindupTime)
         {
             // Wind-up: Turn and drag spearhead, prepare swing
             this->spearSwingAngle = 0.0f;
             this->spearThrustAmount = 0.0f;
             this->spearRetractAmount = 0.0f;
-            
+
             // Orange glow telegraph
             if (elapsed < 0.05f && uc.scene)
             {
                 Vector3 tipPos = Vector3Add(this->position, Vector3Scale(this->getFacingDirection(), 1.5f));
                 uc.scene->particles.spawnExplosion(tipPos, 10, ORANGE, 0.15f, 3.5f, 0.5f);
             }
-            
+
             // Stand still
             this->velocity = {0, 0, 0};
         }
@@ -2201,10 +2200,10 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
         {
             // Attack: Wide sweep with aggressive dash toward player
             float attackProgress = (elapsed - this->slashWindupTime) / this->slashActiveTime;
-            
+
             // Smooth swing spear in an arc from -90 (left) to +90 (right) degrees
             this->spearSwingAngle = this->spearSwingStartAngle + (attackProgress * this->slashArcDegrees);
-            
+
             // Dash toward player during slash with aggressive acceleration (mimicking dive)
             Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
             toPlayer.y = 0.0f;
@@ -2212,12 +2211,12 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
                 toPlayer = Vector3Normalize(toPlayer);
             else
                 toPlayer = this->getFacingDirection();
-            
+
             // Apply very aggressive dash velocity for gap closing with longer dash
-            float dashSpeed = 50.0f + (attackProgress * 60.0f);  // 50-110 speed (increased)
+            float dashSpeed = 50.0f + (attackProgress * 60.0f); // 50-110 speed (increased)
             this->velocity.x = toPlayer.x * dashSpeed;
             this->velocity.z = toPlayer.z * dashSpeed;
-            
+
             if (!this->comboHitPlayer)
             {
                 // Check for slash weapon hit
@@ -2225,67 +2224,69 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
                 {
                     this->comboHitPlayer = true;
                 }
-                
+
                 // Also check for body collision during dash (enemy body is dangerous during slash dash)
                 CollisionResult bodyHit = GetCollisionOBBvsOBB(&this->obj().obb, &uc.player->obj().obb);
                 if (bodyHit.collided)
                 {
-                    DamageResult dmg(this->slashDamage * 0.8f, bodyHit);  // Slightly less damage than weapon hit
+                    DamageResult dmg(this->slashDamage * 0.8f, bodyHit); // Slightly less damage than weapon hit
                     uc.player->damage(dmg);
-                    
+
                     Vector3 dashKnockDir = Vector3Normalize(Vector3Subtract(uc.player->pos(), this->position));
                     uc.player->applyKnockback(Vector3Scale(dashKnockDir, 10.0f), 0.3f, 3.5f);
-                    
+
                     if (uc.scene)
                     {
                         uc.scene->particles.spawnExplosion(uc.player->pos(), 15, ORANGE, 0.2f, 4.5f, 0.7f);
                     }
                     this->comboHitPlayer = true;
                 }
-                
+
                 // White particle trail showing full attack arc range
                 if (uc.scene)
                 {
                     // Calculate current spear tip position based on swing angle
                     Vector3 enemyForward = this->getFacingDirection();
                     enemyForward.y = 0.0f;
-                    if (Vector3LengthSqr(enemyForward) < 0.0001f) enemyForward = {0, 0, 1};
+                    if (Vector3LengthSqr(enemyForward) < 0.0001f)
+                        enemyForward = {0, 0, 1};
                     enemyForward = Vector3Normalize(enemyForward);
-                    
+
                     Vector3 rightDir = {enemyForward.z, 0, -enemyForward.x};
-                    
+
                     // Spawn particles along the full arc to show attack coverage
                     // Use slash range (doubled in CheckSlashHit) to show actual hit zone
                     float effectiveRange = this->slashRange * 2.0f;
-                    
+
                     // Sample multiple points along the arc from center to edge
                     for (int radiusStep = 0; radiusStep < 3; radiusStep++)
                     {
-                        float radiusFactor = 0.3f + (radiusStep * 0.35f);  // 0.3, 0.65, 1.0 of range
+                        float radiusFactor = 0.3f + (radiusStep * 0.35f); // 0.3, 0.65, 1.0 of range
                         float currentRadius = effectiveRange * radiusFactor;
-                        
+
                         // Sample several angles along the current swing
                         for (int arcStep = 0; arcStep < 5; arcStep++)
                         {
                             // Trail spans from start of swing to current position
-                            float angleOffset = arcStep * 12.0f;  // Span 48 degrees of recent arc
+                            float angleOffset = arcStep * 12.0f; // Span 48 degrees of recent arc
                             float arcSampleAngle = this->spearSwingAngle - angleOffset;
-                            
+
                             // Skip if before swing start
-                            if (arcSampleAngle < this->spearSwingStartAngle) continue;
-                            
+                            if (arcSampleAngle < this->spearSwingStartAngle)
+                                continue;
+
                             float currentAngleRad = arcSampleAngle * DEG2RAD;
-                            
+
                             Vector3 tipOffset;
-                            tipOffset.x = -sinf(currentAngleRad) * currentRadius;  // Left-right
-                            tipOffset.z = cosf(currentAngleRad) * currentRadius;   // Forward-back
+                            tipOffset.x = -sinf(currentAngleRad) * currentRadius; // Left-right
+                            tipOffset.z = cosf(currentAngleRad) * currentRadius;  // Forward-back
                             tipOffset.y = 0.5f;
-                            
+
                             Vector3 arcPos = this->position;
                             arcPos.x += enemyForward.x * tipOffset.z + rightDir.x * tipOffset.x;
                             arcPos.z += enemyForward.z * tipOffset.z + rightDir.z * tipOffset.x;
                             arcPos.y += tipOffset.y;
-                            
+
                             // Spawn white trail particles with fade
                             float alpha = 0.7f - (arcStep * 0.1f) - (radiusStep * 0.15f);
                             Color trailColor = ColorAlpha(WHITE, (unsigned char)(alpha * 255));
@@ -2313,17 +2314,17 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
             }
             this->velocity = {0, 0, 0};
         }
-        
+
         // Stay grounded during slash
         Enemy::MovementSettings ms;
         ms.lockToGround = true;
-        ms.maxSpeed = 15.0f;  // Allow dash
+        ms.maxSpeed = 15.0f; // Allow dash
         ms.maxAccel = MAX_ACCEL * 1.5f;
         ms.decelGround = FRICTION;
         ms.decelAir = AIR_DRAG;
         ms.facingHint = this->getFacingDirection();
         this->UpdateCommonBehavior(uc, {0, 0, 0}, delta, ms);
-        
+
         // End combo
         if (this->stateTimer <= 0.0f)
         {
@@ -2334,15 +2335,16 @@ void VanguardEnemy::HandleGroundCombo(UpdateContext &uc)
             this->spearThrustAmount = 0.0f;
             this->spearSwingAngle = 0.0f;
         }
-        }
-    
-        this->updateElectrocute(delta);
-        this->UpdateDialog(uc);}
+    }
+
+    this->updateElectrocute(delta);
+    this->UpdateDialog(uc);
+}
 
 void VanguardEnemy::DecideAction(UpdateContext &uc, float distanceToPlayer)
 {
     // Weighted RNG system based on distance zones (from design doc)
-    
+
     // Zone A: The "Kill Box" (Distance < 3.0 units)
     if (distanceToPlayer < 10.0f)
     {
@@ -2355,7 +2357,7 @@ void VanguardEnemy::DecideAction(UpdateContext &uc, float distanceToPlayer)
             this->comboStage = 1;
             this->stateTimer = this->stabWindupTime + this->stabActiveTime + this->stabRecoveryTime;
             this->comboHitPlayer = false;
-            
+
             // Store stab direction
             Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
             toPlayer.y = 0.0f;
@@ -2407,19 +2409,19 @@ void VanguardEnemy::DecideAction(UpdateContext &uc, float distanceToPlayer)
 void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
 {
     float delta = GetFrameTime();
-    
+
     // Update shockwave if active
     if (this->shockwaveActive)
     {
         this->shockwaveRadius += this->shockwaveExpandSpeed * delta;
-        
+
         // Check for player hit by shockwave (only once per shockwave)
         if (!this->shockwaveHitPlayer && this->shockwaveRadius > 0.5f)
         {
             Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->shockwaveCenter);
-            toPlayer.y = 0.0f;  // Ignore height for shockwave radius check
+            toPlayer.y = 0.0f; // Ignore height for shockwave radius check
             float distToPlayer = Vector3Length(toPlayer);
-            
+
             // Shockwave hits if player is within current radius and wasn't hit by this shockwave yet
             if (distToPlayer <= this->shockwaveRadius)
             {
@@ -2431,21 +2433,22 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
                     c.collided = true;
                     c.penetration = 1.0f;
                     c.normal = Vector3Normalize(toPlayer);
-                    if (Vector3LengthSqr(c.normal) < 0.0001f) c.normal = {0, 0, -1};
+                    if (Vector3LengthSqr(c.normal) < 0.0001f)
+                        c.normal = {0, 0, -1};
                     c.with = nullptr;
-                    
+
                     DamageResult dmg(this->shockwaveDamage, c);
                     uc.player->damage(dmg);
-                    
+
                     // Radial knockback away from center
                     Vector3 knockDir = Vector3Normalize(toPlayer);
                     uc.player->applyKnockback(Vector3Scale(knockDir, 12.0f), 0.35f, 5.0f);
-                    
+
                     this->shockwaveHitPlayer = true;
                 }
             }
         }
-        
+
         // Stop shockwave when it reaches max radius
         if (this->shockwaveRadius >= this->shockwaveMaxRadius)
         {
@@ -2460,7 +2463,7 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
         this->velocity.y -= this->diveGravityDuringAscent * delta;
         this->position.y += this->velocity.y * delta;
         this->o.pos = this->position; // Update object position
-        this->o.UpdateOBB(); // Update collision bounds
+        this->o.UpdateOBB();          // Update collision bounds
         if (this->stateTimer <= 0.0f)
         {
             this->state = VanguardState::AerialHover;
@@ -2486,7 +2489,7 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
         // Hover and continuously track player camera
         this->stateTimer -= delta;
         this->rotationTowardsPlayer = Lerp(this->rotationTowardsPlayer, 1.0f, delta * 3.0f);
-        
+
         // Continuously update facing direction to track camera in real-time
         const Camera &cam = uc.player->getCamera();
         Vector3 camPos = cam.position;
@@ -2496,19 +2499,19 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
         {
             this->o.setRotationFromForward(Vector3Normalize(toCam));
         }
-        
+
         if (this->stateTimer <= 0.0f)
         {
             this->state = VanguardState::AerialDive;
             // Set dive direction from current position directly to player's position (including Y)
             Vector3 playerPos = uc.player->pos();
             Vector3 diveDirToPlayer = Vector3Subtract(playerPos, this->position);
-            
+
             // Keep the full 3D direction to dive directly at the player
             if (Vector3LengthSqr(diveDirToPlayer) < 0.001f)
                 diveDirToPlayer = {0.0f, -1.0f, 1.0f};
             diveDirToPlayer = Vector3Normalize(diveDirToPlayer);
-            
+
             this->diveCurrentSpeed = this->diveInitialSpeed;
             this->velocity = Vector3Scale(diveDirToPlayer, this->diveCurrentSpeed);
         }
@@ -2520,58 +2523,43 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
         cur = fmaxf(cur, 0.0001f);
         float add = this->diveAcceleration * delta;
         this->diveCurrentSpeed = fminf(this->diveCurrentSpeed + add, this->diveMaxSpeed);
-        
+
         // Normalize current velocity direction and scale by new speed
         Vector3 dir = Vector3Normalize(this->velocity);
         this->velocity = Vector3Scale(dir, this->diveCurrentSpeed);
-        
+
         // Update position with room bounds checking
         Vector3 newPosition = Vector3Add(this->position, Vector3Scale(this->velocity, delta));
-        
+
         // Check room bounds to prevent diving out
         if (uc.scene)
         {
-            Room *r = uc.scene->GetRoomContainingPosition(this->position);
-            if (r)
+            this->position = newPosition;
+            this->velocity = {0.0f, 0.0f, 0.0f};
+            this->state = VanguardState::AerialLanding;
+            this->stateTimer = this->diveLandingRecoveryTime;
+            this->diveCurrentSpeed = 0.0f;
+            this->visualScale = {1.6f, 0.6f, 1.6f};
+            this->o.pos = this->position;
+            this->o.UpdateOBB();
+
+            // Start shockwave on wall impact landing
+            this->shockwaveActive = true;
+            this->shockwaveRadius = 0.0f;
+            this->shockwaveCenter = this->position;
+            this->shockwaveHitPlayer = false;
+
+            // Wall impact particles
+            if (uc.scene)
             {
-                BoundingBox bounds = r->GetBounds();
-                // Clamp position to room bounds with small margin
-                float margin = 2.0f;
-                if (newPosition.x < bounds.min.x + margin || newPosition.x > bounds.max.x - margin ||
-                    newPosition.z < bounds.min.z + margin || newPosition.z > bounds.max.z - margin)
-                {
-                    // Hit wall - stop dive and land
-                    newPosition.x = Clamp(newPosition.x, bounds.min.x + margin, bounds.max.x - margin);
-                    newPosition.z = Clamp(newPosition.z, bounds.min.z + margin, bounds.max.z - margin);
-                    newPosition.y = bounds.min.y; // Force to ground
-                    this->position = newPosition;
-                    this->velocity = {0.0f, 0.0f, 0.0f};
-                    this->state = VanguardState::AerialLanding;
-                    this->stateTimer = this->diveLandingRecoveryTime;
-                    this->diveCurrentSpeed = 0.0f;
-                    this->visualScale = {1.6f, 0.6f, 1.6f};
-                    this->o.pos = this->position;
-                    this->o.UpdateOBB();
-                    
-                    // Start shockwave on wall impact landing
-                    this->shockwaveActive = true;
-                    this->shockwaveRadius = 0.0f;
-                    this->shockwaveCenter = this->position;
-                    this->shockwaveHitPlayer = false;
-                    
-                    // Wall impact particles
-                    if (uc.scene)
-                    {
-                        uc.scene->particles.spawnExplosion(this->position, 24, ORANGE, 0.3f, 6.0f, 1.0f);
-                    }
-                    return; // Exit early
-                }
+                uc.scene->particles.spawnExplosion(this->position, 24, ORANGE, 0.3f, 6.0f, 1.0f);
             }
+            return; // Exit early
         }
-        
+
         this->position = newPosition;
         this->o.pos = this->position; // Update object position
-        this->o.UpdateOBB(); // Update collision bounds
+        this->o.UpdateOBB();          // Update collision bounds
 
         // Check for player collision first (before ground impact)
         bool hitPlayer = false;
@@ -2591,12 +2579,10 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
         float floorY = 0.0f;
         if (uc.scene)
         {
-            Room *r = uc.scene->GetRoomContainingPosition(this->position);
-            if (r)
-                floorY = r->GetBounds().min.y;
+            floorY = 0;
         }
 
-        bool impacted = hitPlayer;  // End dive if hit player
+        bool impacted = hitPlayer; // End dive if hit player
         if (this->position.y <= floorY + 0.5f)
         {
             impacted = true;
@@ -2627,7 +2613,7 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
             this->stateTimer = this->diveLandingRecoveryTime;
             this->velocity = {0.0f, 0.0f, 0.0f};
             this->diveCurrentSpeed = 0.0f;
-            
+
             // Sync position after setting to ground
             this->o.pos = this->position;
             this->o.UpdateOBB();
@@ -2636,19 +2622,19 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
     else if (this->state == VanguardState::AerialLanding)
     {
         this->stateTimer -= delta;
-        
+
         // Continue expanding shockwave during landing recovery
         if (this->shockwaveActive)
         {
             this->shockwaveRadius += this->shockwaveExpandSpeed * delta;
-            
+
             // Check for player hit by shockwave (only once per shockwave)
             if (!this->shockwaveHitPlayer && this->shockwaveRadius > 0.5f)
             {
                 Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->shockwaveCenter);
-                toPlayer.y = 0.0f;  // Ignore height for shockwave radius check
+                toPlayer.y = 0.0f; // Ignore height for shockwave radius check
                 float distToPlayer = Vector3Length(toPlayer);
-                
+
                 // Shockwave hits if player is within current radius
                 if (distToPlayer <= this->shockwaveRadius)
                 {
@@ -2659,26 +2645,27 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
                         c.collided = true;
                         c.penetration = 1.0f;
                         c.normal = Vector3Normalize(toPlayer);
-                        if (Vector3LengthSqr(c.normal) < 0.0001f) c.normal = {0, 0, -1};
+                        if (Vector3LengthSqr(c.normal) < 0.0001f)
+                            c.normal = {0, 0, -1};
                         c.with = nullptr;
-                        
+
                         DamageResult dmg(this->shockwaveDamage, c);
                         uc.player->damage(dmg);
-                        
+
                         Vector3 knockDir = Vector3Normalize(toPlayer);
                         uc.player->applyKnockback(Vector3Scale(knockDir, 12.0f), 0.35f, 5.0f);
-                        
+
                         this->shockwaveHitPlayer = true;
                     }
                 }
             }
-            
+
             if (this->shockwaveRadius >= this->shockwaveMaxRadius)
             {
                 this->shockwaveActive = false;
             }
         }
-        
+
         // Ease visual back to normal
         this->visualScale.x = Lerp(this->visualScale.x, 1.0f, delta * 8.0f);
         this->visualScale.y = Lerp(this->visualScale.y, 1.0f, delta * 8.0f);
@@ -2688,7 +2675,7 @@ void VanguardEnemy::HandleAerialDive(UpdateContext &uc)
             this->state = VanguardState::Chasing;
         }
     }
-    
+
     this->updateElectrocute(delta);
     // Update health bar position for all aerial states
     this->UpdateDialog(uc);
@@ -2766,7 +2753,7 @@ void VanguardEnemy::UpdateBody(UpdateContext &uc)
             DecideAction(uc, dist);
             this->decisionCooldownTimer = this->decisionCooldownDuration;
         }
-        
+
         // If still chasing (no action triggered), move toward player
         if (this->state == VanguardState::Chasing)
         {
@@ -2807,16 +2794,16 @@ void VanguardEnemy::Draw() const
         if (Vector3LengthSqr(enemyForward) < 0.0001f)
             enemyForward = {0, 0, 1};
         enemyForward = Vector3Normalize(enemyForward);
-        
+
         // Calculate rotation angle around Y axis
         float angleRad = atan2f(enemyForward.x, enemyForward.z);
         float angleDeg = angleRad * RAD2DEG;
-        
+
         // Base position at enemy's side (lower position)
-        Vector3 rightDir = {enemyForward.z, 0, -enemyForward.x};  // Perpendicular to forward
+        Vector3 rightDir = {enemyForward.z, 0, -enemyForward.x}; // Perpendicular to forward
         Vector3 spearPos = Vector3Add(this->position, Vector3Scale(rightDir, this->spearOffset.x));
-        spearPos.y += this->spearOffset.y + 0.4f;  // Lower spear (was 0.8f)
-        
+        spearPos.y += this->spearOffset.y + 0.4f; // Lower spear (was 0.8f)
+
         // Use cached camera info (updated during UpdateBody)
         float camAngleDeg = this->cachedCameraYawDeg;
         float verticalAngle = this->cachedCameraPitchDeg;
@@ -2831,68 +2818,68 @@ void VanguardEnemy::Draw() const
             currentYRotation = camAngleDeg;
             spearPos = Vector3Add(spearPos, Vector3Scale(enemyForward, this->spearThrustAmount * 4.0f));
         }
-        
+
         // Apply retract animation (backward along facing direction)
         if (this->spearRetractAmount > 0.0f)
         {
             spearPos = Vector3Add(spearPos, Vector3Scale(enemyForward, -this->spearRetractAmount * 4.0f));
         }
-        
-        float tiltAngle = 0.0f;  // No tilt (issue resolved by model change)
-        
+
+        float tiltAngle = 0.0f; // No tilt (issue resolved by model change)
+
         // During stab, point at camera
         if (this->spearThrustAmount > 0.0f || this->spearRetractAmount > 0.0f)
         {
             currentYRotation = camAngleDeg;
-            tiltAngle = 0.0f;  // Keep level
+            tiltAngle = 0.0f; // Keep level
         }
-        
+
         // Apply swing animation during slash (rotate through full arc, targeting camera)
         if (this->spearSwingAngle != 0.0f)
         {
             // Spear swings from left (-90) to right (+90), pointing at camera
             currentYRotation = camAngleDeg + this->spearSwingAngle;
-            tiltAngle = 0.0f;  // Keep level
-            
+            tiltAngle = 0.0f; // Keep level
+
             // Position spear at swing radius around enemy
             float swingRadius = 2.0f;
             float swingAngleRad = (camAngleDeg + this->spearSwingAngle) * DEG2RAD;
-            
+
             spearPos = this->position;
             spearPos.x += sinf(swingAngleRad) * swingRadius;
             spearPos.z += cosf(swingAngleRad) * swingRadius;
-            spearPos.y += 0.5f;  // Lower during slash
+            spearPos.y += 0.5f; // Lower during slash
         }
-        
+
         // Draw the spear model with proper rotation
         // Model points up by default: +90° X to point forward, then tilt based on camera
-        
+
         // Smooth spear position and rotation to reduce jitter
-        float smoothFactor = 0.25f;  // Lower = smoother but more lag
+        float smoothFactor = 0.25f; // Lower = smoother but more lag
         this->smoothedSpearPos = Vector3Lerp(this->smoothedSpearPos, spearPos, smoothFactor);
         this->smoothedYRotation = Lerp(this->smoothedYRotation, currentYRotation, smoothFactor);
-        
+
         spearPos = this->smoothedSpearPos;
         currentYRotation = this->smoothedYRotation;
-        
+
         // Base rotation: point forward first
-        float totalXRotation = 90.0f + tiltAngle;  // Point forward (90) + camera tilt
-        
+        float totalXRotation = 90.0f + tiltAngle; // Point forward (90) + camera tilt
+
         // Use DrawModelEx with proper rotation sequence
         // We need to rotate in local space first, then apply world rotation
-        
+
         // Create rotation as Euler angles
         Matrix matScale = MatrixScale(this->spearScale, this->spearScale, this->spearScale);
-        Matrix matRotateX = MatrixRotateX(totalXRotation * DEG2RAD);  // Tilt down 45°
-        Matrix matRotateY = MatrixRotateY(currentYRotation * DEG2RAD);  // Face direction
+        Matrix matRotateX = MatrixRotateX(totalXRotation * DEG2RAD);   // Tilt down 45°
+        Matrix matRotateY = MatrixRotateY(currentYRotation * DEG2RAD); // Face direction
         Matrix matTranslate = MatrixTranslate(spearPos.x, spearPos.y, spearPos.z);
-        
+
         // Combine: Scale -> RotateX (tilt) -> RotateY (facing) -> Translate
         Matrix transform = matScale;
         transform = MatrixMultiply(transform, matRotateX);
         transform = MatrixMultiply(transform, matRotateY);
         transform = MatrixMultiply(transform, matTranslate);
-        
+
         // Draw using the transform matrix with proper materials
         for (int i = 0; i < sharedSpearModel.meshCount; i++)
         {
@@ -2900,34 +2887,34 @@ void VanguardEnemy::Draw() const
             DrawMesh(sharedSpearModel.meshes[i], sharedSpearModel.materials[matIndex], transform);
         }
     }
-    
+
     // Draw shockwave as expanding circle of white smoke
     if (this->shockwaveActive && this->shockwaveRadius > 0.0f)
     {
         // Draw expanding ring of white particles
         // The shockwave expands outward in a circular pattern
-        int particleCount = (int)(this->shockwaveRadius * 4.0f);  // More particles as it expands
+        int particleCount = (int)(this->shockwaveRadius * 4.0f); // More particles as it expands
         particleCount = Clamp(particleCount, 16, 64);
-        
-        float ringThickness = 0.8f;  // Width of the ring
+
+        float ringThickness = 0.8f; // Width of the ring
         Vector3 ringBasePos = this->shockwaveCenter;
-        ringBasePos.y += 0.3f;  // Slightly above ground
-        
+        ringBasePos.y += 0.3f; // Slightly above ground
+
         // Draw particles in a circle at current shockwave radius
         for (int i = 0; i < particleCount; i++)
         {
             float angle = (i / (float)particleCount) * PI * 2.0f;
             float radius = this->shockwaveRadius;
-            
+
             Vector3 particlePos;
             particlePos.x = ringBasePos.x + cosf(angle) * radius;
             particlePos.z = ringBasePos.z + sinf(angle) * radius;
             particlePos.y = ringBasePos.y;
-            
+
             // Fade out as shockwave expands
             float alphaFade = 1.0f - (this->shockwaveRadius / this->shockwaveMaxRadius);
             alphaFade = fmaxf(0.0f, alphaFade);
-            
+
             Color particleColor = ColorAlpha(WHITE, (unsigned char)(alphaFade * 200.0f));
             DrawSphere(particlePos, 0.15f, particleColor);
         }
