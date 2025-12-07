@@ -26,7 +26,12 @@ enum class GameState
 int main(void)
 {
     Vector2 sensitivity = {0.001f, 0.001f};
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "mahjong");
+    // Start in fullscreen using the primary monitor's native resolution
+    SetConfigFlags(FLAG_FULLSCREEN_MODE);
+    int monitor = GetCurrentMonitor();
+    int initialWidth = GetMonitorWidth(monitor);
+    int initialHeight = GetMonitorHeight(monitor);
+    InitWindow(initialWidth, initialHeight, "mahjong");
     SetExitKey(KEY_NULL);
     SearchAndSetResourceDir("resources");
     InitAudioDevice();
@@ -38,8 +43,13 @@ int main(void)
     DisableCursor();
     SetTargetFPS(60);
 
-    RenderTexture2D sceneTarget = LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT);
-    if (sceneTarget.id != 0) SetTextureFilter(sceneTarget.texture, TEXTURE_FILTER_BILINEAR);
+    RenderTexture2D sceneTarget = {0};
+    auto recreateSceneTarget = [&](int w, int h) {
+        if (sceneTarget.id != 0) UnloadRenderTexture(sceneTarget);
+        sceneTarget = LoadRenderTexture(w, h);
+        if (sceneTarget.id != 0) SetTextureFilter(sceneTarget.texture, TEXTURE_FILTER_BILINEAR);
+    };
+    recreateSceneTarget(GetScreenWidth(), GetScreenHeight());
 
     Shader blurShader = LoadShader(0, "shaders/blur.fs");
     int blurStrengthLoc = (blurShader.id != 0) ? GetShaderLocation(blurShader, "blurStrength") : -1;
@@ -113,7 +123,7 @@ int main(void)
             
             scene = std::make_unique<Scene>();
             uiManager = std::make_unique<UIManager>("mahjong.png", 9, 44, 60);
-            uiManager->addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
+            uiManager->addElement(new UICrosshair({GetScreenWidth()/ 2.0f,  GetScreenHeight()  / 2.0f}));
             uiManager->addElement(new UIHealthBar(player.get()));
             uiManager->addElement(new UISelectedTileDisplay(&uiManager->muim, &player->hand));
             player->setSpawnPosition({0.0f, 0.0f, 0.0f});
@@ -151,7 +161,8 @@ int main(void)
                 menuCamera.target = Vector3Add(menuCamera.position, pitch);
             }
 
-            if (IsKeyPressed(KEY_ENTER))
+            bool startPressed = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+            if (startPressed)
             {
                 gameState = GameState::TRANSITION;
                 transitionTimer = 0.0f;
@@ -292,8 +303,10 @@ int main(void)
 
         if (inGameplay && !gamePaused && !inRecoveryAnim)
         {
+            bool interactPressed = IsKeyPressed(KEY_C);
+
             // Manual door opening with 'C' key (only if no briefcase is nearby)
-            if (IsKeyPressed(KEY_C))
+            if (interactPressed)
             {
                 Vector3 playerPos = player->pos();
                 
@@ -537,6 +550,14 @@ int main(void)
         float blurStrength = Clamp(std::max(radialBlur, damageBlur), 0.0f, 1.25f);
         bool useBlur = (sceneTarget.id != 0) && (blurShader.id != 0) && blurStrength > 0.001f;
 
+        // Resize render target if the window size changed (e.g., when toggling fullscreen)
+        int currentW = GetScreenWidth();
+        int currentH = GetScreenHeight();
+        if (sceneTarget.id != 0 && ((int)sceneTarget.texture.width != currentW || (int)sceneTarget.texture.height != currentH))
+        {
+            recreateSceneTarget(currentW, currentH);
+        }
+
         bool drewToTarget = false;
         if (sceneTarget.id != 0)
         {
@@ -676,14 +697,14 @@ int main(void)
         }
         else if (gameState == GameState::TRANSITION)
         {
-            DrawText("Dozing off...", 32, SCREEN_HEIGHT - 64, 28, Fade(WHITE, 0.8f));
+            DrawText("Dozing off...", 32, GetScreenHeight() - 64, 28, Fade(WHITE, 0.8f));
         }
         else if (gameState == GameState::LOADING)
         {
             const char *loadingText = assetsLoaded ? "Finalizing..." : "Loading assets...";
             int fontSize = 32;
             int textWidth = MeasureText(loadingText, fontSize);
-            DrawText(loadingText, SCREEN_WIDTH / 2 - textWidth / 2, SCREEN_HEIGHT / 2 - fontSize / 2, fontSize, WHITE);
+            DrawText(loadingText, GetScreenWidth() / 2 - textWidth / 2, GetScreenHeight() / 2 - fontSize / 2, fontSize, WHITE);
         }
 
         EndDrawing();

@@ -345,12 +345,17 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
                 Vector3 targetPos = uc.player->pos();
                 if (Vector3LengthSqr(toPlayer) > 0.001f)
                 {
-                    Vector3 D = toPlayer;
-                    Vector3 Vp = uc.player->vel();
-                    float Sp = Vector3Length(Vp);
-                    float Sc = this->chargeSpeed;
+                    Vector3 D = toPlayer; // Vector from Enemy to Player
+                    Vector3 Vp = uc.player->vel(); // Player Velocity
+                    float Sp = Vector3Length(Vp); // Player Speed
+                    float Sc = this->chargeSpeed; // Charge Speed
 
-                    // Solve Quadratic: (Sp^2 - Sc^2)t^2 + 2(D.Vp)t + |D|^2 = 0
+                    // We want to find time t such that:
+                    // |D + Vp*t| = Sc*t
+                    // This means the distance player travels plus initial distance equals distance enemy travels.
+                    // Square both sides: |D|^2 + 2(D.Vp)t + |Vp|^2 t^2 = Sc^2 t^2
+                    // (Sp^2 - Sc^2)t^2 + 2(D.Vp)t + |D|^2 = 0
+
                     float A = (Sp * Sp) - (Sc * Sc);
                     float B = 2.0f * Vector3DotProduct(D, Vp);
                     float C = Vector3DotProduct(D, D);
@@ -358,6 +363,7 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
                     float t = 0.0f;
                     bool solved = false;
 
+                    // Handle linear case if speeds are equal
                     if (fabs(A) < 0.0001f) {
                         if (fabs(B) > 0.0001f) {
                             t = -C / B;
@@ -369,16 +375,21 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
                             float sqrtDisc = sqrtf(disc);
                             float t1 = (-B - sqrtDisc) / (2 * A);
                             float t2 = (-B + sqrtDisc) / (2 * A);
+                            // Smallest positive time
                             if (t1 > 0 && t2 > 0) t = fminf(t1, t2);
                             else if (t1 > 0) t = t1;
                             else if (t2 > 0) t = t2;
+                            
                             if (t > 0) solved = true;
                         }
                     }
 
                     if (solved) {
-                        float predictionMultiplier = 1.0f; // Can tune this (1.2 for overshoot, 0.8 for undershoot)
-                        targetPos = Vector3Add(uc.player->pos(), Vector3Scale(Vp, t * predictionMultiplier));
+                        // Prediction Multiplier: > 1.0 for overshoot, < 1.0 for undershoot
+                        // This forces the player to change direction, not just speed.
+                        float predictionMultiplier = 1.1f; 
+                        Vector3 displacement = Vector3Scale(Vp, t * predictionMultiplier);
+                        targetPos = Vector3Add(uc.player->pos(), displacement);
                     }
                 }
                 
@@ -1069,25 +1080,25 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
         if (this->teleportChargeTimer <= 0.0f)
         {
             // Execute Teleport
-            // Find far spot. Randomly pick spots and choose farthest from player.
+            // Find far spot within room bounds
             Vector3 bestPos = this->position;
             float bestDist = dist;
             
+            Room *room = uc.scene->GetRoomContainingPosition(this->position);
+            BoundingBox bounds = room ? room->GetBounds() : BoundingBox{{-100,-10,-100}, {100,10,100}};
+            
             for (int i = 0; i < 10; i++)
             {
-                // Random spot in room (assuming room is roughly 40x40 around 0,0 or based on current room?)
-                // Since we don't have room bounds easily here, let's pick relative to current pos or player.
-                // Or use `uc.scene->GetRoomContainingPosition`?
-                // Let's try to pick a spot away from player.
-                
                 float angle = GetRandomValue(0, 360) * DEG2RAD;
-                float r = GetRandomValue(15, 30);
+                float r = GetRandomValue(15, 40);
                 Vector3 candidate = Vector3Add(uc.player->pos(), {cosf(angle)*r, 0, sinf(angle)*r});
                 
-                // Clamp to rough bounds? Or check collision?
-                // Check if inside room/walkable is hard without navigation mesh.
-                // Assuming simple flat floor for now or checking floor collision.
-                // Let's just teleport behind player + distance.
+                // Clamp to room bounds
+                const float margin = 2.0f;
+                if (room) {
+                    candidate.x = std::clamp(candidate.x, bounds.min.x + margin, bounds.max.x - margin);
+                    candidate.z = std::clamp(candidate.z, bounds.min.z + margin, bounds.max.z - margin);
+                }
                 
                 float d = Vector3Distance(candidate, uc.player->pos());
                 if (d > bestDist)
@@ -1260,7 +1271,8 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
         Vector3 muzzle = this->position;
         muzzle.y += this->muzzleHeight;
 
-        if (this->phase == Phase::Shooting)
+        // Allow shooting if in shooting phase OR if we have line of sight while moving (e.g. retreating)
+        if (this->phase == Phase::Shooting || (hasLineOfSight && this->phase == Phase::FindPosition))
         {
             this->HandleShooting(uc, delta, muzzle, aimDir, hasLineOfSight);
         }
@@ -2156,6 +2168,19 @@ void SupportEnemy::UpdateBody(UpdateContext &uc)
     {
         // Apply Buff (duration slightly > frame time)
         this->targetAlly->ApplyBuff(delta * 2.0f, 0.5f, 0.7f); // 50% dmg res, 70% kb res
+        
+        // Visuals: Yellow particles surrounding the linked enemy
+        if (GetRandomValue(0, 3) == 0) // Throttle particles (25% chance per frame)
+        {
+            Vector3 pos = this->targetAlly->pos();
+            // Random offset around the enemy
+            float angle = GetRandomValue(0, 360) * DEG2RAD;
+            float radius = 1.2f;
+            float height = GetRandomValue(0, 20) * 0.1f; // 0.0 to 2.0
+            Vector3 offset = { cosf(angle) * radius, height, sinf(angle) * radius };
+            
+            uc.scene->particles.spawnExplosion(Vector3Add(pos, offset), 1, YELLOW, 0.3f, 0.5f, 0.2f);
+        }
     }
 
     // 2. Healing Burst Logic

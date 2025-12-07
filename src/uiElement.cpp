@@ -41,7 +41,8 @@ UICrosshair::UICrosshair(Vector2 _position, int _length, int _thickness, Color _
 
 void UICrosshair::update() 
 {
-    // Static crosshair, no update logic needed
+    // Keep the crosshair locked to the current screen center so fullscreen/resolution changes stay aligned
+    position = {GetScreenWidth() * 0.5f, GetScreenHeight() * 0.5f};
 }
 
 void UICrosshair::draw()

@@ -664,6 +664,9 @@ void UIManager::updatePauseMenu(Inventory &playerInventory)
     // Left click to pick up tile from hand
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredHandIndex >= 0)
     {
+        // Select the tile visually
+        muim.selectTileByIndex(hoveredHandIndex);
+
         if (!isDraggingTile && hoveredHandIndex < (int)tiles.size())
         {
             // Prevent dragging if tile is already used in a slot

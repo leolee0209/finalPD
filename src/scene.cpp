@@ -552,30 +552,17 @@ void Scene::BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float room
 
     std::vector<DoorLink> doorLinks;
     doorLinks.reserve(4);
-    doorLinks.push_back({{roomCenters[0].x,
-                          doorCenterY,
-                          roomCenters[0].z + halfLength - wallThickness * 0.5f},
-                         0.0f,
-                         0,
-                         1});
-    doorLinks.push_back({{roomCenters[1].x - halfWidth + wallThickness * 0.5f,
-                          doorCenterY,
-                          roomCenters[1].z},
-                         90.0f,
-                         1,
-                         2});
-    doorLinks.push_back({{roomCenters[1].x + halfWidth - wallThickness * 0.5f,
-                          doorCenterY,
-                          roomCenters[1].z},
-                         90.0f,
-                         1,
-                         3});
-    doorLinks.push_back({{roomCenters[3].x,
-                          doorCenterY,
-                          roomCenters[3].z + halfLength - wallThickness * 0.5f},
-                         0.0f,
-                         3,
-                         4});
+
+    // Create linear connections: Room 0->1, 1->2, 2->3, 3->4
+    for (int i = 0; i < 4; ++i)
+    {
+        doorLinks.push_back({{roomCenters[i].x,
+                              doorCenterY,
+                              roomCenters[i].z + halfLength - wallThickness * 0.5f},
+                             0.0f,
+                             i,
+                             i + 1});
+    }
 
     for (const DoorLink &link : doorLinks)
     {
@@ -656,30 +643,31 @@ void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
     if (name == "Room 2")
     {
         composition = {
-            {"vanguard", Vector2{-18.0f, -8.0f}},
-            {"support", Vector2{8.0f, 12.0f}}};
+            {"tank", Vector2{-15.0f, 0.0f}},
+            {"sniper", Vector2{15.0f, 10.0f}}};
     }
 
     else if (name == "Room 3")
     {
         composition = {
-            {"tank", Vector2{0.0f, 0.0f}},
-            {"vanguard", Vector2{-10.0f, 8.0f}}};
+            {"summoner", Vector2{0.0f, -15.0f}},
+            {"support", Vector2{-15.0f, 10.0f}},
+            {"shooter", Vector2{15.0f, 10.0f}}};
     }
     else if (name == "Room 4")
     {
         composition = {
-            {"sniper", Vector2{-12.0f, 8.0f}},
-            {"sniper", Vector2{12.0f, -10.0f}},
-            {"summoner", Vector2{0.0f, 0.0f}}};
+            {"vanguard", Vector2{0.0f, 15.0f}},
+            {"summoner", Vector2{0.0f, -15.0f}},
+            {"support", Vector2{15.0f, 0.0f}}};
     }
     else if (name == "Room 5")
     {
         composition = {
-            {"tank", Vector2{-16.0f, 10.0f}},
-            {"summoner", Vector2{0.0f, -12.0f}},
-            {"sniper", Vector2{16.0f, 6.0f}},
-            {"support", Vector2{8.0f, 12.0f}}}; // Phase 4: Add support enemy
+            {"vanguard", Vector2{-15.0f, 10.0f}},
+            {"vanguard", Vector2{15.0f, 10.0f}},
+            {"sniper", Vector2{0.0f, -15.0f}},
+            {"tank", Vector2{0.0f, 0.0f}}};
     }
 
     for (const auto &entry : composition)
@@ -1339,11 +1327,11 @@ Scene::Scene()
 
     std::vector<Vector3> roomCenters;
     roomCenters.reserve(5);
-    roomCenters.push_back({0.0f, 0.0f, 0.0f});                                                 // Spawn room
-    roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                                  // Hub room
-    roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});                      // West branch
-    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                       // East branch
-    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
+    // Create 5 rooms in a straight line along Z-axis
+    for (int i = 0; i < 5; ++i)
+    {
+        roomCenters.push_back({0.0f, 0.0f, i * sharedLengthSpacing});
+    }
 
     Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
     Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
@@ -1387,14 +1375,23 @@ Scene::Scene()
     };
 
     std::array<RoomDoorConfig, 5> doorConfigs{};
-    doorConfigs[0].north = true; // Room 1 -> Room 2
-    doorConfigs[1].south = true; // Room 2 -> Room 1
-    doorConfigs[1].west = true;  // Room 2 -> Room 3
-    doorConfigs[1].east = true;  // Room 2 -> Room 4
-    doorConfigs[2].east = true;  // Room 3 -> Room 2
-    doorConfigs[3].west = true;  // Room 4 -> Room 2
-    doorConfigs[3].north = true; // Room 4 -> Room 5
-    doorConfigs[4].south = true; // Room 5 -> Room 4
+    // Room 1 (Start)
+    doorConfigs[0].north = true;
+
+    // Room 2
+    doorConfigs[1].south = true;
+    doorConfigs[1].north = true;
+
+    // Room 3
+    doorConfigs[2].south = true;
+    doorConfigs[2].north = true;
+
+    // Room 4
+    doorConfigs[3].south = true;
+    doorConfigs[3].north = true;
+
+    // Room 5 (End)
+    doorConfigs[4].south = true;
 
     auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
     {
