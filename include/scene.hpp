@@ -38,6 +38,12 @@ private:
 
 class Object;
 
+struct LightConfig {
+    Vector3 direction = {0.5f, -1.0f, 0.5f};
+    Color color = WHITE;
+    float opacity = 0.5f;
+};
+
 /**
  * @brief Represents the 3D world and manages objects, entities and attacks.
  *
@@ -79,6 +85,17 @@ private:
     DamageIndicatorSystem damageIndicators;
     TileModelManager tileModelManager;
 
+    // Shadow mapping
+    RenderTexture2D shadowMapStatic{};
+    RenderTexture2D shadowMapDynamic{};
+    Shader shadowShader{};
+    Matrix lightView{};
+    Matrix lightProj{};
+    bool staticShadowsRendered = false;
+    
+    void DrawStaticObjects(Shader shader) const;
+    void DrawDynamicObjects(Shader shader) const;
+
     // Helper function to draw a 3D rectangle (cube) for an object
     void DrawRectangle(const Object &o) const;
     void DrawSphereObject(const Object &o) const;
@@ -107,6 +124,10 @@ private:
     std::unique_ptr<CollidableModel> DetachDecoration(CollidableModel *target);
     
 public:
+    LightConfig lightConfig;
+    void UpdateLighting();
+    void RenderShadows();
+
     AttackManager am; // Manages all attacks in the scene
     EnemyManager em;
     ParticleSystem particles; // Particle system for visual effects

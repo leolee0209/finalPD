@@ -493,6 +493,16 @@ void Scene::InitializeLighting()
     this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
 
     TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d", this->viewPosLoc, this->ambientLoc);
+    
+    // Shadow setup
+    this->shadowShader = LoadShader("shaders/shadow.vs", "shaders/shadow.fs");
+    this->shadowShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(this->shadowShader, "mvp");
+    
+    this->shadowMapStatic = LoadRenderTexture(2048, 2048);
+    this->shadowMapDynamic = LoadRenderTexture(2048, 2048);
+    
+    // Update lighting config
+    UpdateLighting();
 
     if (this->cubeModel.materialCount > 0)
     {
@@ -541,6 +551,14 @@ void Scene::ShutdownLighting()
         UnloadShader(this->lightingShader);
         this->lightingShader.id = 0;
     }
+    if (this->shadowShader.id != 0)
+    {
+        UnloadShader(this->shadowShader);
+        this->shadowShader.id = 0;
+    }
+    if (this->shadowMapStatic.id != 0) UnloadRenderTexture(this->shadowMapStatic);
+    if (this->shadowMapDynamic.id != 0) UnloadRenderTexture(this->shadowMapDynamic);
+    
     this->ambientLoc = -1;
     this->viewPosLoc = -1;
 }
@@ -625,75 +643,36 @@ void Scene::DrawScene(Camera camera) const
     if (this->lightingShader.id != 0)
     {
         BeginShaderMode(this->lightingShader);
+        
+        // Bind shadow maps
+        int shadowMapStaticLoc = GetShaderLocation(this->lightingShader, "shadowMapStatic");
+        int shadowMapDynamicLoc = GetShaderLocation(this->lightingShader, "shadowMapDynamic");
+        
+        rlActiveTextureSlot(1);
+        rlEnableTexture(this->shadowMapStatic.texture.id);
+        rlActiveTextureSlot(2);
+        rlEnableTexture(this->shadowMapDynamic.texture.id);
+        rlActiveTextureSlot(0);
+        
+        int one = 1;
+        int two = 2;
+        SetShaderValue(this->lightingShader, shadowMapStaticLoc, &one, SHADER_UNIFORM_INT);
+        SetShaderValue(this->lightingShader, shadowMapDynamicLoc, &two, SHADER_UNIFORM_INT);
     }
 
-    // Draw all static objects in the scene (walls)
-    for (auto &o : this->objects)
-    {
-        if (o && o->isVisible())
-            DrawRectangle(*o);
-    }
-
-    // Draw tile obstacles
-    for (const auto &obstacle : this->tileObjects)
-    {
-        if (obstacle && obstacle->isVisible())
-        {
-            obstacle->Draw();
-        }
-    }
-
-    // Draw instanced walls
-    for (const auto& pair : this->wallInstances) {
-        this->tileModelManager.DrawTileInstanced(pair.first, pair.second);
-    }
-
-    this->DrawDecorations();
-
-    // Draw all reward briefcases
-    for (const auto &briefcase : this->rewardBriefcases)
-    {
-        if (briefcase)
-        {
-            briefcase->Draw();
-        }
-    }
-
-    int debugBulletCount = 0;
-    for (auto *obj : enemyObjects)
-    {
-        if (!obj || !obj->isVisible())
-            continue;
-        if (obj->isSphere())
-            debugBulletCount++;
-        DrawRectangle(*obj);
-    }
-
-    // Draw custom enemy visuals (particles, glows, etc.)
-    std::vector<Entity *> enemies = this->em.getEntities(ENTITY_ENEMY);
-    for (Entity *entity : enemies)
-    {
-        if (entity)
-        {
-            Enemy *enemy = dynamic_cast<Enemy *>(entity);
-            if (enemy)
-            {
-                enemy->Draw(&this->tileModelManager);
-            }
-        }
-    }
-
-    // Draw all projectiles managed by the AttackManager (solid core)
-    for (const auto &o : projectileObjects)
-    {
-        if (o && o->isVisible())
-            DrawRectangle(*o);
-    }
+    DrawStaticObjects(this->lightingShader);
+    DrawDynamicObjects(this->lightingShader);
 
     // End shader mode
     if (this->lightingShader.id != 0)
     {
         EndShaderMode();
+        
+        rlActiveTextureSlot(1);
+        rlDisableTexture();
+        rlActiveTextureSlot(2);
+        rlDisableTexture();
+        rlActiveTextureSlot(0);
     }
 
     // Draw glow billboards for bullets using additive blending
@@ -1187,3 +1166,191 @@ void Scene::DrawTexturedSphere(Texture2D &texture, const Rectangle &source, cons
         }
     }
     
+void Scene::DrawStaticObjects(Shader shader) const
+{
+    TileModelManager& tm = const_cast<TileModelManager&>(this->tileModelManager);
+    Shader originalShader = tm.GetShader(); // Assuming GetShader exists or we save it
+    tm.SetShader(shader);
+
+    // Draw all static objects in the scene (walls)
+    for (auto &o : this->objects)
+    {
+        if (o && o->isVisible()) {
+            if (o->isSphere()) {
+                Material& mat = const_cast<Model&>(this->sphereModel).materials[0];
+                Shader old = mat.shader;
+                mat.shader = shader;
+                DrawSphereObject(*o);
+                mat.shader = old;
+            } else {
+                Material& mat = const_cast<Model&>(this->cubeModel).materials[0];
+                Shader old = mat.shader;
+                mat.shader = shader;
+                DrawRectangle(*o);
+                mat.shader = old;
+            }
+        }
+    }
+
+    // Draw tile obstacles
+    for (const auto &obstacle : this->tileObjects)
+    {
+        if (obstacle && obstacle->isVisible())
+        {
+            obstacle->Draw();
+        }
+    }
+
+    // Draw instanced walls
+    for (const auto& pair : this->wallInstances) {
+        tm.DrawTileInstanced(pair.first, pair.second);
+    }
+
+    // Draw decorations
+    for (const auto &decoration : this->decorations)
+    {
+        if (!decoration || !decoration->GetModel()) continue;
+        Model* m = decoration->GetModel();
+        std::vector<Shader> oldShaders(m->materialCount);
+        for(int i=0; i<m->materialCount; i++) {
+            oldShaders[i] = m->materials[i].shader;
+            m->materials[i].shader = shader;
+        }
+        
+        DrawModelEx(*m, decoration->GetPosition(), decoration->GetRotationAxis(), decoration->GetRotationAngleDeg(), decoration->GetScale(), WHITE);
+        
+        for(int i=0; i<m->materialCount; i++) {
+            m->materials[i].shader = oldShaders[i];
+        }
+    }
+    
+    tm.SetShader(this->lightingShader);
+}
+
+void Scene::DrawDynamicObjects(Shader shader) const
+{
+    TileModelManager& tm = const_cast<TileModelManager&>(this->tileModelManager);
+    tm.SetShader(shader);
+
+    // Draw enemies
+    std::vector<Entity *> enemies = const_cast<Scene*>(this)->em.getEntities(ENTITY_ENEMY);
+    for (Entity *entity : enemies)
+    {
+        if (entity)
+        {
+            Enemy *enemy = dynamic_cast<Enemy *>(entity);
+            if (enemy)
+            {
+                enemy->Draw(&tm);
+            }
+        }
+    }
+    
+    // Draw projectiles
+    auto projectileObjects = const_cast<Scene*>(this)->am.getObjects();
+    for (const auto &o : projectileObjects)
+    {
+        if (o && o->isVisible()) {
+             if (o->isSphere()) {
+                Material& mat = const_cast<Model&>(this->sphereModel).materials[0];
+                Shader old = mat.shader;
+                mat.shader = shader;
+                DrawSphereObject(*o);
+                mat.shader = old;
+            } else {
+                Material& mat = const_cast<Model&>(this->cubeModel).materials[0];
+                Shader old = mat.shader;
+                mat.shader = shader;
+                DrawRectangle(*o);
+                mat.shader = old;
+            }
+        }
+    }
+    
+    tm.SetShader(this->lightingShader);
+}
+
+void Scene::RenderShadows()
+{
+    if (this->lightingShader.id == 0 || this->shadowShader.id == 0) {
+        std::cout << "RenderShadows: Shaders not loaded! lighting=" << this->lightingShader.id << " shadow=" << this->shadowShader.id << std::endl;
+        return;
+    }
+    
+    float size = 150.0f;
+    // Ortho projection
+    // Raylib MatrixOrtho: left, right, bottom, top, near, far
+    Matrix lightProj = MatrixOrtho(-size, size, -size, size, 1.0f, 300.0f);
+    
+    Vector3 lightDir = Vector3Normalize(this->lightConfig.direction);
+    Vector3 lightPos = Vector3Scale(lightDir, -150.0f); // From light to target
+    Vector3 target = Vector3Zero();
+    
+    // Debug logging
+
+
+    Matrix lightView = MatrixLookAt(lightPos, target, {0.0f, 1.0f, 0.0f});
+    
+    Matrix lightSpaceMatrix = MatrixMultiply(lightView, lightProj);
+    
+    int matLightLoc = GetShaderLocation(this->lightingShader, "matLight");
+
+
+    SetShaderValueMatrix(this->lightingShader, matLightLoc, lightSpaceMatrix);
+    
+    int shadowOpacityLoc = GetShaderLocation(this->lightingShader, "shadowOpacity");
+    SetShaderValue(this->lightingShader, shadowOpacityLoc, &this->lightConfig.opacity, SHADER_UNIFORM_FLOAT);
+    
+    Camera lightCam = { 0 };
+    lightCam.position = lightPos;
+    lightCam.target = target;
+    lightCam.up = { 0.0f, 1.0f, 0.0f };
+    lightCam.fovy = size * 2.0f; 
+    lightCam.projection = CAMERA_ORTHOGRAPHIC;
+    
+    if (!this->staticShadowsRendered) {
+        BeginTextureMode(this->shadowMapStatic);
+        ClearBackground(BLANK);
+        BeginMode3D(lightCam);
+            DrawStaticObjects(this->shadowShader);
+        EndMode3D();
+        EndTextureMode();
+        this->staticShadowsRendered = true;
+    }
+    
+    BeginTextureMode(this->shadowMapDynamic);
+    ClearBackground(BLANK);
+    BeginMode3D(lightCam);
+        DrawDynamicObjects(this->shadowShader);
+    EndMode3D();
+    EndTextureMode();
+}
+
+void Scene::UpdateLighting()
+{
+    if (this->lightingShader.id != 0) {
+        int lightTypeLoc = GetShaderLocation(this->lightingShader, "lights[0].type");
+        int lightEnabledLoc = GetShaderLocation(this->lightingShader, "lights[0].enabled");
+        int lightPosLoc = GetShaderLocation(this->lightingShader, "lights[0].position");
+        int lightTargetLoc = GetShaderLocation(this->lightingShader, "lights[0].target");
+        int lightColorLoc = GetShaderLocation(this->lightingShader, "lights[0].color");
+        
+        int type = 0; // DIRECTIONAL
+        int enabled = 1;
+        Vector3 lightPos = Vector3Scale(Vector3Normalize(this->lightConfig.direction), -100.0f);
+        Vector3 target = Vector3Zero();
+        
+        SetShaderValue(this->lightingShader, lightTypeLoc, &type, SHADER_UNIFORM_INT);
+        SetShaderValue(this->lightingShader, lightEnabledLoc, &enabled, SHADER_UNIFORM_INT);
+        SetShaderValue(this->lightingShader, lightPosLoc, &lightPos, SHADER_UNIFORM_VEC3);
+        SetShaderValue(this->lightingShader, lightTargetLoc, &target, SHADER_UNIFORM_VEC3);
+        
+        float color[4] = { 
+            (float)this->lightConfig.color.r / 255.0f, 
+            (float)this->lightConfig.color.g / 255.0f, 
+            (float)this->lightConfig.color.b / 255.0f, 
+            (float)this->lightConfig.color.a / 255.0f 
+        };
+        SetShaderValue(this->lightingShader, lightColorLoc, color, SHADER_UNIFORM_VEC4);
+    }
+}

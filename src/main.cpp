@@ -410,6 +410,13 @@ int main(void)
         if (sceneTarget.id != 0)
         {
             drewToTarget = true;
+            
+            if (!(gameState == GameState::MENU || gameState == GameState::TRANSITION || gameState == GameState::LOADING || !haveGame))
+            {
+                scene->SetViewPosition(camera.position);
+                scene->RenderShadows();
+            }
+
             BeginTextureMode(sceneTarget);
             if (gameState == GameState::MENU || gameState == GameState::TRANSITION || gameState == GameState::LOADING || !haveGame)
             {
@@ -423,12 +430,10 @@ int main(void)
             else
             {
                 ClearBackground(scene->getSkyColor());
-                scene->SetViewPosition(camera.position);
+                
                 BeginMode3D(camera);
                 scene->DrawScene(camera);
                 EndMode3D();
-
-
             }
             EndTextureMode();
         }
@@ -542,6 +547,12 @@ int main(void)
     if (uiManager) uiManager->cleanup();
     if (blurShader.id != 0) UnloadShader(blurShader);
     if (sceneTarget.id != 0) UnloadRenderTexture(sceneTarget);
+    
+    // Reset unique_ptrs to ensure destructors run before CloseWindow
+    scene.reset();
+    player.reset();
+    uiManager.reset();
+
     opening.Cleanup();
     VanguardEnemy::UnloadSharedResources();
     CloseWindow();

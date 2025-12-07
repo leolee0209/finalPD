@@ -8,7 +8,10 @@ in vec3 fragNormal;
 
 // Input uniform values
 uniform sampler2D texture0;
+uniform sampler2D shadowMapStatic;
+uniform sampler2D shadowMapDynamic;
 uniform vec4 colDiffuse;
+uniform float shadowOpacity;
 
 // Output fragment color
 out vec4 finalColor;
@@ -29,6 +32,24 @@ struct Light {
 uniform Light lights[MAX_LIGHTS];
 uniform vec4 ambient;
 uniform vec3 viewPos;
+
+in vec4 fragPosLightSpace;
+
+float ShadowCalculation(vec4 fragPosLightSpace, sampler2D shadowMap)
+{
+    if (fragPosLightSpace.w == 0.0) return 0.0;
+    
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    
+    if(projCoords.z > 1.0) return 0.0;
+    
+    float closestDepth = texture(shadowMap, projCoords.xy).r; 
+    float currentDepth = projCoords.z;
+    float bias = 0.005;
+    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    return shadow;
+}
 
 void main()
 {
@@ -51,6 +72,12 @@ void main()
             if (lights[i].type == LIGHT_DIRECTIONAL)
             {
                 light = -normalize(lights[i].target - lights[i].position);
+                
+                float shadowStatic = ShadowCalculation(fragPosLightSpace, shadowMapStatic);
+                float shadowDynamic = ShadowCalculation(fragPosLightSpace, shadowMapDynamic);
+                float shadow = max(shadowStatic, shadowDynamic);
+                
+                attenuation *= (1.0 - shadow * shadowOpacity);
             }
 
             if (lights[i].type == LIGHT_POINT)
