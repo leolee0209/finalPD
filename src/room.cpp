@@ -372,3 +372,19 @@ void Room::TryOpenDoors()
         }
     }
 }
+
+void Room::ResetForRespawn()
+{
+    // Start room stays completed; enemy rooms reset so they can re-spawn
+    if (this->type == RoomType::Start)
+    {
+        this->completed = true;
+    }
+    else
+    {
+        this->completed = false;
+    }
+
+    this->hadEnemies = false;
+    this->enemiesSpawned = false;
+}

@@ -406,6 +406,11 @@ int main(void)
 
         if (inGameplay && player->getHealth() <= 0 && !uiManager->isGameOverVisible())
         {
+            // Clear enemies and reset the room so it can respawn after the player returns
+            if (scene)
+            {
+                scene->ResetRoomAfterPlayerDeath(player->pos());
+            }
             uiManager->setGameOverVisible(true);
             EnableCursor();
             gameState = GameState::GAMEOVER;

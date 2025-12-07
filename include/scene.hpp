@@ -188,4 +188,5 @@ public:
     // if the position is not inside any room.
     Room *GetRoomContainingPosition(const Vector3 &pos) const;
     void ResetDoorsForRespawn();
+    void ResetRoomAfterPlayerDeath(const Vector3 &playerPos);
 };

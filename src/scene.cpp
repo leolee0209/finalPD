@@ -1644,6 +1644,35 @@ void Scene::ResetDoorsForRespawn()
     }
 }
 
+void Scene::ResetRoomAfterPlayerDeath(const Vector3 &playerPos)
+{
+    Room *deathRoom = this->GetRoomContainingPosition(playerPos);
+    if (!deathRoom)
+    {
+        deathRoom = this->currentPlayerRoom;
+    }
+
+    if (!deathRoom)
+    {
+        return;
+    }
+
+    // Remove all enemies located inside the room bounds
+    this->em.RemoveEnemiesInBounds(deathRoom->GetBounds());
+
+    // Reset room progression so re-entry will respawn enemies
+    deathRoom->ResetForRespawn();
+
+    // Close connected doors so the player must press C again to re-enter
+    for (Door *door : deathRoom->GetDoors())
+    {
+        if (door)
+        {
+            door->Close();
+        }
+    }
+}
+
 void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const
 {
     const int screenW = GetScreenWidth();

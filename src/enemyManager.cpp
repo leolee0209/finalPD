@@ -30,6 +30,31 @@ void EnemyManager::addEnemy(Enemy *e)
         this->enemies.push_back(e);
 }
 
+void EnemyManager::RemoveEnemiesInBounds(const BoundingBox &bounds)
+{
+    auto inBounds = [&](const Enemy *enemy) {
+        if (!enemy) return false;
+        const Vector3 pos = enemy->obj().getPos();
+        return pos.x >= bounds.min.x && pos.x <= bounds.max.x &&
+               pos.y >= bounds.min.y && pos.y <= bounds.max.y &&
+               pos.z >= bounds.min.z && pos.z <= bounds.max.z;
+    };
+
+    for (auto it = this->enemies.begin(); it != this->enemies.end(); )
+    {
+        Enemy *enemy = *it;
+        if (inBounds(enemy))
+        {
+            delete enemy;
+            it = this->enemies.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
 void EnemyManager::update(UpdateContext &uc)
 {
     // Iterate using an index over a snapshot of the original size

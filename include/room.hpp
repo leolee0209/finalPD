@@ -108,6 +108,7 @@ public:
     std::vector<Door *> GetDoors() const { return this->doors; }
     bool AreEnemiesSpawned() const { return this->enemiesSpawned; }
     void MarkEnemiesSpawned() { this->enemiesSpawned = true; }
+    void ResetForRespawn();
 
 private:
     bool ContainsEnemy(const Entity *entity) const;

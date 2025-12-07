@@ -3,6 +3,7 @@
 #include "updateContext.hpp"
 #include "me.hpp"
 #include "object.hpp"
+#include <raylib.h>
 class Enemy;
 class Object;
 struct DamageResult;
@@ -15,6 +16,7 @@ public:
 
     void addEnemy(Enemy *e);
     void RemoveEnemy(Enemy *e);
+    void RemoveEnemiesInBounds(const BoundingBox &bounds);
     void update(UpdateContext &uc);
     void damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc);
     std::vector<Object *> getObjects() const;
