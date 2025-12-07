@@ -8,6 +8,137 @@
 #include <cmath> // For sinf, cosf
 #include <algorithm>
 
+// Static resources for Enemy
+static Model sharedMahjongModel = {0};
+static bool mahjongModelLoaded = false;
+
+static void GetMahjongMeshes(TileType type, int* indices) {
+    // Default to empty/invalid
+    indices[0] = -1; indices[1] = -1; indices[2] = -1;
+    switch (type) {
+    case TileType::DRAGON_RED:
+        indices[0] = 0; indices[1] = 1; indices[2] = 2;
+        break;
+    case TileType::DRAGON_GREEN:
+        indices[0] = 3; indices[1] = 4; indices[2] = 5;
+        break;
+    case TileType::DRAGON_WHITE:
+        indices[0] = 6; indices[1] = 7; indices[2] = 8;
+        break;
+    case TileType::WIND_NORTH:
+        indices[0] = 9; indices[1] = 10; indices[2] = 11;
+        break;
+    case TileType::WIND_WEST:
+        indices[0] = 12; indices[1] = 13; indices[2] = 14;
+        break;
+    case TileType::WIND_SOUTH:
+        indices[0] = 15; indices[1] = 16; indices[2] = 17;
+        break;
+    case TileType::WIND_EAST:
+        indices[0] = 18; indices[1] = 19; indices[2] = 20;
+        break;
+    case TileType::BAMBOO_9:
+        indices[0] = 21; indices[1] = 22; indices[2] = 23;
+        break;
+    case TileType::BAMBOO_8:
+        indices[0] = 24; indices[1] = 25; indices[2] = 26;
+        break;
+    case TileType::BAMBOO_7:
+        indices[0] = 27; indices[1] = 28; indices[2] = 29;
+        break;
+    case TileType::BAMBOO_6:
+        indices[0] = 30; indices[1] = 31; indices[2] = 32;
+        break;
+    case TileType::BAMBOO_5:
+        indices[0] = 33; indices[1] = 34; indices[2] = 35;
+        break;
+    case TileType::BAMBOO_4:
+        indices[0] = 36; indices[1] = 37; indices[2] = 38;
+        break;
+    case TileType::BAMBOO_3:
+        indices[0] = 39; indices[1] = 40; indices[2] = 41;
+        break;
+    case TileType::BAMBOO_2:
+        indices[0] = 42; indices[1] = 43; indices[2] = 44;
+        break;
+    case TileType::BAMBOO_1:
+        indices[0] = 45; indices[1] = 46; indices[2] = 47;
+        break;
+    case TileType::DOT_9:
+        indices[0] = 48; indices[1] = 49; indices[2] = 50;
+        break;
+    case TileType::DOT_8:
+        indices[0] = 51; indices[1] = 52; indices[2] = 53;
+        break;
+    case TileType::DOT_7:
+        indices[0] = 54; indices[1] = 55; indices[2] = 56;
+        break;
+    case TileType::DOT_6:
+        indices[0] = 57; indices[1] = 58; indices[2] = 59;
+        break;
+    case TileType::DOT_5:
+        indices[0] = 60; indices[1] = 61; indices[2] = 62;
+        break;
+    case TileType::DOT_4:
+        indices[0] = 63; indices[1] = 64; indices[2] = 65;
+        break;
+    case TileType::DOT_3:
+        indices[0] = 66; indices[1] = 67; indices[2] = 68;
+        break;
+    case TileType::DOT_2:
+        indices[0] = 69; indices[1] = 70; indices[2] = 71;
+        break;
+    case TileType::DOT_1:
+        indices[0] = 72; indices[1] = 73; indices[2] = 74;
+        break;
+    case TileType::CHARACTER_9:
+        indices[0] = 75; indices[1] = 76; indices[2] = 77;
+        break;
+    case TileType::CHARACTER_8:
+        indices[0] = 78; indices[1] = 79; indices[2] = 80;
+        break;
+    case TileType::CHARACTER_7:
+        indices[0] = 81; indices[1] = 82; indices[2] = 83;
+        break;
+    case TileType::CHARACTER_6:
+        indices[0] = 84; indices[1] = 85; indices[2] = 86;
+        break;
+    case TileType::CHARACTER_5:
+        indices[0] = 87; indices[1] = 88; indices[2] = 89;
+        break;
+    case TileType::CHARACTER_4:
+        indices[0] = 90; indices[1] = 91; indices[2] = 92;
+        break;
+    case TileType::CHARACTER_3:
+        indices[0] = 93; indices[1] = 94; indices[2] = 95;
+        break;
+    case TileType::CHARACTER_1:
+        indices[0] = 96; indices[1] = 97; indices[2] = 98;
+        break;
+    case TileType::CHARACTER_2:
+        indices[0] = 99; indices[1] = 100; indices[2] = 101;
+        break;
+    }
+}
+
+void Enemy::LoadSharedResources()
+{
+    if (!mahjongModelLoaded)
+    {
+        sharedMahjongModel = LoadModel("mahjong/scene.gltf");
+        mahjongModelLoaded = true;
+    }
+}
+
+void Enemy::UnloadSharedResources()
+{
+    if (mahjongModelLoaded)
+    {
+        UnloadModel(sharedMahjongModel);
+        mahjongModelLoaded = false;
+    }
+}
+
 // ---------------------------- MinionEnemy ----------------------------
 void MinionEnemy::UpdateBody(UpdateContext &uc)
 {
@@ -649,7 +780,165 @@ void Enemy::gatherObjects(std::vector<Object *> &out) const
 // Base draw implementation - just draws the object
 void Enemy::Draw() const
 {
-    // Default: no custom drawing, enemy is drawn via object system
+    if (!mahjongModelLoaded) return;
+
+    int indices[3];
+    GetMahjongMeshes(this->tileType, indices);
+
+    if (indices[0] == -1) return;
+
+    Vector3 pos = this->o.getPos();
+    Vector3 axis;
+    float angle;
+    this->o.getRotationAxisAngle(axis, angle);
+    
+    // Scale the model to match the enemy size
+    // The model is roughly 2 units tall (-1 to 1).
+    // We want to scale it to match the object size.
+    // Let's assume the object size is around 2.0 units.
+    float scaleFactor = 1.0f; 
+
+    // Adjust position to center the model vertically
+    // The model origin seems to be at the center, but it might be offset.
+    // If the model is floating, we might need to lower it.
+    // Assuming the model origin is at the center of the tile.
+    // If the tile is 2 units tall, and we want it to sit on the ground (y=0),
+    // and the object pos is at the center (y=1), then it should be fine.
+    // However, if the model origin is at the bottom, we need to adjust.
+    
+    // Based on user feedback, models are "high in the sky".
+    // This suggests the model origin is far below the mesh.
+    // Or the object position is high.
+    
+    // Let's try to lower the model by half its height relative to the object position.
+    // Or simply adjust the Y offset until it looks right.
+    // Since "Support" is correct, let's see if Support does anything different.
+    // Support uses the same Draw() method.
+    // Maybe Support's object position is different?
+    
+    // If other models are offset, it might be due to the GLTF node transforms.
+    // We are drawing meshes directly, so node transforms are ignored unless we bake them.
+    // But wait, we are using indices from GetMahjongMeshes which returns mesh indices.
+    // DrawMesh draws the mesh in local space (relative to transform).
+    // If the meshes in the GLTF have different local origins, that would explain it.
+    
+    // In the GLTF inspection, we saw nodes like "M1_34" with children.
+    // The children are the meshes.
+    // If the meshes have baked-in offsets, that's the issue.
+    // But usually, the nodes have the transforms.
+    // We are ignoring the node transforms and drawing meshes directly at (0,0,0) local space.
+    // If the meshes are defined relative to a node that is translated, 
+    // and we ignore that translation, they might be at the wrong place IF the mesh data itself is centered.
+    // BUT, if the mesh data is offset (e.g. vertices are at y=10), and the node was at y=0,
+    // then drawing the mesh at y=0 will put it at y=10.
+    
+    // Wait, the user said "only the support's model is on the ground".
+    // Support is likely using a specific tile type.
+    // Let's check Support's tile type.
+    // SupportEnemy constructor isn't shown here, but let's assume it's one of the tiles.
+    
+    // If the meshes are "high in the sky", we need to bring them down.
+    // Let's apply a global Y offset to bring them down.
+    // Since we don't know the exact offset for each tile, we might need to experiment.
+    // However, if they are all from the same set, they likely share a common offset.
+    
+    // Let's try lowering them by a fixed amount.
+    // The user said "high in the sky", so maybe -3.0f or -5.0f?
+    // Also "horizontally too".
+    
+    // The GLTF node hierarchy showed matrices for the tile nodes.
+    // e.g. "M1_34" matrix: [..., 0.0, 0.0, -0.18..., 1.0] (translation z?)
+    // And "P9_18" matrix: [..., 16.0, 3.0, -0.18..., 1.0] (translation x=16, y=3)
+    // It seems the tiles are laid out in a grid in the GLTF scene!
+    // Since we are drawing the meshes directly, we are drawing them in their "bind pose" or "original position"
+    // IF the vertices are baked in world space.
+    // BUT usually vertices are local to the mesh.
+    // If the vertices are local, they should be centered.
+    // UNLESS the GLTF exporter baked the transforms into the meshes.
+    
+    // If the meshes are baked with offsets (because they were separate objects in Blender/Maya),
+    // then we need to subtract that offset.
+    // But we don't know the offset for each mesh easily without parsing the nodes again.
+    
+    // ALTERNATIVELY:
+    // We can use the `Model` object's `transform` if we were drawing the whole model.
+    // But we are picking specific meshes.
+    
+    // The `sharedMahjongModel` loads the whole scene.
+    // Raylib's `LoadModel` loads meshes.
+    // If the GLTF has multiple nodes, Raylib might flatten them or keep them.
+    // Raylib's `Model` struct has `meshes`, `materials`, `meshMaterial`.
+    // It also has `bindShape` (for bones) and `transform` (base transform).
+    // It DOES NOT store per-mesh transforms in the `Model` struct directly in a way that maps 1:1 to meshes easily for drawing individual meshes at their "node" position,
+    // UNLESS we traverse the node hierarchy which Raylib doesn't fully expose in `Model` (it's in `Model.bones` or similar for animated models, but for static scenes it's tricky).
+    
+    // HOWEVER, if the vertices are baked, they are offset.
+    // If they are NOT baked, they are at origin.
+    // The fact that they appear "high in the sky and horizontally too" strongly suggests
+    // that the vertices ARE baked with their scene positions, OR we are missing a transform that brings them to origin.
+    
+    // Actually, if the vertices are baked with scene positions (e.g. laid out on a table),
+    // then drawing them at the enemy position will draw them offset by that table position.
+    // We need to center them.
+    
+    // To center them, we can calculate the bounding box of the mesh and translate by -center.
+    // Raylib has `GetMeshBoundingBox(Mesh mesh)`.
+    
+    // Let's try that!
+    
+    // We have 3 meshes per tile. We should calculate the combined bounding box of the 3 meshes,
+    // find the center, and apply a translation of -center before rotation/scaling.
+    
+    BoundingBox bbox = { {FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX} };
+    bool validBox = false;
+
+    for (int i = 0; i < 3; i++) {
+        int meshIndex = indices[i];
+        if (meshIndex >= 0 && meshIndex < sharedMahjongModel.meshCount) {
+            BoundingBox meshBox = GetMeshBoundingBox(sharedMahjongModel.meshes[meshIndex]);
+            
+            // Update combined bbox
+            bbox.min.x = fminf(bbox.min.x, meshBox.min.x);
+            bbox.min.y = fminf(bbox.min.y, meshBox.min.y);
+            bbox.min.z = fminf(bbox.min.z, meshBox.min.z);
+            
+            bbox.max.x = fmaxf(bbox.max.x, meshBox.max.x);
+            bbox.max.y = fmaxf(bbox.max.y, meshBox.max.y);
+            bbox.max.z = fmaxf(bbox.max.z, meshBox.max.z);
+            
+            validBox = true;
+        }
+    }
+
+    Vector3 centerOffset = {0, 0, 0};
+    if (validBox) {
+        centerOffset.x = (bbox.min.x + bbox.max.x) / 2.0f;
+        centerOffset.y = (bbox.min.y + bbox.max.y) / 2.0f;
+        centerOffset.z = (bbox.min.z + bbox.max.z) / 2.0f;
+    }
+
+    // We want to translate the mesh points by -centerOffset to bring them to local (0,0,0).
+    // Then scale, rotate, and translate to world pos.
+    // Transform = Translate(pos) * Rotate(axis, angle) * Scale(s) * Translate(-centerOffset)
+    
+    Matrix matCenter = MatrixTranslate(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+    Matrix matScale = MatrixScale(scaleFactor, scaleFactor, scaleFactor);
+    Matrix matRotate = MatrixRotate(axis, angle * DEG2RAD);
+    Matrix matTranslate = MatrixTranslate(pos.x, pos.y, pos.z);
+    
+    // Order: Center -> Scale -> Rotate -> Translate
+    Matrix transform = MatrixMultiply(matCenter, matScale);
+    transform = MatrixMultiply(transform, matRotate);
+    transform = MatrixMultiply(transform, matTranslate);
+
+    for (int i = 0; i < 3; i++) {
+        int meshIndex = indices[i];
+        if (meshIndex >= 0 && meshIndex < sharedMahjongModel.meshCount) {
+            int matIndex = sharedMahjongModel.meshMaterial[meshIndex];
+            Material mat = sharedMahjongModel.materials[matIndex];
+            DrawMesh(sharedMahjongModel.meshes[meshIndex], mat, transform);
+        }
+    }
 }
 
 // Update the enemy's dialog box position/text/visibility
@@ -2798,6 +3087,9 @@ void VanguardEnemy::UpdateBody(UpdateContext &uc)
 
 void VanguardEnemy::Draw() const
 {
+    // Draw base enemy (Mahjong tile)
+    Enemy::Draw();
+
     // Draw the spear weapon if loaded
     if (spearModelLoaded)
     {

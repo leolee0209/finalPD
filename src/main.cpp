@@ -101,6 +101,7 @@ int main(void)
         auto ensureAssetsLoaded = [&]() {
             if (assetsLoaded) return;
             VanguardEnemy::LoadSharedResources();
+            Enemy::LoadSharedResources();
             player = std::make_unique<Me>();
             scene = std::make_unique<Scene>();
             uiManager = std::make_unique<UIManager>("mahjong.png", 9, 44, 60);
@@ -578,6 +579,7 @@ int main(void)
     if (sceneTarget.id != 0) UnloadRenderTexture(sceneTarget);
     opening.Cleanup();
     VanguardEnemy::UnloadSharedResources();
+    Enemy::UnloadSharedResources();
     CloseWindow();
     CloseAudioDevice();
     return 0;
