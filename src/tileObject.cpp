@@ -1,22 +1,31 @@
 #include "tileObject.hpp"
+#include "model_constants.hpp"
 
-TileObject::TileObject(TileModelManager* manager, TileType type, Vector3 position, Quaternion rotation, float scaleFactor)
-    : Object(), manager(manager), type(type), scaleFactor(scaleFactor)
+TileObject::TileObject(TileModelManager* mgr, TileType tType, Vector3 pos, Quaternion rot, float sFactor)
+    : Object(), manager(mgr), type(tType), scaleFactor(sFactor)
 {
-    this->pos = position;
-    this->rotation = rotation;
+    this->pos = pos;
+    this->rotation = rot;
 
-    // Dimensions based on 2.0m x 3.0m x 1.0m as per plan
-    this->size = {2.0f * scaleFactor, 3.0f * scaleFactor, 1.0f * scaleFactor};
+    // Dimensions based on actual model size scaled by factor
+    this->size = {TILE_MODEL_SIZE.x * sFactor, TILE_MODEL_SIZE.y * sFactor, TILE_MODEL_SIZE.z * sFactor};
 
     this->setAsBox(this->size); // Updates OBB
-    this->visible = true;
+    this->visible = true; // Must be true to be drawn by Scene
 }
 
 void TileObject::Draw() const
 {
     if (this->manager)
     {
-        this->manager->DrawTile(this->type, this->pos, this->rotation, {this->scaleFactor, this->scaleFactor, this->scaleFactor});
+        // Calculate scale to fit the model into the physics box
+        // Model is TILE_MODEL_SIZE, we want it to be this->size
+        Vector3 visualScale = {
+            this->size.x / TILE_MODEL_SIZE.x,
+            this->size.y / TILE_MODEL_SIZE.y,
+            this->size.z / TILE_MODEL_SIZE.z
+        };
+        
+        this->manager->DrawTile(this->type, this->pos, this->rotation, visualScale);
     }
 }

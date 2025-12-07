@@ -107,7 +107,8 @@ int main(void)
             uiManager->addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
             uiManager->addElement(new UIHealthBar(player.get()));
             uiManager->addElement(new UISelectedTileDisplay(&uiManager->muim, &player->hand));
-            player->setSpawnPosition({0.0f, 0.0f, 0.0f});
+            player->setSpawnPosition(scene->GetPlayerSpawnPosition());
+            player->respawn(scene->GetPlayerSpawnPosition());
             assetsLoaded = true;
         };
 

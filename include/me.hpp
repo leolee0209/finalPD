@@ -4,6 +4,7 @@
 #include <vector>
 #include "object.hpp"
 class DialogBox;
+class TileModelManager;
 #include "Inventory.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
@@ -72,6 +73,8 @@ protected:
     static void ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p);
 
 public:
+    void setTint(Color c) { o.tint = c; }
+
     // Default constructor initializes the entity with default values
     Entity()
     {
@@ -140,7 +143,7 @@ private:
     int maxHealth = MAX_HEALTH_ENEMY; // Enemy's max health
     DialogBox *healthDialog = nullptr;
     TileType tileType = TileType::BAMBOO_1; // Associated mahjong tile type
-    
+    Vector3 size;
     // Animation state variables
     float runTimer;
     float runLerp;
@@ -152,6 +155,7 @@ private:
     float electrocuteTimer = 0.0f;
     float electrocutePhase = 0.0f;
     float movementDisableTimer = 0.0f;
+    float visualScale = 10.0f;
 
 protected:
     struct MovementSettings
@@ -190,12 +194,16 @@ public:
         direction = {0};
         grounded = true;
         health = MAX_HEALTH_ENEMY;
-        
+        // 44x60x40 * 0.06
+        size = {2.64f, 3.6f, 2.4f};
+        this->o.size = size;
+
         // Initialize animation state
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
         // healthDialog will be created by enemy implementations (cpp) where type is complete
+        this->o.visible = false; // Draw model instead of debug box
     }
     
     Enemy(int customHealth)
@@ -205,11 +213,15 @@ public:
         direction = {0};
         grounded = true;
         health = customHealth;
+        // 44x60x40 * 0.06
+        size = {2.64f, 3.6f, 2.4f};
+        this->o.size = size;
         
         // Initialize animation state
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f};
+        this->o.visible = false; // Draw model instead of debug box
     }
 
     virtual ~Enemy();
@@ -235,6 +247,8 @@ public:
     }
     TileType getTileType() const { return this->tileType; }
     void setTileType(TileType type) { this->tileType = type; }
+    void setVisualScale(float scale) { this->visualScale = scale; }
+    float getVisualScale() const { return this->visualScale; }
     void disableVoluntaryMovement(float durationSeconds) { this->movementDisableTimer = fmaxf(this->movementDisableTimer, durationSeconds); }
     bool isMovementDisabled() const { return this->movementDisableTimer > 0.0f; }
     void applyElectrocute(float durationSeconds) { this->electrocuteTimer = fmaxf(this->electrocuteTimer, durationSeconds); this->electrocutePhase = 0.0f; }
@@ -253,7 +267,7 @@ public:
     DialogBox *getHealthDialog() { return this->healthDialog; }
     
     // Virtual draw method for custom enemy visuals
-    virtual void Draw() const;
+    virtual void Draw(const TileModelManager* manager) const;
 };
 
 // Minion: small, fast, low-health enemy used by Summoner
@@ -545,7 +559,7 @@ public:
     ~SummonerEnemy();
     void UpdateBody(UpdateContext &uc) override;
     void OnDeath(UpdateContext &uc);
-    void Draw() const override;
+    void Draw(const TileModelManager* manager) const override;
 };
 
 // Support: heals and buffs nearby allies
@@ -598,7 +612,7 @@ private:
 public:
     SupportEnemy() : Enemy(250) { this->setMaxHealth(250); this->setTileType(TileType::CHARACTER_1); }
     void UpdateBody(UpdateContext &uc) override;
-    void Draw() const override;
+    void Draw(const TileModelManager* manager) const override;
 };
 
 // Vanguard: Heavy dragoon with aggressive ground combo and aerial dive attacks
@@ -715,7 +729,7 @@ public:
     static void LoadSharedResources();  // Load spear model once at game start
     static void UnloadSharedResources(); // Cleanup on game end
     void UpdateBody(UpdateContext &uc) override;
-    void Draw() const override;
+    void Draw(const TileModelManager* manager) const override;
 };
 
 

@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <map>
 #include <raylib.h>
 #include "attackManager.hpp"
 #include "updateContext.hpp"
@@ -53,10 +54,11 @@ private:
     int ambientLoc = -1;
     int viewPosLoc = -1;
     // Evening/Night ambient color (darker, bluer)
-    Vector4 ambientColor = {0.05f, 0.05f, 0.1f, 1.0f}; 
+    Vector4 ambientColor = {0.4f, 0.4f, 0.45f, 1.0f}; 
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
-    // Evening/Night sky color (Dark Blue/Black)
-    Color skyColor = {5, 10, 25, 255}; 
+    // Morning sky color (Sky Blue)
+    Color skyColor = {135, 206, 235, 255}; 
+    Vector3 playerSpawnPosition = {0.0f, 0.0f, 0.0f};
 
     struct CachedModel
     {
@@ -73,6 +75,7 @@ private:
 
     std::vector<std::unique_ptr<RewardBriefcase>> rewardBriefcases;
     std::vector<std::unique_ptr<TileObject>> tileObjects;
+    std::map<TileType, std::vector<Matrix>> wallInstances;
     DamageIndicatorSystem damageIndicators;
     TileModelManager tileModelManager;
 
@@ -149,6 +152,9 @@ public:
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
     void SetViewPosition(const Vector3 &viewPosition);
     Color getSkyColor() const { return this->skyColor; }
+    
+    void SetPlayerSpawnPosition(Vector3 pos) { this->playerSpawnPosition = pos; }
+    Vector3 GetPlayerSpawnPosition() const { return this->playerSpawnPosition; }
         void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
         void DrawDamageIndicators(const Camera &camera) const;
         void DrawEnemyHealthDialogs(const Camera &camera) const;
@@ -156,6 +162,8 @@ public:
         std::vector<RewardBriefcase *> GetRewardBriefcases();
             
         void AddTileObject(TileType type, Vector3 position, Quaternion rotation, float scaleFactor = 1.0f);
+        void AddWallTile(TileType type, Vector3 position, Quaternion rotation, float scaleFactor = 1.0f);
+        void AddWallInstance(TileType type, Vector3 position, Quaternion rotation, Vector3 scale);
         void AddStaticObject(Object* obj);
     };
     

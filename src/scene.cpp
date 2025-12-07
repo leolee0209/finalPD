@@ -15,6 +15,7 @@
 #include <string>
 #include "Inventory.hpp"
 #include "world.hpp"
+#include "wallTile.hpp"
 
 namespace
 {
@@ -581,7 +582,7 @@ void Scene::DrawRectangle(const Object &o) const
         Vector3 axis;
         float angle;
         o.getRotationAxisAngle(axis, angle);
-        DrawModelEx(this->cubeModel, o.getPos(), axis, angle, o.getSize(), TOWER_COLOR);
+        DrawModelEx(this->cubeModel, o.getPos(), axis, angle, o.getSize(), o.tint);
 
         // Draw wireframe using extended function to match rotation and scale
         DrawModelWiresEx(this->cubeModel, o.getPos(), axis, angle, o.getSize(), DARKBLUE);
@@ -642,6 +643,11 @@ void Scene::DrawScene(Camera camera) const
         }
     }
 
+    // Draw instanced walls
+    for (const auto& pair : this->wallInstances) {
+        this->tileModelManager.DrawTileInstanced(pair.first, pair.second);
+    }
+
     this->DrawDecorations();
 
     // Draw all reward briefcases
@@ -672,7 +678,7 @@ void Scene::DrawScene(Camera camera) const
             Enemy *enemy = dynamic_cast<Enemy *>(entity);
             if (enemy)
             {
-                enemy->Draw();
+                enemy->Draw(&this->tileModelManager);
             }
         }
     }
@@ -1149,7 +1155,31 @@ void Scene::DrawTexturedSphere(Texture2D &texture, const Rectangle &source, cons
         auto obstacle = std::make_unique<TileObject>(&this->tileModelManager, type, position, rotation, scaleFactor);
         this->tileObjects.push_back(std::move(obstacle));
     }
-    
+
+    void Scene::AddWallTile(TileType type, Vector3 position, Quaternion rotation, float scaleFactor)
+    {
+        auto wall = std::make_unique<WallTile>(&this->tileModelManager, type, position, rotation, scaleFactor);
+        this->tileObjects.push_back(std::move(wall));
+    }
+
+    void Scene::AddWallInstance(TileType type, Vector3 position, Quaternion rotation, Vector3 scale)
+    {
+        Vector3 center = this->tileModelManager.GetTileCenter(type);
+        
+        Matrix matScale = MatrixScale(scale.x, scale.y, scale.z);
+        Matrix matRotation = QuaternionToMatrix(rotation);
+        Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
+        Matrix matCenter = MatrixTranslate(-center.x, -center.y, -center.z);
+        
+        // M = C * S * R * T
+        // Apply Center, then Scale, then Rotate, then Translate
+        Matrix mat = MatrixMultiply(matCenter, matScale);      // C * S
+        mat = MatrixMultiply(mat, matRotation);                // C * S * R
+        mat = MatrixMultiply(mat, matTranslation);             // C * S * R * T
+        
+        this->wallInstances[type].push_back(mat);
+    }
+
     void Scene::AddStaticObject(Object* obj)
     {
         if (obj) {

@@ -2,6 +2,8 @@
 #include <cmath>
 #include <vector>
 #include <iostream>
+#include "me.hpp"
+#include "model_constants.hpp"
 
 // Helper to get random float in range [min, max]
 static float RandomFloat(float min, float max) {
@@ -28,42 +30,206 @@ void WorldGenerator::Generate(Scene* scene) {
 }
 
 void WorldGenerator::GenerateDiscardMaze(Scene* scene, Vector3 startOffset) {
-    // Maze dimensions
-    const int mazeWidth = 20;
-    const int mazeLength = 20;
-    const float tileScale = 1.0f;
-    const float tileSize = 3.0f * tileScale; // Approx length of tile
-    const float spacing = 4.0f; 
+    // Map definition from PLAN1.md
+    const std::vector<std::string> map = {
+        "#########################################",
+        "# X X X X . . . . . . . . . . . . . . . #",
+        "# X . . . . . . . . . . . . . . . . . . #",
+        "# . . H . # # # # # # # # # # # # # # # #",
+        "# . M s . # . . . . . . . . . . . . . . #",
+        "# . . . . . . . M . . . . M . . . . . . #",
+        "# . . . . # . . . . . . . . . . . . . . #",
+        "# # # # # # # # . # # # # # # # . # # # #",
+        "# . . . . # . . . . . H . . . # . . . . #",
+        "# . . . . # . . . . . . . . . # . . . . #",
+        "# . M . . . . . . ======= . . . . . M . #",
+        "# . . . . # . . . . . . . . . # . . . . #",
+        "# . . . . # . . . . . H . . . # . . . . #",
+        "# # # . # # # # # # # . # # # # # . # # #",
+        "# . . . . . . . . . # . # . . . . . . . #",
+        "# . . . . . . . . . # . # . . . M . . . #",
+        "# . . S . . . . . . . . . . . . . . . . #",
+        "# . . . . . . . . . # . # . . . . . . . #",
+        "#########################################"
+    };
 
-    // Simple grid generation with some randomness for "piles"
-    for (int x = -mazeWidth / 2; x < mazeWidth / 2; x++) {
-        for (int z = 0; z < mazeLength; z++) {
-            
-            // Skip center path to ensure walkability
-            if (abs(x) < 2) continue;
+    // Tweakable variables
+    float mapCellSize = 4.0f; // Size of one ASCII block in world units
+    
+    // Use natural tile size (2.0 width)
+    // We want to fill the 4.0 cell with tiles.
+    // 4.0 / 2.0 = 2 tiles wide.
+    float tileWidth = TILE_MODEL_SIZE.x;
+    float tileHeight = TILE_MODEL_SIZE.y;
+    float tileDepth = TILE_MODEL_SIZE.z;
+    
+    int tilesPerCellX = (int)round(mapCellSize / tileWidth);
+    int tilesPerCellZ = (int)round(mapCellSize / tileDepth); // Or maybe just 1 row deep?
+    // Actually, walls are usually thin. Let's just place 2 tiles side-by-side to fill width, and 1 deep.
+    // Or maybe 2x2?
+    // If we want "tightly fit", let's fill the cell area.
+    // But usually walls are just barriers.
+    // Let's assume '#' is a solid block.
+    
+    float wallTileScale = 1.0f; // Use natural size
+    float enemyScale = 1.32f; // 2.64 / 2.0 = 1.32 to match requested size
+    
+    // Center the map around startOffset
+    float mapWidth = map[0].length() * mapCellSize;
+    float mapHeight = map.size() * mapCellSize;
+    Vector3 origin = {
+        startOffset.x - mapWidth / 2.0f,
+        startOffset.y,
+        startOffset.z - mapHeight / 2.0f
+    };
 
-            float noise = RandomFloat(0.0f, 1.0f);
+    // Add Floor
+    Object* floor = new Object();
+    float floorThickness = 1.0f;
+    floor->size = {mapWidth * 1.5f, floorThickness, mapHeight * 1.5f};
+    // Floor top at y=0. Floor center at y = -0.5
+    floor->pos = {startOffset.x, -floorThickness / 2.0f, startOffset.z};
+    floor->setAsBox(floor->size);
+    floor->tint = WHITE; // White floor
+    scene->AddStaticObject(floor);
+
+    for (size_t z = 0; z < map.size(); ++z) {
+        for (size_t x = 0; x < map[z].length(); ++x) {
+            char cell = map[z][x];
             
-            // 70% chance to place a tile pile
-            if (noise > 0.3f) {
-                Vector3 pos = Vector3Add(startOffset, {x * spacing, 0, z * spacing});
+            // Top-Left corner of the current map cell
+            Vector3 cellOrigin = {
+                origin.x + x * mapCellSize,
+                0.0f,
+                origin.z + z * mapCellSize
+            };
+            
+            // Center of the current map cell (for single objects)
+            Vector3 cellCenter = {
+                cellOrigin.x + mapCellSize / 2.0f,
+                0.0f,
+                cellOrigin.z + mapCellSize / 2.0f
+            };
+
+            if (cell == '#') {
+                // High Wall (WallTile)
+                // Use Big Cube for collision
+                // Visuals: Instanced tiles
                 
-                // Random stack height 1 to 3
-                int stackHeight = (int)RandomFloat(1, 4);
+                float wallScale = 1.5f;
+                // Rotated dimensions:
+                // Width (X) = Model.x * scale
+                // Height (Y) = Model.z * scale (because rotated -90 around X)
+                // Depth (Z) = Model.y * scale
                 
-                for (int h = 0; h < stackHeight; h++) {
-                    Vector3 tilePos = pos;
-                    tilePos.y += h * 2.0f; // Stack vertically
-                    
-                    // Add some random rotation for "messy" look
-                    float yRot = RandomFloat(0, 360) * DEG2RAD;
-                    float xRot = RandomFloat(-10, 10) * DEG2RAD;
-                    float zRot = RandomFloat(-10, 10) * DEG2RAD;
-                    
-                    Quaternion rot = QuaternionFromEuler(xRot, yRot, zRot);
-                    
-                    scene->AddTileObject(RandomTileType(), tilePos, rot, tileScale);
+                float tW = TILE_MODEL_SIZE.x * wallScale;
+                float tH = TILE_MODEL_SIZE.z * wallScale;
+                float tD = TILE_MODEL_SIZE.y * wallScale;
+                
+                int gridX = 2; // 2 * 3.0 = 6.0 > 4.0. Overlap to fill.
+                int gridZ = 1; // 1 * 3.9 = 3.9 ~ 4.0. Good fit.
+                int stackHeight = 4; // 4 * 2.4 = 9.6 high.
+                
+                // Add Big Collision Cube
+                Object* collider = new Object();
+                collider->size = {mapCellSize, stackHeight * tH, mapCellSize};
+                collider->pos = {cellCenter.x, (stackHeight * tH) / 2.0f, cellCenter.z};
+                collider->setAsBox(collider->size);
+                collider->visible = false; // Invisible collision
+                scene->AddStaticObject(collider);
+                
+                // Add Visual Instances
+                Quaternion rot = QuaternionFromAxisAngle({1.0f, 0.0f, 0.0f}, -90.0f * DEG2RAD);
+                
+                int instanceCount = 0;
+                for (int gy = 0; gy < stackHeight; gy++) {
+                    for (int gx = 0; gx < gridX; gx++) {
+                        for (int gz = 0; gz < gridZ; gz++) {
+                            Vector3 pos;
+                            // Distribute gridX tiles across mapCellSize
+                            float stepX = mapCellSize / gridX;
+                            pos.x = cellOrigin.x + (gx * stepX) + stepX / 2.0f;
+                            
+                            pos.y = (gy * tH) + tH / 2.0f;
+                            
+                            // Center Z
+                            pos.z = cellCenter.z;
+                            
+                            scene->AddWallInstance(TileType::BAMBOO_1, pos, rot, {wallScale, wallScale, wallScale});
+                            instanceCount++;
+                        }
+                    }
                 }
+                TraceLog(LOG_INFO, "Generated %d wall instances for cell at %f, %f", instanceCount, cellOrigin.x, cellOrigin.z);
+            } else if (cell == '=') {
+                // Low Cover (WallTile) - 1 high
+                int gridX = 2;
+                int gridZ = 2;
+                for (int gx = 0; gx < gridX; gx++) {
+                    for (int gz = 0; gz < gridZ; gz++) {
+                        Vector3 pos;
+                        pos.x = cellOrigin.x + (gx * tileWidth) + tileWidth / 2.0f;
+                        pos.y = tileHeight / 2.0f;
+                        float zGap = (mapCellSize - (gridZ * tileDepth)) / 2.0f;
+                        pos.z = cellOrigin.z + zGap + (gz * tileDepth) + tileDepth / 2.0f;
+                        
+                        scene->AddWallTile(TileType::BAMBOO_1, pos, QuaternionIdentity(), wallTileScale);
+                    }
+                }
+            } else if (cell == 'S') {
+                // Start Point
+                Vector3 spawnPos = cellCenter;
+                spawnPos.y = 2.0f; // Slightly above ground
+                scene->SetPlayerSpawnPosition(spawnPos);
+            } else if (cell == 'M') {
+                // Minion Spawner
+                MinionEnemy* enemy = new MinionEnemy();
+                Vector3 enemyPos = cellCenter;
+                enemyPos.y = 1.0f; // On ground
+                enemy->setPosition(enemyPos);
+                enemy->setVisualScale(enemyScale);
+                enemy->setTint(GREEN); // Debug color
+                scene->em.addEnemy(enemy);
+            } else if (cell == 'H') {
+                // Shooter Perch (Sniper on high wall)
+                // Create wall first (same as '#')
+                int gridX = 2;
+                int gridZ = 2;
+                int stackHeight = 3;
+                
+                for (int gy = 0; gy < stackHeight; gy++) {
+                    for (int gx = 0; gx < gridX; gx++) {
+                        for (int gz = 0; gz < gridZ; gz++) {
+                            Vector3 pos;
+                            pos.x = cellOrigin.x + (gx * tileWidth) + tileWidth / 2.0f;
+                            pos.y = (gy * tileHeight) + tileHeight / 2.0f;
+                            float zGap = (mapCellSize - (gridZ * tileDepth)) / 2.0f;
+                            pos.z = cellOrigin.z + zGap + (gz * tileDepth) + tileDepth / 2.0f;
+                            
+                            scene->AddWallTile(TileType::BAMBOO_1, pos, QuaternionIdentity(), wallTileScale);
+                        }
+                    }
+                }
+
+                // Place enemy on top
+                ShooterEnemy* enemy = new ShooterEnemy();
+                Vector3 enemyPos = cellCenter;
+                enemyPos.y = (stackHeight * tileHeight) + 1.0f; // On top of wall
+                enemy->setPosition(enemyPos);
+                enemy->setVisualScale(enemyScale);
+                enemy->setTint(PURPLE); // Debug color
+                scene->em.addEnemy(enemy);
+            } else if (cell == 's') {
+                // The Support (Mini-Boss Arena)
+                SupportEnemy* enemy = new SupportEnemy();
+                Vector3 enemyPos = cellCenter;
+                enemyPos.y = 1.0f;
+                enemy->setPosition(enemyPos);
+                enemy->setVisualScale(enemyScale);
+                enemy->setTint(YELLOW); // Debug color
+                scene->em.addEnemy(enemy);
+            } else if (cell == 'X') {
+                // The Exit
             }
         }
     }

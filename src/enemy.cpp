@@ -647,9 +647,26 @@ void Enemy::gatherObjects(std::vector<Object *> &out) const
 }
 
 // Base draw implementation - just draws the object
-void Enemy::Draw() const
+#include "model_constants.hpp"
+
+void Enemy::Draw(const TileModelManager* manager) const
 {
-    // Default: no custom drawing, enemy is drawn via object system
+    if (manager)
+    {
+        // Calculate scale to fit the model into the physics box
+        // Model is TILE_MODEL_SIZE, we want it to be this->size
+        Vector3 calculatedScale = {
+            this->size.x / TILE_MODEL_SIZE.x,
+            this->size.y / TILE_MODEL_SIZE.y,
+            this->size.z / TILE_MODEL_SIZE.z
+        };
+        
+        // Get rotation from object
+        Quaternion rot = this->o.getRotation();
+        
+        // Draw with correct scale
+        manager->DrawTile(this->tileType, this->position, rot, calculatedScale);
+    }
 }
 
 // Update the enemy's dialog box position/text/visibility
@@ -916,10 +933,10 @@ void SummonerEnemy::EmitSummonParticles(const Vector3 &summonPos, float intensit
     }
 }
 
-void SummonerEnemy::Draw() const
+void SummonerEnemy::Draw(const TileModelManager* manager) const
 {
     // Draw base enemy
-    Enemy::Draw();
+    Enemy::Draw(manager);
     // Particles are now handled by the particle system in UpdateBody
 }
 
@@ -1939,10 +1956,10 @@ void SupportEnemy::DrawGlowEffect(const Vector3 &pos, Color color, float intensi
     }
 }
 
-void SupportEnemy::Draw() const
+void SupportEnemy::Draw(const TileModelManager* manager) const
 {
     // Draw base enemy
-    Enemy::Draw();
+    Enemy::Draw(manager);
 }
 
 // ---------------------------- VanguardEnemy ----------------------------
@@ -2783,8 +2800,9 @@ void VanguardEnemy::UpdateBody(UpdateContext &uc)
     }
 }
 
-void VanguardEnemy::Draw() const
+void VanguardEnemy::Draw(const TileModelManager* manager) const
 {
+    Enemy::Draw(manager);
     // Draw the spear weapon if loaded
     if (spearModelLoaded)
     {
