@@ -142,6 +142,9 @@ class OpeningScene
     float GetRecoveryDuration() const {
         return config.recoveryDuration;
     }
+    float GetRecoveryCurvePower() const {
+        return config.recoveryCurvePower;
+    }
     float GetImpactTime() const {
         return config.animNodDuration + config.animDiveDuration + config.animImpactDuration;
     }

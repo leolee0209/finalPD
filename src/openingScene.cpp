@@ -237,7 +237,7 @@ TransitionVisuals OpeningScene::EvaluateTransition(float tSeconds)
 
 TransitionVisuals OpeningScene::EvaluateRecovery(float tSeconds)
 {
-    // Recovery animation: Inverse of dive, from face-down on table to normal eye level
+    // Recovery animation: Inverse of dive, from face-down on table to gameplay spawn position
     TransitionVisuals v{};
     
     // Clamp time to recovery duration
@@ -247,23 +247,39 @@ TransitionVisuals OpeningScene::EvaluateRecovery(float tSeconds)
     
     // Progress through recovery (0 = start face-down, 1 = fully recovered)
     float u = tSeconds / config.recoveryDuration;
-    float eased = powf(u, config.recoveryCurvePower); // Ease out: slow start, fast end
     
-    // Interpolate from dive end position to normal start position
-    v.pitchDeg = Lerp(config.diveTargetPitch, config.cameraPitchStart, eased);
-    v.camX = Lerp(config.diveTargetX, config.cameraXStart, eased);
-    v.camY = Lerp(config.diveTargetY, config.cameraYStart, eased);
-    v.camZ = Lerp(config.diveTargetZ, config.cameraDistanceZ, eased);
+    // Position uses linear interpolation for smooth straight rise
+    // Target position should be the gameplay spawn camera position
+    // Player spawns at {0, 0, 0} with camera at Y = 1.5f (BOTTOM_HEIGHT + STAND_HEIGHT)
+    float gameplayCameraY = 1.5f;  // Standing eye height
+    float gameplayCameraZ = 0.0f;  // At player position
+    float gameplayCameraX = 0.0f;  // At player position
+    float gameplayPitch = 0.0f;    // Looking straight ahead
     
-    // Fade blur out quickly
-    v.radialBlur = config.radialBlurMax * (1.0f - u * config.recoveryBlurFade);
-    if (v.radialBlur < 0.0f) v.radialBlur = 0.0f;
+    // Interpolate from dive end position to gameplay spawn position with linear motion
+    v.pitchDeg = Lerp(config.diveTargetPitch, gameplayPitch, u);
+    v.camX = Lerp(config.diveTargetX, gameplayCameraX, u);
+    v.camY = Lerp(config.diveTargetY, gameplayCameraY, u);
+    v.camZ = Lerp(config.diveTargetZ, gameplayCameraZ, u);
     
-    // Vignette fades from impact strength to normal base
-    v.vignetteStrength = Lerp(config.vignetteImpact, config.vignetteBase, eased);
+    // Blackout uses smooth easing for natural fade (Ease-In-Out)
+    float eased = u < 0.5f ? 
+        2.0f * u * u :                          // Ease in for first half
+        1.0f - 2.0f * (1.0f - u) * (1.0f - u); // Ease out for second half (smoother at end)
     
-    // Blackout fades from full black to clear
-    v.blackoutAlpha = 1.0f - u;
+    // Vignette uses Ease-Out (requested)
+    float easeOut = 1.0f - powf(1.0f - u, config.recoveryCurvePower);
+    
+    // No blur during recovery (requested: without blur)
+    v.radialBlur = 0.0f;
+    
+    // Vignette fades from impact strength to 0.0f (no vignette) using Ease-Out
+    // Was config.vignetteBase, now 0.0f to completely remove vignette
+    v.vignetteStrength = Lerp(config.vignetteImpact, 0.0f, easeOut);
+    
+    // Blackout fades gradually from full black to clear with smooth easing (Ease-In-Out)
+    // Starts at 1.0 (full black) and ends at 0.0 (fully clear)
+    v.blackoutAlpha = 1.0f - eased;
     
     v.triggerImpactAudio = false;
     v.overrideCamera = true;

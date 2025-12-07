@@ -19,7 +19,6 @@ enum class GameState
     MENU,
     TRANSITION,
     LOADING,
-    RECOVERY,    // Recovery animation after loading
     GAMEPLAY,
     GAMEOVER
 };
@@ -51,7 +50,7 @@ int main(void)
     GameState gameState = GameState::MENU;
     float transitionTimer = 0.0f;
     float loadingTimer = 0.0f;
-    float recoveryTimer = 0.0f;  // Recovery animation timer
+    float gameplayRecoveryTimer = -1.0f;  // Recovery animation timer (-1 = not active)
     const float loadingMinSeconds = 0.6f;
     bool assetsLoaded = false;
     bool loadingStarted = false;
@@ -99,7 +98,8 @@ int main(void)
         float dt = GetFrameTime();
         bool haveGame = (player && scene && uiManager);
         bool inGameplay = haveGame && (gameState == GameState::GAMEPLAY);
-        bool inRecovery = (gameState == GameState::RECOVERY);
+        bool inRecoveryAnim = (gameplayRecoveryTimer >= 0.0f && gameplayRecoveryTimer < opening.GetRecoveryDuration());
+        bool justStartedRecovery = false;
 
         auto ensureAssetsLoaded = [&]() {
             if (assetsLoaded) return;
@@ -191,21 +191,49 @@ int main(void)
             loadingTimer += dt;
             if (loadingTimer >= loadingMinSeconds && assetsLoaded)
             {
-                gameState = GameState::RECOVERY;
-                recoveryTimer = 0.0f;  // Start recovery animation
-            }
-        }
-        
-        if (gameState == GameState::RECOVERY)
-        {
-            recoveryTimer += dt;
-            if (recoveryTimer >= opening.GetRecoveryDuration())
-            {
                 gameState = GameState::GAMEPLAY;
+                gameplayRecoveryTimer = 0.0f;  // Start recovery animation
+                inRecoveryAnim = true;         // Force animation update this frame
+                justStartedRecovery = true;
+
+                // Initialize player camera for recovery animation
+                // Start from face-down position (matching dive target)
+                // Player yaw should face the spawn direction (+Z = forward into dungeon)
+                player->getLookRotation().x = PI;  // Face forward (+Z) - spawn direction
+                // In player camera: positive lookRotation.y = looking down
+                // Dive ends at pitch -90° (face down), which is lookRotation.y = +90°
+                player->getLookRotation().y = 90.0f * DEG2RAD;  // Face down (90° down)
+                
                 gamePaused = false;
                 uiManager->setPauseMenuVisible(false);
                 DisableCursor();
             }
+        }
+        
+        // Update recovery animation timer if active
+        TransitionVisuals recoveryVisuals{};
+        if (inRecoveryAnim)
+        {
+            if (!justStartedRecovery) gameplayRecoveryTimer += dt;
+            else justStartedRecovery = false;
+            
+            recoveryVisuals = opening.EvaluateRecovery(gameplayRecoveryTimer);
+            
+            // Animate player's pitch to match the recovery animation
+            // The recovery goes from -90° (face down) to 0° (straight)
+            float u = gameplayRecoveryTimer / opening.GetRecoveryDuration();
+            if (u > 1.0f) u = 1.0f;
+            float eased = powf(u, opening.GetRecoveryCurvePower()); // Match recovery easing
+            
+            // Lerp pitch from face-down (90°) to horizontal (0°)
+            // Note: In player camera system, positive lookRotation.y = looking down
+            // So -90° pitch (face down) = +90° lookRotation.y
+            float startPitch = 90.0f * DEG2RAD;  // Face down (90° down)
+            float endPitch = 0.0f;               // Look straight
+            player->getLookRotation().y = Lerp(startPitch, endPitch, eased);
+            
+            // Keep yaw constant at spawn direction (PI = facing +Z)
+            player->getLookRotation().x = PI;
         }
 
         // Tweak hotkeys even when paused
@@ -244,7 +272,7 @@ int main(void)
         char forwardInput = 0;
         bool jumpPressed = false;
         bool crouching = false;
-        if (inGameplay && !gamePaused)
+        if (inGameplay && !gamePaused && !inRecoveryAnim)
         {
             Vector2 md = GetMouseDelta();
             player->getLookRotation().x -= md.x * sensitivity.x;
@@ -262,7 +290,7 @@ int main(void)
         PlayerInput frameInput(sideway, forwardInput, jumpPressed, crouching);
         UpdateContext uc(scene.get(), player.get(), frameInput, uiManager.get());
 
-        if (inGameplay && !gamePaused)
+        if (inGameplay && !gamePaused && !inRecoveryAnim)
         {
             // Manual door opening with 'C' key (only if no briefcase is nearby)
             if (IsKeyPressed(KEY_C))
@@ -401,30 +429,40 @@ int main(void)
         float radialBlur = 0.0f;
         float vignetteStrength = 0.35f;
         float blackoutAlpha = 0.0f;
-        Camera camera;
+        Camera camera = haveGame ? player->getCamera() : menuCamera;
         
-        if (gameState == GameState::RECOVERY && haveGame)
+        // Apply recovery animation overrides
+        if (inRecoveryAnim)
         {
-            // Recovery animation: inverse of dive - DON'T use player camera
-            TransitionVisuals tv = opening.EvaluateRecovery(recoveryTimer);
+            // During recovery, override camera position to show the rising animation
+            // while smoothly blending to the player's natural camera at the end
+            Camera recoveryCamera = camera; // Start with player's camera for correct target calculation
             
-            // Build camera from recovery animation
-            camera.position = {tv.camX, tv.camY, tv.camZ};
-            camera.fovy = opening.GetCameraFov();
+            // Override position from recovery animation
+            recoveryCamera.position.x = recoveryVisuals.camX;
+            recoveryCamera.position.y = recoveryVisuals.camY;
+            recoveryCamera.position.z = recoveryVisuals.camZ;
             
-            float pitchRad = tv.pitchDeg * DEG2RAD;
-            Vector3 forwardVec = {0.0f, sinf(pitchRad), cosf(pitchRad)};
-            camera.target = Vector3Add(camera.position, forwardVec);
-            camera.up = {0.0f, 1.0f, 0.0f};
-            camera.projection = CAMERA_PERSPECTIVE;
+            // Calculate look direction from recovery pitch
+            // recoveryVisuals.pitchDeg goes from -90 (face down) to 0 (straight)
+            // Negative pitch = looking down, positive = looking up
+            float pitchRad = recoveryVisuals.pitchDeg * DEG2RAD;
             
-            radialBlur = tv.radialBlur;
-            vignetteStrength = tv.vignetteStrength;
-            blackoutAlpha = tv.blackoutAlpha;
-        }
-        else
-        {
-            camera = haveGame ? player->getCamera() : menuCamera;
+            // Match player's facing direction (+Z) using consistent camera math
+            const Vector3 up = {0.0f, 1.0f, 0.0f};
+            const Vector3 targetOffset = {0.0f, 0.0f, -1.0f};
+            Vector3 yawVec = Vector3RotateByAxisAngle(targetOffset, up, player->getLookRotation().x);
+            Vector3 rightVec = Vector3Normalize(Vector3CrossProduct(yawVec, up));
+            Vector3 forward = Vector3RotateByAxisAngle(yawVec, rightVec, pitchRad);
+            
+            recoveryCamera.target = Vector3Add(recoveryCamera.position, forward);
+            recoveryCamera.up = {0.0f, 1.0f, 0.0f};
+            
+            camera = recoveryCamera;
+            
+            // Use recovery animation blackout
+            blackoutAlpha = recoveryVisuals.blackoutAlpha;
+            vignetteStrength = recoveryVisuals.vignetteStrength;
         }
         
         if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
@@ -468,23 +506,6 @@ int main(void)
                     
                     camera = menuCamera;
                 }
-                else if (gameState == GameState::RECOVERY)
-                {
-                    // Recovery: Override camera with recovery animation
-                    TransitionVisuals tv = opening.EvaluateRecovery(recoveryTimer);
-                    camera.position = {tv.camX, tv.camY, tv.camZ};
-                    camera.fovy = opening.GetCameraFov();
-                    
-                    float pitchRad = tv.pitchDeg * DEG2RAD;
-                    Vector3 forwardVec = {0.0f, sinf(pitchRad), cosf(pitchRad)};
-                    camera.target = Vector3Add(camera.position, forwardVec);
-                    camera.up = {0.0f, 1.0f, 0.0f};
-                    camera.projection = CAMERA_PERSPECTIVE;
-                    
-                    radialBlur = tv.radialBlur;
-                    vignetteStrength = tv.vignetteStrength;
-                    blackoutAlpha = tv.blackoutAlpha;
-                }
                 else
                 {
                     // Transition/Loading: Override camera with animation
@@ -522,14 +543,13 @@ int main(void)
                     opening.DrawSpotlightMask(GetScreenWidth(), GetScreenHeight());
                 }
             }
-            else if (gameState == GameState::RECOVERY || gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
+            else if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
             {
                 ClearBackground(scene->getSkyColor());
                 scene->SetViewPosition(camera.position);
                 BeginMode3D(camera);
                 scene->DrawScene(camera);
                 EndMode3D();
-                scene->DrawEnemyHealthDialogs(camera);
                 scene->DrawDamageIndicators(camera);
                 scene->DrawInteractionPrompts(player->pos(), camera);
             }
@@ -558,12 +578,27 @@ int main(void)
             {
                 DrawTexturePro(sceneTarget.texture, src, dst, {0.0f, 0.0f}, 0.0f, WHITE);
             }
+            
+            // Draw health dialogs after the scene texture (to avoid nested BeginTextureMode)
+            if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
+            {
+                scene->DrawEnemyHealthDialogs(camera);
+            }
         }
         else
         {
-            ClearBackground(haveGame ? scene->getSkyColor() : BLACK);
-            if (haveGame)
+            if (gameState == GameState::MENU || gameState == GameState::TRANSITION || gameState == GameState::LOADING)
             {
+                ClearBackground(BLACK);
+                if (gameState != GameState::LOADING)
+                {
+                    opening.DrawMenuScene(camera, GetScreenWidth(), GetScreenHeight(), gameState == GameState::MENU);
+                    opening.DrawSpotlightMask(GetScreenWidth(), GetScreenHeight());
+                }
+            }
+            else if (haveGame)
+            {
+                ClearBackground(scene->getSkyColor());
                 scene->SetViewPosition(camera.position);
                 BeginMode3D(camera);
                 scene->DrawScene(camera);
@@ -572,9 +607,13 @@ int main(void)
                 scene->DrawDamageIndicators(camera);
                 scene->DrawInteractionPrompts(player->pos(), camera);
             }
+            else
+            {
+                ClearBackground(BLACK);
+            }
         }
 
-        if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER || gameState == GameState::RECOVERY)
+        if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
         {
             uiManager->draw(uc, player->hand);
             DragonClawAttack::drawTweakHud(*player);
@@ -618,7 +657,7 @@ int main(void)
             DrawText(damageText, baseX, baseY, fontSize, textColor);
         }
 
-        if (gameState == GameState::MENU || gameState == GameState::TRANSITION)
+        if (gameState == GameState::MENU || gameState == GameState::TRANSITION || inRecoveryAnim)
         {
             opening.DrawVignetteAndBlackout(GetScreenWidth(), GetScreenHeight(), vignetteStrength, blackoutAlpha);
             if (tweakMode) opening.DrawTweakUI();
