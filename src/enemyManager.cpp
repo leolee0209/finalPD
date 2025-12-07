@@ -63,12 +63,13 @@ void EnemyManager::damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc
 
     if (uc.scene)
     {
-        uc.scene->EmitDamageIndicator(*enemy, dResult.damage);
+        float effective = dResult.damage * (1.0f - enemy->damageResistance);
+        Color color = (enemy->damageResistance > 0.0f) ? LIGHTGRAY : RED; // Metallic Gray feedback
+        uc.scene->EmitDamageIndicator(*enemy, effective, color);
     }
 
     if (!enemy->damage(dResult))
-    {
-        TraceLog(LOG_ERROR, "enemy died\n");
+    {        TraceLog(LOG_ERROR, "enemy died\n");
         
         // DEATH ANIMATION SEQUENCE
         if (uc.scene)

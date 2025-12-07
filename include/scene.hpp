@@ -20,12 +20,13 @@ struct DamageIndicator
     float age = 0.0f;
     float lifetime = 0.85f;
     std::string text;
+    Color color = RED; // Added color
 };
 
 class DamageIndicatorSystem
 {
 public:
-    void Spawn(const Vector3 &worldPosition, float amount);
+    void Spawn(const Vector3 &worldPosition, float amount, Color color = RED);
     void Update(float deltaSeconds);
     void Draw(const Camera &camera) const;
     void Clear();
@@ -176,7 +177,7 @@ public:
     void SetBackfaceDarkness(float darkness); // darkness: 0.0=fully dark, 1.0=same as front
     float GetBackfaceDarkness() const { return this->backfaceDarkness; }
     Color getSkyColor() const { return this->skyColor; }
-    void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
+    void EmitDamageIndicator(const Enemy &enemy, float damageAmount, Color color = RED);
     
     // Room and door management
     void UpdateRoomDoors(const Vector3 &playerPos);

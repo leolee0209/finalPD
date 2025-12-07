@@ -400,6 +400,9 @@ int main(void)
 
         if (haveGame && uiManager->consumeRespawnRequest())
         {
+            // Cancel all active attacks (like Seismic Slam) before respawning
+            scene->am.cancelAllAttacks(player.get());
+            
             player->respawn(player->getSpawnPosition());
             scene->ResetDoorsForRespawn();
             uiManager->setGameOverVisible(false);
@@ -409,7 +412,12 @@ int main(void)
             gameState = GameState::GAMEPLAY;
         }
 
-        if (haveGame) uiManager->update(player->hand);
+        if (haveGame) 
+        {
+            uiManager->update(player->hand);
+            // Ensure slot validity/skill names are updated even when paused (e.g. while dragging tiles)
+            scene->am.updateSlotStatus(uc);
+        }
 
         if (haveGame && uiManager->consumeResumeRequest())
         {

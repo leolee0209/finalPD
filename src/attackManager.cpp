@@ -160,32 +160,53 @@ void AttackManager::update(UpdateContext& uc)
 
     if (uc.uiManager)
     {
-        for (int slotIdx = 0; slotIdx < UIManager::slotCount; ++slotIdx)
-        {
-            const auto &slotEntries = uc.uiManager->getSlotEntries(slotIdx);
-            
-            // Empty slots are valid (no red outline)
-            if (slotEntries.empty())
-            {
-                uc.uiManager->setSlotValidity(slotIdx, true);
-            }
-            // Single tile or two tiles are invalid for skill slots
-            else if (slotEntries.size() < 3)
-            {
-                uc.uiManager->setSlotValidity(slotIdx, false);
-            }
-            // Three or more tiles: check if they form a valid combo
-            else
-            {
-                SlotAttackKind kind = classifySlotAttack(slotEntries);
-                // Only DefaultThrow and None are invalid for 3+ tiles
-                bool valid = (kind != SlotAttackKind::None && kind != SlotAttackKind::DefaultThrow);
-                uc.uiManager->setSlotValidity(slotIdx, valid);
-            }
+        updateSlotStatus(uc);
+    }
+}
 
-            float percent = computeSlotCooldownPercent(slotIdx, uc);
-            uc.uiManager->setSlotCooldownPercent(slotIdx, percent);
+void AttackManager::updateSlotStatus(UpdateContext &uc)
+{
+    if (!uc.uiManager) return;
+
+    for (int slotIdx = 0; slotIdx < UIManager::slotCount; ++slotIdx)
+    {
+        const auto &slotEntries = uc.uiManager->getSlotEntries(slotIdx);
+        
+        if (slotEntries.empty())
+        {
+            uc.uiManager->setSlotValidity(slotIdx, true);
+            uc.uiManager->setSlotSkillName(slotIdx, "");
         }
+        else if (slotEntries.size() < 3)
+        {
+            uc.uiManager->setSlotValidity(slotIdx, false);
+            uc.uiManager->setSlotSkillName(slotIdx, "");
+        }
+        else
+        {
+            SlotAttackKind kind = classifySlotAttack(slotEntries);
+            bool valid = (kind != SlotAttackKind::None && kind != SlotAttackKind::DefaultThrow);
+            uc.uiManager->setSlotValidity(slotIdx, valid);
+            
+            if (valid) {
+                std::string display = classifyAttackType(slotEntries);
+                if (display == "BambooBomb") display = "Bamboo Bomb";
+                else if (display == "BambooTriple") display = "Rapid Fire";
+                else if (display == "GravityWell") display = "Gravity Well";
+                else if (display == "OrbitalShield") display = "Orbital Shield";
+                else if (display == "ChainLightning") display = "Chain Lightning";
+                else if (display == "FanShot") display = "Fan Shot";
+                else if (display == "SeismicSlam") display = "Seismic Slam";
+                else if (display == "Melee") display = "Melee Push";
+                else if (display == "Dash") display = "Dash";
+                uc.uiManager->setSlotSkillName(slotIdx, display);
+            } else {
+                uc.uiManager->setSlotSkillName(slotIdx, "");
+            }
+        }
+
+        float percent = computeSlotCooldownPercent(slotIdx, uc);
+        uc.uiManager->setSlotCooldownPercent(slotIdx, percent);
     }
 }
 
@@ -512,6 +533,7 @@ std::string AttackManager::classifyAttackType(const std::vector<SlotTileEntry> &
     }
 
     // Default throw for single valid tile
+    if (tiles.empty()) return "NA";
     if (tiles.front().isValid())
         return "DefaultThrow";
 
@@ -759,6 +781,37 @@ void AttackManager::releaseAttackLock(const AttackController *controller)
     {
         this->attackLockOwner = nullptr;
     }
+}
+
+void AttackManager::cancelAllAttacks(Entity *entity)
+{
+    // Helper lambda to cancel attacks for a list
+    auto cancelList = [&](auto &list) {
+        for (auto *attack : list)
+        {
+            if (attack->spawnedBy == entity)
+            {
+                attack->cancel();
+                if (this->isAttackLockedByOther(attack))
+                {
+                    this->releaseAttackLock(attack);
+                }
+            }
+        }
+    };
+
+    cancelList(this->basicTileAttacks);
+    cancelList(this->meleeAttacks);
+    cancelList(this->dashAttacks);
+    cancelList(this->bambooBombAttacks);
+    cancelList(this->bambooTripleAttacks);
+    cancelList(this->dragonClawAttacks);
+    cancelList(this->arcaneOrbAttacks);
+    cancelList(this->fanShotAttacks);
+    cancelList(this->seismicSlamAttacks);
+    cancelList(this->gravityWellAttacks);
+    cancelList(this->chainLightningAttacks);
+    cancelList(this->orbitalShieldAttacks);
 }
 
 DragonClawAttack *AttackManager::getDragonClawAttack(Entity *spawnedBy)

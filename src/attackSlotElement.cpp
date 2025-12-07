@@ -52,11 +52,33 @@ void AttackSlotElement::draw()
     float thick = isValidCombo ? 1.0f : 3.0f;
     DrawRectangleRoundedLinesEx(rect, 0.18f, 8, thick, outline);
 
+    int labelFont = 20;
+    int labelWidth = 0;
+    int labelX = rect.x;
+    int labelY = rect.y - labelFont - 4;
+
     if (!keyLabel.empty())
     {
-        const int labelFont = 20;
-        int labelWidth = MeasureText(keyLabel.c_str(), labelFont);
-        DrawText(keyLabel.c_str(), rect.x + rect.width / 2 - labelWidth / 2, rect.y - labelFont - 4, labelFont, RAYWHITE);
+        labelWidth = MeasureText(keyLabel.c_str(), labelFont);
+        // Center label horizontally relative to slot if no skill name, or left align if there is one?
+        // User said "on the right of the keybinding text".
+        // Let's keep keybinding centered relative to slot, and put skill name to its right.
+        labelX = rect.x + rect.width / 2 - labelWidth / 2;
+        DrawText(keyLabel.c_str(), labelX, labelY, labelFont, RAYWHITE);
+    }
+
+    if (!skillName.empty() && isValidCombo)
+    {
+        const int skillFont = 16;
+        // Position it to the right of the label with some padding
+        int skillX = labelX + labelWidth + 10;
+        // Align vertically with label baseline or center? Center looks better.
+        // Label is 20px, Skill is 16px.
+        // labelY is top of label.
+        // Center offset: (20 - 16) / 2 = 2.
+        int skillY = labelY + 2;
+        
+        DrawText(skillName.c_str(), skillX, skillY, skillFont, YELLOW);
     }
 
     // Slots mirror the gameplay data vector; empty cells render dark pads so

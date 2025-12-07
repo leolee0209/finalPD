@@ -3069,6 +3069,14 @@ bool SeismicSlamAttack::trigger(UpdateContext &uc)
     return true;
 }
 
+void SeismicSlamAttack::cancel()
+{
+    state = SLAM_IDLE;
+    stateTimer = 0.0f;
+    shockwaveActive = false;
+    shockwaveRing.setVisible(false);
+}
+
 void SeismicSlamAttack::performLeap(UpdateContext &uc)
 {
     if (!uc.player)

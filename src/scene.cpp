@@ -69,20 +69,20 @@ namespace
     }
 }
 
-void DamageIndicatorSystem::Spawn(const Vector3 &worldPosition, float amount)
+void DamageIndicatorSystem::Spawn(const Vector3 &worldPosition, float amount, Color color)
 {
-    int rounded = (int)lroundf(amount);
-    if (rounded <= 0)
-        return;
-
-    DamageIndicator indicator;
-    indicator.worldPosition = worldPosition;
-    indicator.screenOffset = {RandomRange(-18.0f, 18.0f), RandomRange(-8.0f, 8.0f)};
-    indicator.velocity = {RandomRange(-10.0f, 10.0f), RandomRange(28.0f, 46.0f)};
-    indicator.lifetime = RandomRange(0.8f, 1.05f);
-    indicator.age = 0.0f;
-    indicator.text = std::to_string(rounded);
-    this->indicators.push_back(std::move(indicator));
+    DamageIndicator di;
+    di.worldPosition = worldPosition;
+    di.text = std::to_string((int)amount);
+    di.color = color;
+    
+    // Random velocity
+    di.velocity.x = RandomRange(-20.0f, 20.0f);
+    di.velocity.y = RandomRange(-60.0f, -100.0f); // Move up (screen Y is down?)
+    // Actually typically floating text moves UP in world or screen.
+    // If screenOffset is used, Y- is up.
+    
+    this->indicators.push_back(di);
 }
 
 void DamageIndicatorSystem::Update(float deltaSeconds)
@@ -131,7 +131,8 @@ void DamageIndicatorSystem::Draw(const Camera &camera) const
         float shadowOffset = Clamp(fontSize * 0.12f, 1.0f, 6.0f);
 
         unsigned char alphaByte = (unsigned char)Clamp(alpha * 255.0f, 0.0f, 255.0f);
-        Color fill = {255, 235, 196, alphaByte};
+        Color fill = indicator.color;
+        fill.a = alphaByte;
         Color outline = {40, 5, 5, alphaByte};
         Color shadow = {0, 0, 0, (unsigned char)Clamp(alpha * 200.0f, 0.0f, 255.0f)};
 
@@ -750,9 +751,18 @@ void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
                 Inventory inv;
                 auto &tiles = inv.getTiles();
                 int tileCount = 3 + (rand() % 3); // 3-5 tiles
+                
+                // Allowed tile types: Character 1-3, Bamboo 1-3, Dot 1-3
+                const TileType allowedTiles[] = {
+                    TileType::CHARACTER_1, TileType::CHARACTER_2, TileType::CHARACTER_3,
+                    TileType::BAMBOO_1,    TileType::BAMBOO_2,    TileType::BAMBOO_3,
+                    TileType::DOT_1,       TileType::DOT_2,       TileType::DOT_3
+                };
+                int allowedCount = sizeof(allowedTiles) / sizeof(TileType);
+
                 for (int i = 0; i < tileCount; ++i)
                 {
-                    TileType type = (TileType)(rand() % (int)TileType::TILE_COUNT);
+                    TileType type = allowedTiles[rand() % allowedCount];
                     float damage = 10.0f + (float)(rand() % 8);
                     float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);
                     tiles.emplace_back(TileStats(damage, fireRate), type);
@@ -1170,7 +1180,7 @@ void Scene::DrawDamageIndicators(const Camera &camera) const
     this->damageIndicators.Draw(camera);
 }
 
-void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
+void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount, Color color)
 {
     if (damageAmount <= 0.0f)
         return;
@@ -1183,7 +1193,7 @@ void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
     spawn.y += halfSize.y + RandomRange(-halfSize.y * 0.2f, halfSize.y * 0.6f);
     spawn.z += RandomRange(-halfSize.z, halfSize.z);
 
-    this->damageIndicators.Spawn(spawn, damageAmount);
+    this->damageIndicators.Spawn(spawn, damageAmount, color);
 }
 
 // Updates all entities and attacks in the scene

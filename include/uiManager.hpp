@@ -124,6 +124,7 @@ public:
     void addElement(UIElement *element);
     void setSlotCooldownPercent(int slotIndex, float percent);
     void setSlotValidity(int slotIndex, bool valid);
+    void setSlotSkillName(int slotIndex, const std::string &name);
 
     void setPauseMenuVisible(bool visible);
     bool isPauseMenuVisible() const { return pauseMenuVisible; }
@@ -153,6 +154,7 @@ public:
     void updateBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory, bool& gamePaused);
     void drawBriefcaseMenu(UpdateContext &uc, Inventory &playerInventory);
     bool isTileFromHandUsed(int handIndex) const;
+    bool isTileIdUsed(int tileId) const;
 
 private:
     void updateHud();
@@ -172,9 +174,13 @@ private:
     AttackSlotElement *getSlotElement(int index) const;
 
     void beginTileDragFromHand(int tileIndex, TileType tileType, const Vector2 &mousePos);
+    void beginTileDragFromHandWithId(int tileIndex, TileType tileType, int tileId, const Vector2 &mousePos);
     void beginTileDragFromSlot(int slotIndex, int tileIndex, const Vector2 &mousePos);
     void endTileDrag(const Vector2 &mousePos);
     void addTileToSlot(int slotIndex, const SlotTileEntry &entry);
+    
+    // Add tile ID lookup helper
+    Tile* getTileById(Inventory &inventory, int tileId);
 
     bool slotHasSpace(int slotIndex) const;
     bool isValidSlotIndex(int slotIndex) const;
@@ -202,6 +208,7 @@ private:
     std::array<AttackSlotElement *, slotCount> slotElements{}; // Owned UI wrappers for each slot
     std::array<float, slotCount> slotCooldowns{};
     std::array<bool, slotCount> slotValid{};
+    std::array<std::string, slotCount> slotSkillNames{};
     static const char *slotKeyLabels[slotCount];
     bool slotsInitialized = false;
     bool isDraggingTile = false;
