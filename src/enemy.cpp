@@ -655,6 +655,7 @@ void Enemy::Draw() const
 // Update the enemy's dialog box position/text/visibility
 void Enemy::UpdateDialog(UpdateContext &uc, float verticalOffset)
 {
+    // healthDialog is now created in constructor, but check just in case
     if (!this->healthDialog)
     {
         this->healthDialog = new DialogBox();

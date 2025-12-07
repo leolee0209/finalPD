@@ -3,7 +3,7 @@
 #include <constant.hpp>
 #include <vector>
 #include "object.hpp"
-class DialogBox;
+#include "dialogBox.hpp"
 #include "Inventory.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
@@ -195,7 +195,10 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
-        // healthDialog will be created by enemy implementations (cpp) where type is complete
+        
+        // Create health dialog immediately
+        this->healthDialog = new DialogBox();
+        this->healthDialog->setBarSize(2.5f, 0.32f);
     }
     
     Enemy(int customHealth)
@@ -210,6 +213,10 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f};
+        
+        // Create health dialog immediately
+        this->healthDialog = new DialogBox();
+        this->healthDialog->setBarSize(2.5f, 0.32f);
     }
 
     virtual ~Enemy();
@@ -769,5 +776,7 @@ public:
 typedef struct DamageResult{
     float damage;
     CollisionResult &cResult;
+    int deathAnimationType = 2; // 0=melee, 1=projectile, 2=magic/dot/default
+    Vector3 directionHint = {0, 0, 0}; // Direction for shard explosion
     DamageResult(float _damage, CollisionResult &_cResult) : damage(_damage), cResult(_cResult) {};
 } DamageResult;

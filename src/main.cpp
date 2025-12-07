@@ -19,6 +19,7 @@ enum class GameState
     MENU,
     TRANSITION,
     LOADING,
+    RECOVERY,    // Recovery animation after loading
     GAMEPLAY,
     GAMEOVER
 };
@@ -50,6 +51,7 @@ int main(void)
     GameState gameState = GameState::MENU;
     float transitionTimer = 0.0f;
     float loadingTimer = 0.0f;
+    float recoveryTimer = 0.0f;  // Recovery animation timer
     const float loadingMinSeconds = 0.6f;
     bool assetsLoaded = false;
     bool loadingStarted = false;
@@ -97,11 +99,18 @@ int main(void)
         float dt = GetFrameTime();
         bool haveGame = (player && scene && uiManager);
         bool inGameplay = haveGame && (gameState == GameState::GAMEPLAY);
+        bool inRecovery = (gameState == GameState::RECOVERY);
 
         auto ensureAssetsLoaded = [&]() {
             if (assetsLoaded) return;
             VanguardEnemy::LoadSharedResources();
             player = std::make_unique<Me>();
+            
+            // Set initial look direction to face forward into the dungeon (+Z direction)
+            // In gameplay system: yaw of 0 = facing +X, so we need PI/2 to face +Z
+            player->getLookRotation().x = PI * 1.0f;  // Face forward (+Z)
+            player->getLookRotation().y = 0.0f;       // Look straight (no pitch)
+            
             scene = std::make_unique<Scene>();
             uiManager = std::make_unique<UIManager>("mahjong.png", 9, 44, 60);
             uiManager->addElement(new UICrosshair({SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f}));
@@ -182,6 +191,16 @@ int main(void)
             loadingTimer += dt;
             if (loadingTimer >= loadingMinSeconds && assetsLoaded)
             {
+                gameState = GameState::RECOVERY;
+                recoveryTimer = 0.0f;  // Start recovery animation
+            }
+        }
+        
+        if (gameState == GameState::RECOVERY)
+        {
+            recoveryTimer += dt;
+            if (recoveryTimer >= opening.GetRecoveryDuration())
+            {
                 gameState = GameState::GAMEPLAY;
                 gamePaused = false;
                 uiManager->setPauseMenuVisible(false);
@@ -245,34 +264,39 @@ int main(void)
 
         if (inGameplay && !gamePaused)
         {
+            // Manual door opening with 'C' key (only if no briefcase is nearby)
             if (IsKeyPressed(KEY_C))
             {
                 Vector3 playerPos = player->pos();
-                Room *currentRoom = scene->GetCurrentPlayerRoom();
-                if (currentRoom && currentRoom->IsCompleted())
+                
+                // Check if briefcase is nearby first (priority to briefcase interaction)
+                bool briefcaseNearby = false;
+                for (auto *briefcase : scene->GetRewardBriefcases())
                 {
-                    for (Door *door : currentRoom->GetDoors())
+                    if (briefcase && briefcase->IsPlayerNearby(playerPos) && !briefcase->IsActivated())
                     {
-                        if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
+                        briefcaseNearby = true;
+                        break;
+                    }
+                }
+                
+                // If no briefcase nearby, check for door interaction
+                if (!briefcaseNearby)
+                {
+                    Room *currentRoom = scene->GetCurrentPlayerRoom();
+                    
+                    if (currentRoom && currentRoom->IsCompleted())
+                    {
+                        // Look for nearby doors that can be manually opened
+                        for (Door *door : currentRoom->GetDoors())
                         {
-                            bool canOpen = false;
-                            if (door->GetRoomA() && door->GetRoomB())
+                            if (door && door->IsClosed() && door->IsPlayerNearby(playerPos, 5.0f))
                             {
-                                if (door->GetRoomA()->IsCompleted() && door->GetRoomB()->IsCompleted())
-                                {
-                                    canOpen = true;
-                                }
-                                else if (currentRoom == door->GetRoomA() || currentRoom == door->GetRoomB())
-                                {
-                                    canOpen = true;
-                                }
+                                // Can open if current room is completed
+                                // (even if the other side isn't completed yet)
+                                door->Open();
+                                break;
                             }
-                            else
-                            {
-                                canOpen = currentRoom->IsCompleted();
-                            }
-                            if (canOpen) door->Open();
-                            break;
                         }
                     }
                 }
@@ -326,8 +350,11 @@ int main(void)
                 }
             }
 
-            player->UpdateBody(uc);
-            player->UpdateCamera(uc);
+            // Skip player updates during hit stop
+            if (!scene->particles.isHitStopActive()) {
+                player->UpdateBody(uc);
+                player->UpdateCamera(uc);
+            }
             scene->Update(uc);
         }
 
@@ -346,6 +373,7 @@ int main(void)
         if (haveGame && uiManager->consumeRespawnRequest())
         {
             player->respawn(player->getSpawnPosition());
+            scene->ResetDoorsForRespawn();
             uiManager->setGameOverVisible(false);
             gamePaused = false;
             uiManager->setPauseMenuVisible(false);
@@ -373,7 +401,32 @@ int main(void)
         float radialBlur = 0.0f;
         float vignetteStrength = 0.35f;
         float blackoutAlpha = 0.0f;
-        Camera camera = haveGame ? player->getCamera() : menuCamera;
+        Camera camera;
+        
+        if (gameState == GameState::RECOVERY && haveGame)
+        {
+            // Recovery animation: inverse of dive - DON'T use player camera
+            TransitionVisuals tv = opening.EvaluateRecovery(recoveryTimer);
+            
+            // Build camera from recovery animation
+            camera.position = {tv.camX, tv.camY, tv.camZ};
+            camera.fovy = opening.GetCameraFov();
+            
+            float pitchRad = tv.pitchDeg * DEG2RAD;
+            Vector3 forwardVec = {0.0f, sinf(pitchRad), cosf(pitchRad)};
+            camera.target = Vector3Add(camera.position, forwardVec);
+            camera.up = {0.0f, 1.0f, 0.0f};
+            camera.projection = CAMERA_PERSPECTIVE;
+            
+            radialBlur = tv.radialBlur;
+            vignetteStrength = tv.vignetteStrength;
+            blackoutAlpha = tv.blackoutAlpha;
+        }
+        else
+        {
+            camera = haveGame ? player->getCamera() : menuCamera;
+        }
+        
         if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
         {
             if (DragonClawAttack::isTweakModeEnabled()) DragonClawAttack::applyTweakCamera(*player, camera);
@@ -415,6 +468,23 @@ int main(void)
                     
                     camera = menuCamera;
                 }
+                else if (gameState == GameState::RECOVERY)
+                {
+                    // Recovery: Override camera with recovery animation
+                    TransitionVisuals tv = opening.EvaluateRecovery(recoveryTimer);
+                    camera.position = {tv.camX, tv.camY, tv.camZ};
+                    camera.fovy = opening.GetCameraFov();
+                    
+                    float pitchRad = tv.pitchDeg * DEG2RAD;
+                    Vector3 forwardVec = {0.0f, sinf(pitchRad), cosf(pitchRad)};
+                    camera.target = Vector3Add(camera.position, forwardVec);
+                    camera.up = {0.0f, 1.0f, 0.0f};
+                    camera.projection = CAMERA_PERSPECTIVE;
+                    
+                    radialBlur = tv.radialBlur;
+                    vignetteStrength = tv.vignetteStrength;
+                    blackoutAlpha = tv.blackoutAlpha;
+                }
                 else
                 {
                     // Transition/Loading: Override camera with animation
@@ -452,7 +522,7 @@ int main(void)
                     opening.DrawSpotlightMask(GetScreenWidth(), GetScreenHeight());
                 }
             }
-            else
+            else if (gameState == GameState::RECOVERY || gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
             {
                 ClearBackground(scene->getSkyColor());
                 scene->SetViewPosition(camera.position);
@@ -504,7 +574,7 @@ int main(void)
             }
         }
 
-        if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER)
+        if (gameState == GameState::GAMEPLAY || gameState == GameState::GAMEOVER || gameState == GameState::RECOVERY)
         {
             uiManager->draw(uc, player->hand);
             DragonClawAttack::drawTweakHud(*player);

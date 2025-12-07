@@ -235,6 +235,42 @@ TransitionVisuals OpeningScene::EvaluateTransition(float tSeconds)
     return v;
 }
 
+TransitionVisuals OpeningScene::EvaluateRecovery(float tSeconds)
+{
+    // Recovery animation: Inverse of dive, from face-down on table to normal eye level
+    TransitionVisuals v{};
+    
+    // Clamp time to recovery duration
+    if (tSeconds > config.recoveryDuration) {
+        tSeconds = config.recoveryDuration;
+    }
+    
+    // Progress through recovery (0 = start face-down, 1 = fully recovered)
+    float u = tSeconds / config.recoveryDuration;
+    float eased = powf(u, config.recoveryCurvePower); // Ease out: slow start, fast end
+    
+    // Interpolate from dive end position to normal start position
+    v.pitchDeg = Lerp(config.diveTargetPitch, config.cameraPitchStart, eased);
+    v.camX = Lerp(config.diveTargetX, config.cameraXStart, eased);
+    v.camY = Lerp(config.diveTargetY, config.cameraYStart, eased);
+    v.camZ = Lerp(config.diveTargetZ, config.cameraDistanceZ, eased);
+    
+    // Fade blur out quickly
+    v.radialBlur = config.radialBlurMax * (1.0f - u * config.recoveryBlurFade);
+    if (v.radialBlur < 0.0f) v.radialBlur = 0.0f;
+    
+    // Vignette fades from impact strength to normal base
+    v.vignetteStrength = Lerp(config.vignetteImpact, config.vignetteBase, eased);
+    
+    // Blackout fades from full black to clear
+    v.blackoutAlpha = 1.0f - u;
+    
+    v.triggerImpactAudio = false;
+    v.overrideCamera = true;
+    
+    return v;
+}
+
 void OpeningScene::PlayImpactAudio()
 {
     if (!audioReady) return;

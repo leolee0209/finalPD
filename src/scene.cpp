@@ -736,8 +736,8 @@ void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
             bool wasCompleted = room->IsCompleted();
             room->Update(enemies);
 
-            // Spawn briefcase when room is newly completed
-            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy)
+            // Spawn briefcase when room is newly completed AND had enemies spawned
+            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy && room->AreEnemiesSpawned())
             {
                 // Calculate room center
                 BoundingBox bounds = room->GetBounds();
@@ -1121,6 +1121,24 @@ void Scene::DrawScene(Camera camera) const
     // Draw a red sun in the sky
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
     
+    // End shader mode temporarily for particles
+    if (this->lightingShader.id != 0)
+    {
+        EndShaderMode();
+    }
+    
+    // Draw death shards with lighting shader (3D meshes, before particles)
+    if (this->lightingShader.id != 0)
+    {
+        BeginShaderMode(this->lightingShader);
+        this->particles.drawDeathShards(this->lightingShader);
+        EndShaderMode();
+    }
+    else
+    {
+        this->particles.drawDeathShards(Shader{0});
+    }
+    
     // Draw particles (after all other 3D elements)
     this->particles.draw(camera);
 }
@@ -1173,8 +1191,13 @@ void Scene::Update(UpdateContext &uc)
 {
     const float deltaSeconds = GetFrameTime();
     
-    // Update particle system
+    // Update particle system (handles hit stop internally)
     this->particles.update(deltaSeconds);
+    
+    // Skip game simulation if hit stop is active
+    if (this->particles.isHitStopActive()) {
+        return;
+    }
 
     // Check if player entered a new room and spawn enemies on first entry
     Room *previousRoom = this->currentPlayerRoom;
@@ -1593,6 +1616,27 @@ void Scene::UpdateRoomDoors(const Vector3 &playerPos)
     this->currentPlayerRoom = newRoom;
 }
 
+void Scene::ResetDoorsForRespawn()
+{
+    // Open doors where both connected rooms are completed (like Soul Knight respawn behavior)
+    for (auto &door : this->doors)
+    {
+        if (door)
+        {
+            Room *roomA = door->GetRoomA();
+            Room *roomB = door->GetRoomB();
+            
+            if (roomA && roomB && roomA->IsCompleted() && roomB->IsCompleted())
+            {
+                if (!door->IsOpen())
+                {
+                    door->Open();
+                }
+            }
+        }
+    }
+}
+
 void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const
 {
     const int screenW = GetScreenWidth();
@@ -1616,9 +1660,10 @@ void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camer
         int tw = MeasureText(text, fontSize);
         DrawText(text, (screenW - tw) / 2, y, fontSize, YELLOW);
         y -= 26;
+        return; // Priority to briefcase, don't show door prompt
     }
 
-    // Door prompt (if near a closed door in a completed room)
+    // Door prompt (if near a closed door in a completed room, and no briefcase)
     if (this->currentPlayerRoom && this->currentPlayerRoom->IsCompleted())
     {
         bool doorNearby = false;
@@ -1635,6 +1680,7 @@ void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camer
             const char *text = "Press C to Open Door";
             int tw = MeasureText(text, fontSize);
             DrawText(text, (screenW - tw) / 2, y, fontSize, GREEN);
+            y -= 26;
         }
     }
 }

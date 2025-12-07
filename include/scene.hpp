@@ -186,4 +186,5 @@ public:
     // Return the room that contains the given world position, or nullptr
     // if the position is not inside any room.
     Room *GetRoomContainingPosition(const Vector3 &pos) const;
+    void ResetDoorsForRespawn();
 };

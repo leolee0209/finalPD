@@ -303,10 +303,7 @@ void Room::AttachDoor(Door *door)
     }
 
     this->doors.push_back(door);
-    if (this->completed)
-    {
-        // Do not auto-open doors; require player interaction
-    }
+    // Don't auto-open doors here; let TryOpenDoors handle it based on both rooms
 }
 
 void Room::Update(const std::vector<Entity *> &enemies)
@@ -362,9 +359,16 @@ void Room::TryOpenDoors()
 {
     for (Door *door : this->doors)
     {
-        if (door)
+        if (door && !door->IsOpen())
         {
-            // Do not auto-open doors; require player interaction
+            // Only auto-open doors if BOTH connected rooms are completed
+            Room *roomA = door->GetRoomA();
+            Room *roomB = door->GetRoomB();
+            
+            if (roomA && roomB && roomA->IsCompleted() && roomB->IsCompleted())
+            {
+                door->Open();
+            }
         }
     }
 }

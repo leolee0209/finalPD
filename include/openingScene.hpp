@@ -82,6 +82,11 @@ struct OpeningConfig
     float impactBounceHeight = 0.04f; // Small bounce off table
     float blackoutFadeSpeed = 2.0f;   // Speed of fade to black
 
+    // Recovery Phase (inverse of dive - when entering gameplay)
+    float recoveryDuration = 1.8f;    // Time to recover from face-down to normal
+    float recoveryCurvePower = 2.2f;  // Easing power (slower at start, faster at end)
+    float recoveryBlurFade = 0.5f;    // How fast blur fades during recovery
+
     // Blur
     float radialBlurMax = 2.0f; // Strong blur
 
@@ -119,6 +124,7 @@ class OpeningScene
     void SetupLighting();
 
     TransitionVisuals EvaluateTransition(float tSeconds);
+    TransitionVisuals EvaluateRecovery(float tSeconds); // Recovery animation when entering gameplay
     void DrawMenuScene(const Camera &cam, int screenW, int screenH, bool showUI) const;
     void DrawSpotlightMask(int screenW, int screenH) const;
     void DrawVignetteAndBlackout(int screenW, int screenH, float vignetteStrength, float blackoutAlpha) const;
@@ -132,6 +138,9 @@ class OpeningScene
     
     float GetTotalDuration() const { 
         return config.animNodDuration + config.animDiveDuration + config.animImpactDuration + config.animSleepDelay; 
+    }
+    float GetRecoveryDuration() const {
+        return config.recoveryDuration;
     }
     float GetImpactTime() const {
         return config.animNodDuration + config.animDiveDuration + config.animImpactDuration;
