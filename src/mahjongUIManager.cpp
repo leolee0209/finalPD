@@ -7,54 +7,39 @@ void MahjongUIManager::createHandUI(Inventory &inventory, int screenWidth, int s
 {
     auto &tiles = inventory.getTiles();
     
-    // Clear existing UI elements if size changed
-    if (handElements.size() != tiles.size())
+    // Always rebuild to ensure visual order matches sorted vector
+    for (auto *elem : handElements)
     {
-        for (auto *elem : handElements)
-        {
-            delete elem;
-        }
-        handElements.clear();
-        tileHitboxes.clear();
-        tileUsed.clear();
-        
-        // Create new UI elements for each tile
-        const int handSize = tiles.size();
-        const float totalHandWidth = handSize * this->tileWidth;
-        const float startX = (screenWidth - totalHandWidth) / 2.0f;
-        const float startY = screenHeight - this->tileHeight - 10.0f;
-        
-        for (int i = 0; i < handSize; ++i)
-        {
-            float x = startX + i * this->tileWidth;
-            Rectangle source = getTile(tiles[i].type);
-            UITexturedSquare *elem = new UITexturedSquare(&spriteSheet, {x, startY}, 
-                                                          {(float)this->tileWidth, (float)this->tileHeight}, 
-                                                          source);
-            handElements.push_back(elem);
-            tileHitboxes.push_back(elem->getBounds());
-        }
-        
-        tileUsed.resize(handSize, false);
+        delete elem;
     }
-    else
+    handElements.clear();
+    tileHitboxes.clear();
+    
+    // Create new UI elements for each tile
+    const int handSize = tiles.size();
+    const float totalHandWidth = handSize * this->tileWidth;
+    const float startX = (screenWidth - totalHandWidth) / 2.0f;
+    const float startY = screenHeight - this->tileHeight - 10.0f;
+    
+    for (int i = 0; i < handSize; ++i)
     {
-        // Update existing elements with new tile types - need to recreate them
-        // For simplicity, just recreate if types changed
-        tiles = inventory.getTiles();
-        for (int i = 0; i < tiles.size(); ++i)
-        {
-            Rectangle source = getTile(tiles[i].type);
-            if (UITexturedSquare *elem = dynamic_cast<UITexturedSquare*>(handElements[i]))
-            {
-                // Recreate element with new source rect
-                Vector2 pos = {elem->getBounds().x, elem->getBounds().y};
-                Vector2 sz = {elem->getBounds().width, elem->getBounds().height};
-                delete handElements[i];
-                handElements[i] = new UITexturedSquare(&spriteSheet, pos, sz, source);
-                tileHitboxes[i] = handElements[i]->getBounds();
-            }
-        }
+        float x = startX + i * this->tileWidth;
+        Rectangle source = getTile(tiles[i].type);
+        UITexturedSquare *elem = new UITexturedSquare(&spriteSheet, {x, startY}, 
+                                                      {(float)this->tileWidth, (float)this->tileHeight}, 
+                                                      source);
+        handElements.push_back(elem);
+        tileHitboxes.push_back(elem->getBounds());
+    }
+    
+    // Resize usage flags if needed (preserve content if possible, or reset?)
+    // Usage flags are set by UIManager based on slots. Slot entries now use ID.
+    // `tileUsed` vector here is index-based visual overlay.
+    // UIManager needs to map ID -> Index to set this flag.
+    // We'll handle that in UIManager::drawPauseMenu / update HUD.
+    // For now just resize.
+    if (tileUsed.size() != handSize) {
+        tileUsed.resize(handSize, false);
     }
 }
 

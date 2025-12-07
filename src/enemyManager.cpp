@@ -63,12 +63,48 @@ void EnemyManager::damage(Enemy *enemy, DamageResult &dResult, UpdateContext &uc
 
     if (uc.scene)
     {
-        uc.scene->EmitDamageIndicator(*enemy, dResult.damage);
+        float effective = dResult.damage * (1.0f - enemy->damageResistance);
+        Color color = (enemy->damageResistance > 0.0f) ? LIGHTGRAY : RED; // Metallic Gray feedback
+        uc.scene->EmitDamageIndicator(*enemy, effective, color);
     }
 
     if (!enemy->damage(dResult))
-    {
-        TraceLog(LOG_ERROR, "enemy died\n");
+    {        TraceLog(LOG_ERROR, "enemy died\n");
+        
+        // DEATH ANIMATION SEQUENCE
+        if (uc.scene)
+        {
+            // Step 1: Hit Stop (0.05s pause)
+            uc.scene->particles.triggerHitStop(0.05f);
+            
+            // Step 2 & 3: Flash white and spawn shards
+            // Get enemy color from texture (use white if no texture)
+            Color enemyColor = WHITE;
+            if (enemy->obj().useTexture && enemy->obj().texture != nullptr && enemy->obj().texture->id != 0) {
+                // Sample center of texture for enemy color
+                Image img = LoadImageFromTexture(*enemy->obj().texture);
+                if (img.data) {
+                    Color* pixels = LoadImageColors(img);
+                    int centerX = img.width / 2;
+                    int centerY = img.height / 2;
+                    if (centerX >= 0 && centerX < img.width && centerY >= 0 && centerY < img.height) {
+                        enemyColor = pixels[centerY * img.width + centerX];
+                    }
+                    UnloadImageColors(pixels);
+                    UnloadImage(img);
+                }
+            }
+            
+            // Spawn death shards at enemy position
+            uc.scene->particles.spawnDeathShards(
+                enemy->pos(), 
+                enemyColor, 
+                enemy->obj().size,
+                dResult.directionHint,
+                dResult.deathAnimationType
+            );
+        }
+        
         // Call virtual OnDeath handler for special cleanup (e.g., Summoner minion cleanup)
         SummonerEnemy *summoner = dynamic_cast<SummonerEnemy*>(enemy);
         if (summoner)

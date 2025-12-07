@@ -31,7 +31,6 @@
 **********************************************************************************************/
 #pragma once
 #include <raylib.h>
-#define RLIGHTS_IMPLEMENTATION
 #ifndef RLIGHTS_H
 #define RLIGHTS_H
 

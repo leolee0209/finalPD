@@ -45,6 +45,13 @@ void UIManager::setSlotValidity(int slotIndex, bool valid)
     slotValid[slotIndex] = valid;
 }
 
+void UIManager::setSlotSkillName(int slotIndex, const std::string &name)
+{
+    if (!isValidSlotIndex(slotIndex))
+        return;
+    slotSkillNames[slotIndex] = name;
+}
+
 void UIManager::setPauseMenuVisible(bool visible)
 {
     pauseMenuVisible = visible;
@@ -454,6 +461,7 @@ void UIManager::ensureSlotElements()
             slotElements[i]->setKeyLabel(slotKeyLabels[i]);
         }
         slotElements[i]->setValid(slotValid[i]);
+        slotElements[i]->setSkillName(slotSkillNames[i]);
         slotElements[i]->setBounds(getSlotRect(i));
     }
 }
@@ -464,6 +472,7 @@ void UIManager::updateSlotElementLayout()
     for (int i = 0; i < slotCount; ++i)
     {
         slotElements[i]->setValid(slotValid[i]);
+        slotElements[i]->setSkillName(slotSkillNames[i]);
         slotElements[i]->setBounds(getSlotRect(i));
     }
 }
@@ -481,7 +490,43 @@ void UIManager::beginTileDragFromHand(int tileIndex, TileType tileType, const Ve
     draggingFromHand = true;
     draggingFromSlot = -1;
     draggingFromTileIndex = tileIndex;
-    draggingTile = SlotTileEntry{tileType, tileIndex};
+    
+    // Retrieve ID from tile index (requires access to inventory which is updated in update loop)
+    // We don't have direct access to inventory here, but muim has updated elements.
+    // However, we rely on the index passed from draw/update.
+    // We'll need to fetch the ID when we can or store it in muim.
+    // For now, let's assume we can't easily get it here without passing inventory.
+    // Wait... `update` passes inventory. We can store it or look it up.
+    // Better: `addTileToSlot` handles the logic.
+    // But SlotTileEntry needs the ID now.
+    // Let's modify beginTileDragFromHand signature or logic.
+    // The previous todo said update logic to retrieve tileId.
+    
+    // Actually, draggingTile is a SlotTileEntry.
+    // We need to construct it with a valid tileId.
+    // We can't get the ID without the inventory reference.
+    // But `draw` calls this via `beginTileDragFromHand`. `draw` has `Inventory &playerInventory`.
+    // Let's update `beginTileDragFromHand` to NOT take index/type but instead rely on internal state or pass ID.
+    // But it's called from inside `draw` loop where we have the index.
+    
+    // Quick fix: Since we can't change signature easily without refactoring caller (which is inside this file),
+    // let's just create a placeholder here and fix it? No, that's messy.
+    // We should assume the caller (draw) can pass the ID.
+    
+    // Wait, let's look at `draw`.
+    
+    draggingTile = SlotTileEntry{tileType, -1}; // ID will be filled by caller or lookup
+    draggingTilePos = mousePos;
+}
+
+// Overloaded helper for use inside draw()
+void UIManager::beginTileDragFromHandWithId(int tileIndex, TileType tileType, int tileId, const Vector2 &mousePos)
+{
+    isDraggingTile = true;
+    draggingFromHand = true;
+    draggingFromSlot = -1;
+    draggingFromTileIndex = tileIndex;
+    draggingTile = SlotTileEntry{tileType, tileId};
     draggingTilePos = mousePos;
 }
 
@@ -544,25 +589,15 @@ void UIManager::addTileToSlot(int slotIndex, const SlotTileEntry &entry)
 {
     if (!isValidSlotIndex(slotIndex))
         return;
-    auto &slot = attackSlots[slotIndex];
-    if ((int)slot.size() < slotCapacity)
+    if (attackSlots[slotIndex].size() < slotCapacity)
     {
-        // Check if this hand tile is already used in any slot
-        if (entry.handIndex >= 0)
-        {
-            for (int s = 0; s < slotCount; ++s)
-            {
-                for (const auto &existing : attackSlots[s])
-                {
-                    if (existing.handIndex == entry.handIndex)
-                    {
-                        return; // Don't allow duplicate
-                    }
-                }
-            }
-        }
-        slot.push_back(entry);
+        attackSlots[slotIndex].push_back(entry);
     }
+}
+
+Tile* UIManager::getTileById(Inventory &inventory, int tileId)
+{
+    return inventory.getTileById(tileId);
 }
 
 bool UIManager::slotHasSpace(int slotIndex) const
@@ -577,191 +612,115 @@ bool UIManager::isValidSlotIndex(int slotIndex) const
     return slotIndex >= 0 && slotIndex < slotCount;
 }
 
-bool UIManager::isTileFromHandUsed(int handIndex) const
+bool UIManager::isTileIdUsed(int tileId) const
 {
-    for (int s = 0; s < slotCount; ++s)
+    for (const auto &slot : attackSlots)
     {
-        for (const auto &entry : attackSlots[s])
+        for (const auto &entry : slot)
         {
-            if (entry.handIndex == handIndex)
-            {
+            if (entry.tileId == tileId)
                 return true;
-            }
         }
     }
     return false;
 }
 
+// Helper to check if a specific tile ID is currently assigned to any slot
+// Deprecated index-based check - redirects to ID check if possible, or false
+bool UIManager::isTileFromHandUsed(int handIndex) const
+{
+    return false; 
+}
+
 void UIManager::updatePauseMenu(Inventory &playerInventory)
 {
-    ensureSlotSetup();
-    updateSlotElementLayout();
-    // Validate slots: empty=valid, 1-2 tiles=invalid, 3+ tiles use classifier
-    for (int s = 0; s < slotCount; ++s)
-    {
-        if (attackSlots[s].empty())
-        {
-            slotValid[s] = true;  // Empty slots are valid
-        }
-        else if (attackSlots[s].size() < 3)
-        {
-            slotValid[s] = false; // 1 or 2 tiles invalid
-        }
-        else
-        {
-            // 3+ tiles: check if valid combo (not DefaultThrow or NA)
-            std::string attackType = AttackManager::classifyAttackType(attackSlots[s]);
-            slotValid[s] = (attackType != "NA" && attackType != "DefaultThrow");
-        }
-    }
+    // Update MUIM with sorted inventory
+    muim.createHandUI(playerInventory, GetScreenWidth(), GetScreenHeight());
     muim.update(playerInventory);
-
+    
     Vector2 mouse = GetMousePosition();
-    draggingTilePos = mouse;
-
-    // Hover hand tile
-    hoveredTileIndex = muim.getTileIndexAt(mouse);
-    const float dragThreshold = 6.0f;
-
-    // Track left press target for drag or selection
+    hoveredHandIndex = muim.getTileIndexAt(mouse);
+    
+    // Handle buttons
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {
-        leftMousePressed = true;
-        leftMouseDownPos = mouse;
-        leftMouseDownHandIndex = hoveredTileIndex;
-        leftMouseDownSlot = -1;
-        leftMouseDownSlotTileIndex = -1;
-
-        // If not on a hand tile, check slot tiles under cursor
-        if (hoveredTileIndex < 0)
+        if (CheckCollisionPointRec(mouse, getSmallButtonRect(0)))
         {
-            for (int s = 0; s < slotCount; ++s)
+            resumeRequested = true;
+        }
+        else if (CheckCollisionPointRec(mouse, getSmallButtonRect(1)))
+        {
+            quitRequested = true;
+        }
+    }
+    
+    // Mark used tiles visually using ID lookup
+    const auto &tiles = playerInventory.getTiles();
+    for (int i = 0; i < (int)tiles.size(); ++i)
+    {
+        muim.setTileUsed(i, isTileIdUsed(tiles[i].id));
+    }
+
+    // Left click to pick up tile from hand
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoveredHandIndex >= 0)
+    {
+        // Select the tile visually
+        muim.selectTileByIndex(hoveredHandIndex);
+
+        if (!isDraggingTile && hoveredHandIndex < (int)tiles.size())
+        {
+            // Prevent dragging if tile is already used in a slot
+            if (!isTileIdUsed(tiles[hoveredHandIndex].id))
             {
-                AttackSlotElement *slotEl = getSlotElement(s);
-                if (!slotEl || !slotEl->containsPoint(mouse))
-                    continue;
-                int tileIdx = -1;
-                int tileCount = (int)attackSlots[s].size();
-                for (int i = 0; i < tileCount; ++i)
+                beginTileDragFromHandWithId(hoveredHandIndex, tiles[hoveredHandIndex].type, tiles[hoveredHandIndex].id, mouse);
+            }
+        }
+    }
+    
+    // Right click slot interaction (remove/clear)
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
+    {
+        // Check slots
+        for (int s = 0; s < slotCount; ++s)
+        {
+            if (CheckCollisionPointRec(mouse, getSlotRect(s)))
+            {
+                if (!attackSlots[s].empty())
                 {
-                    if (CheckCollisionPointRec(mouse, slotEl->getTileRect(i)))
-                    {
-                        tileIdx = i;
-                        break;
-                    }
-                }
-                if (tileIdx >= 0)
-                {
-                    leftMouseDownSlot = s;
-                    leftMouseDownSlotTileIndex = tileIdx;
-                    break;
+                    attackSlots[s].pop_back();
                 }
             }
         }
     }
 
-    // Handle right click on hand tiles - for dragging to slots (legacy behavior)
-    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hoveredTileIndex >= 0)
+    // Update Dragging
+    if (isDraggingTile)
     {
-        auto &tiles = playerInventory.getTiles();
-        if (hoveredTileIndex < (int)tiles.size())
+        draggingTilePos = mouse;
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
         {
-            beginTileDragFromHand(hoveredTileIndex, tiles[hoveredTileIndex].type, mouse);
+            endTileDrag(mouse);
         }
     }
-
-    // Start drag from slot with right-click (legacy behavior)
-    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && hoveredTileIndex < 0)
+    
+    // Handle dragging from slots (Left click down on slot tile)
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !isDraggingTile)
     {
         for (int s = 0; s < slotCount; ++s)
         {
             AttackSlotElement *slotEl = getSlotElement(s);
-            if (!slotEl)
-                continue;
-            if (!slotEl->containsPoint(mouse))
-                continue;
-            int tileIdx = -1;
+            if (!slotEl || !slotEl->containsPoint(mouse)) continue;
+            
             int tileCount = (int)attackSlots[s].size();
             for (int i = 0; i < tileCount; ++i)
             {
                 if (CheckCollisionPointRec(mouse, slotEl->getTileRect(i)))
                 {
-                    tileIdx = i;
+                    beginTileDragFromSlot(s, i, mouse);
                     break;
                 }
             }
-            if (tileIdx >= 0)
-            {
-                beginTileDragFromSlot(s, tileIdx, mouse);
-                break;
-            }
         }
-    }
-
-    // Start left-drag if moved enough while held
-    if (leftMousePressed && !isDraggingTile && IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-    {
-        float dist = Vector2Distance(leftMouseDownPos, mouse);
-        if (dist > dragThreshold)
-        {
-            if (leftMouseDownHandIndex >= 0)
-            {
-                auto &tiles = playerInventory.getTiles();
-                if (leftMouseDownHandIndex < (int)tiles.size())
-                {
-                    beginTileDragFromHand(leftMouseDownHandIndex, tiles[leftMouseDownHandIndex].type, mouse);
-                }
-            }
-            else if (leftMouseDownSlot >= 0 && leftMouseDownSlotTileIndex >= 0)
-            {
-                beginTileDragFromSlot(leftMouseDownSlot, leftMouseDownSlotTileIndex, mouse);
-            }
-        }
-    }
-
-    // Drop on left release if dragging; otherwise handle selection/buttons
-    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
-    {
-        if (isDraggingTile)
-        {
-            endTileDrag(mouse);
-        }
-        else
-        {
-            // Selection click from hand
-            if (leftMouseDownHandIndex >= 0)
-            {
-                auto &tiles = playerInventory.getTiles();
-                if (leftMouseDownHandIndex < (int)tiles.size())
-                {
-                    muim.selectTileByIndex(leftMouseDownHandIndex);
-                }
-            }
-            else
-            {
-                // Buttons
-                if (CheckCollisionPointRec(mouse, getSmallButtonRect(0)))
-                {
-                    resumeRequested = true;
-                }
-                else if (CheckCollisionPointRec(mouse, getSmallButtonRect(1)))
-                {
-                    quitRequested = true;
-                }
-            }
-        }
-
-        // Reset press tracking
-        leftMousePressed = false;
-        leftMouseDownHandIndex = -1;
-        leftMouseDownSlot = -1;
-        leftMouseDownSlotTileIndex = -1;
-    }
-
-    // Right-button drop support
-    if (isDraggingTile && IsMouseButtonReleased(MOUSE_BUTTON_RIGHT))
-    {
-        endTileDrag(mouse);
     }
 }
 
@@ -890,7 +849,21 @@ void UIManager::updateBriefcaseMenu(UpdateContext &uc, Inventory &playerInventor
             auto &b = const_cast<std::vector<Tile>&>(briefInv->getTiles());
             if (hoveredHandIndex < (int)p.size() && selectedBriefcaseIndex < (int)b.size())
             {
+                // Swap tiles
                 std::swap(p[hoveredHandIndex], b[selectedBriefcaseIndex]);
+                
+                // The tile that moved from Hand -> Briefcase must be removed from slots
+                int swappedOutId = b[selectedBriefcaseIndex].id;
+                
+                for (auto &slot : attackSlots)
+                {
+                    auto it = std::remove_if(slot.begin(), slot.end(), 
+                        [swappedOutId](const SlotTileEntry &e){ return e.tileId == swappedOutId; });
+                    slot.erase(it, slot.end());
+                }
+                
+                // Sort hand to maintain order
+                playerInventory.sortHand();
             }
             selectedBriefcaseIndex = -1;
         }

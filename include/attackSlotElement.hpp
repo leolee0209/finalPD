@@ -24,6 +24,7 @@ public:
     void setEntries(const std::vector<SlotTileEntry> *entries); // Pointer stays owned by UIManager
     void setValid(bool valid) { isValidCombo = valid; }
     void setKeyLabel(const std::string &label);                 // Displays "1/2/3" labels above the frame
+    void setSkillName(const std::string &name) { skillName = name; }
     void setBounds(const Rectangle &rect);                      // UIManager drives layout each frame
     Rectangle getTileRect(int tileIndex) const;                 // Used for drag/drop hit testing
     bool containsPoint(const Vector2 &point) const;
@@ -38,6 +39,7 @@ private:
     int capacity = 0;
     bool isValidCombo = true;
     std::string keyLabel;
+    std::string skillName;
     float padding = 5.0f;
     float spacing = 10.0f;
 };

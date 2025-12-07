@@ -3,7 +3,7 @@
 #include <constant.hpp>
 #include <vector>
 #include "object.hpp"
-class DialogBox;
+#include "dialogBox.hpp"
 #include "Inventory.hpp"
 #include "mycamera.hpp"
 #include "uiManager.hpp"
@@ -153,6 +153,18 @@ private:
     float electrocutePhase = 0.0f;
     float movementDisableTimer = 0.0f;
 
+public:
+    float damageResistance = 0.0f; // 0.0 to 1.0 (1.0 = immune)
+    float knockbackResistance = 0.0f; // 0.0 to 1.0 (1.0 = immovable)
+    float buffTimer = 0.0f;
+
+    void ApplyBuff(float duration, float dmgRes, float kbRes)
+    {
+        this->buffTimer = fmaxf(this->buffTimer, duration);
+        this->damageResistance = fmaxf(this->damageResistance, dmgRes);
+        this->knockbackResistance = fmaxf(this->knockbackResistance, kbRes);
+    }
+
 protected:
     struct MovementSettings
     {
@@ -195,7 +207,10 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
-        // healthDialog will be created by enemy implementations (cpp) where type is complete
+        
+        // Create health dialog immediately
+        this->healthDialog = new DialogBox();
+        this->healthDialog->setBarSize(2.5f, 0.32f);
     }
     
     Enemy(int customHealth)
@@ -210,6 +225,10 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f};
+        
+        // Create health dialog immediately
+        this->healthDialog = new DialogBox();
+        this->healthDialog->setBarSize(2.5f, 0.32f);
     }
 
     virtual ~Enemy();
@@ -327,7 +346,7 @@ public:
 
 class ShooterEnemy : public Enemy
 {
-private:
+public:
     enum class Phase
     {
         FindPosition,
@@ -355,6 +374,7 @@ private:
         float arcDegrees = 0.0f;  // Spread arc in degrees (0 = single direction)
     };
 
+private:
     std::vector<Bullet> bullets;
     BulletPattern bulletPattern;  // Current bullet pattern configuration
     Texture2D sunTexture{};       // Texture for bullets
@@ -379,21 +399,29 @@ private:
     bool hasRepositionGoal = false;
     float repositionCooldown = 0.0f;
     float repositionCooldownDuration = 0.7f;
+    
+    // New mechanics
+    bool isBarrage = false;
+    int barrageShotsLeft = 0;
+    float barrageTimer = 0.0f;
+    float patternTimer = 0.0f;
+    Vector3 laserTarget = {0.0f, 0.0f, 0.0f};
 
     bool findShotDirection(UpdateContext &uc, Vector3 &outDir) const;
-    bool hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc, float probeRadius) const;
-    void spawnBullet(const Vector3 &origin, const Vector3 &dir);
-    void updateBullets(UpdateContext &uc, float deltaSeconds);
-    MovementCommand FindMovement(UpdateContext &uc, const Vector3 &toPlayer, float distance, bool hasLineOfSight, float deltaSeconds);
-    bool isWithinPreferredRange(float distance) const;
-    void HandleShooting(float deltaSeconds, const Vector3 &muzzle, const Vector3 &aimDir, bool hasAim);
+    void HandleShooting(UpdateContext &uc, float deltaSeconds, const Vector3 &muzzle, const Vector3 &aimDir, bool hasAim);
     bool HasLineOfSightFromPosition(const Vector3 &origin, UpdateContext &uc) const;
     bool SelectRepositionGoal(UpdateContext &uc, const Vector3 &planarToPlayer, float distanceToPlayer);
+    bool isWithinPreferredRange(float distance) const;
+    MovementCommand FindMovement(UpdateContext &uc, const Vector3 &toPlayer, float distance, bool hasLineOfSight, float deltaSeconds);
+    void spawnBullet(const Vector3 &origin, const Vector3 &dir);
+    void updateBullets(UpdateContext &uc, float deltaSeconds);
+    bool hasLineOfFire(const Vector3 &start, const Vector3 &end, UpdateContext &uc, float probeRadius) const;
 
 public:
     ShooterEnemy();  // Constructor sets 250 HP (Sniper)
     ~ShooterEnemy();
     void UpdateBody(UpdateContext &uc) override;
+    void Draw() const override; // Override Draw for laser sight
     void gatherObjects(std::vector<Object *> &out) const override;
     void setBulletPattern(int bulletCount, float arcDegrees)
     {
@@ -535,6 +563,11 @@ private:
     float particleEmitTimer = 0.0f;
     float particleEmitRate = 20.0f;    // Particle per frame during animation
     
+    // Teleport logic
+    bool isTeleporting = false;
+    float teleportChargeTimer = 0.0f;
+    float teleportCooldownTimer = 0.0f;
+
     void UpdateSummonAnimation(UpdateContext &uc, float delta);
     void EmitSummonParticles(const Vector3 &position, float intensity);
     void SpawnMinionGroup(UpdateContext &uc);
@@ -585,6 +618,7 @@ private:
     
     // Particle emission timers
     float chargeParticleTimer = 0.0f;
+    float healPulseTimer = 0.0f; // New mechanic
     
     // Helper methods
     Enemy* FindAllyToHideBehind(UpdateContext &uc);
@@ -769,5 +803,7 @@ public:
 typedef struct DamageResult{
     float damage;
     CollisionResult &cResult;
+    int deathAnimationType = 2; // 0=melee, 1=projectile, 2=magic/dot/default
+    Vector3 directionHint = {0, 0, 0}; // Direction for shard explosion
     DamageResult(float _damage, CollisionResult &_cResult) : damage(_damage), cResult(_cResult) {};
 } DamageResult;

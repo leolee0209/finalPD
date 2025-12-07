@@ -69,20 +69,20 @@ namespace
     }
 }
 
-void DamageIndicatorSystem::Spawn(const Vector3 &worldPosition, float amount)
+void DamageIndicatorSystem::Spawn(const Vector3 &worldPosition, float amount, Color color)
 {
-    int rounded = (int)lroundf(amount);
-    if (rounded <= 0)
-        return;
-
-    DamageIndicator indicator;
-    indicator.worldPosition = worldPosition;
-    indicator.screenOffset = {RandomRange(-18.0f, 18.0f), RandomRange(-8.0f, 8.0f)};
-    indicator.velocity = {RandomRange(-10.0f, 10.0f), RandomRange(28.0f, 46.0f)};
-    indicator.lifetime = RandomRange(0.8f, 1.05f);
-    indicator.age = 0.0f;
-    indicator.text = std::to_string(rounded);
-    this->indicators.push_back(std::move(indicator));
+    DamageIndicator di;
+    di.worldPosition = worldPosition;
+    di.text = std::to_string((int)amount);
+    di.color = color;
+    
+    // Random velocity
+    di.velocity.x = RandomRange(-20.0f, 20.0f);
+    di.velocity.y = RandomRange(-60.0f, -100.0f); // Move up (screen Y is down?)
+    // Actually typically floating text moves UP in world or screen.
+    // If screenOffset is used, Y- is up.
+    
+    this->indicators.push_back(di);
 }
 
 void DamageIndicatorSystem::Update(float deltaSeconds)
@@ -131,7 +131,8 @@ void DamageIndicatorSystem::Draw(const Camera &camera) const
         float shadowOffset = Clamp(fontSize * 0.12f, 1.0f, 6.0f);
 
         unsigned char alphaByte = (unsigned char)Clamp(alpha * 255.0f, 0.0f, 255.0f);
-        Color fill = {255, 235, 196, alphaByte};
+        Color fill = indicator.color;
+        fill.a = alphaByte;
         Color outline = {40, 5, 5, alphaByte};
         Color shadow = {0, 0, 0, (unsigned char)Clamp(alpha * 200.0f, 0.0f, 255.0f)};
 
@@ -551,30 +552,17 @@ void Scene::BuildDoorNetwork(const std::vector<Vector3> &roomCenters, float room
 
     std::vector<DoorLink> doorLinks;
     doorLinks.reserve(4);
-    doorLinks.push_back({{roomCenters[0].x,
-                          doorCenterY,
-                          roomCenters[0].z + halfLength - wallThickness * 0.5f},
-                         0.0f,
-                         0,
-                         1});
-    doorLinks.push_back({{roomCenters[1].x - halfWidth + wallThickness * 0.5f,
-                          doorCenterY,
-                          roomCenters[1].z},
-                         90.0f,
-                         1,
-                         2});
-    doorLinks.push_back({{roomCenters[1].x + halfWidth - wallThickness * 0.5f,
-                          doorCenterY,
-                          roomCenters[1].z},
-                         90.0f,
-                         1,
-                         3});
-    doorLinks.push_back({{roomCenters[3].x,
-                          doorCenterY,
-                          roomCenters[3].z + halfLength - wallThickness * 0.5f},
-                         0.0f,
-                         3,
-                         4});
+
+    // Create linear connections: Room 0->1, 1->2, 2->3, 3->4
+    for (int i = 0; i < 4; ++i)
+    {
+        doorLinks.push_back({{roomCenters[i].x,
+                              doorCenterY,
+                              roomCenters[i].z + halfLength - wallThickness * 0.5f},
+                             0.0f,
+                             i,
+                             i + 1});
+    }
 
     for (const DoorLink &link : doorLinks)
     {
@@ -655,30 +643,31 @@ void Scene::SpawnEnemiesForRoom(Room *room, const Vector3 &roomCenter)
     if (name == "Room 2")
     {
         composition = {
-            {"vanguard", Vector2{-18.0f, -8.0f}},
-            {"support", Vector2{8.0f, 12.0f}}};
+            {"tank", Vector2{-15.0f, 0.0f}},
+            {"sniper", Vector2{15.0f, 10.0f}}};
     }
 
     else if (name == "Room 3")
     {
         composition = {
-            {"tank", Vector2{0.0f, 0.0f}},
-            {"vanguard", Vector2{-10.0f, 8.0f}}};
+            {"summoner", Vector2{0.0f, -15.0f}},
+            {"support", Vector2{-15.0f, 10.0f}},
+            {"shooter", Vector2{15.0f, 10.0f}}};
     }
     else if (name == "Room 4")
     {
         composition = {
-            {"sniper", Vector2{-12.0f, 8.0f}},
-            {"sniper", Vector2{12.0f, -10.0f}},
-            {"summoner", Vector2{0.0f, 0.0f}}};
+            {"vanguard", Vector2{0.0f, 15.0f}},
+            {"summoner", Vector2{0.0f, -15.0f}},
+            {"support", Vector2{15.0f, 0.0f}}};
     }
     else if (name == "Room 5")
     {
         composition = {
-            {"tank", Vector2{-16.0f, 10.0f}},
-            {"summoner", Vector2{0.0f, -12.0f}},
-            {"sniper", Vector2{16.0f, 6.0f}},
-            {"support", Vector2{8.0f, 12.0f}}}; // Phase 4: Add support enemy
+            {"vanguard", Vector2{-15.0f, 10.0f}},
+            {"vanguard", Vector2{15.0f, 10.0f}},
+            {"sniper", Vector2{0.0f, -15.0f}},
+            {"tank", Vector2{0.0f, 0.0f}}};
     }
 
     for (const auto &entry : composition)
@@ -736,8 +725,8 @@ void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
             bool wasCompleted = room->IsCompleted();
             room->Update(enemies);
 
-            // Spawn briefcase when room is newly completed
-            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy)
+            // Spawn briefcase when room is newly completed AND had enemies spawned
+            if (!wasCompleted && room->IsCompleted() && room->GetType() == RoomType::Enemy && room->AreEnemiesSpawned())
             {
                 // Calculate room center
                 BoundingBox bounds = room->GetBounds();
@@ -750,9 +739,18 @@ void Scene::UpdateRooms(const std::vector<Entity *> &enemies)
                 Inventory inv;
                 auto &tiles = inv.getTiles();
                 int tileCount = 3 + (rand() % 3); // 3-5 tiles
+                
+                // Allowed tile types: Character 1-3, Bamboo 1-3, Dot 1-3
+                const TileType allowedTiles[] = {
+                    TileType::CHARACTER_1, TileType::CHARACTER_2, TileType::CHARACTER_3,
+                    TileType::BAMBOO_1,    TileType::BAMBOO_2,    TileType::BAMBOO_3,
+                    TileType::DOT_1,       TileType::DOT_2,       TileType::DOT_3
+                };
+                int allowedCount = sizeof(allowedTiles) / sizeof(TileType);
+
                 for (int i = 0; i < tileCount; ++i)
                 {
-                    TileType type = (TileType)(rand() % (int)TileType::TILE_COUNT);
+                    TileType type = allowedTiles[rand() % allowedCount];
                     float damage = 10.0f + (float)(rand() % 8);
                     float fireRate = 0.9f + ((float)(rand() % 7) / 10.0f);
                     tiles.emplace_back(TileStats(damage, fireRate), type);
@@ -820,8 +818,12 @@ void Scene::InitializeLighting()
     this->lightingShader.locs[SHADER_LOC_MATRIX_NORMAL] = GetShaderLocation(this->lightingShader, "matNormal");
     this->viewPosLoc = GetShaderLocation(this->lightingShader, "viewPos");
     this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
+    this->shadowMapLoc = GetShaderLocation(this->lightingShader, "shadowMap");
+    this->lightSpaceMatrixLoc = GetShaderLocation(this->lightingShader, "lightSpaceMatrix");
+    this->backfaceDarknessLoc = GetShaderLocation(this->lightingShader, "backfaceDarkness");
 
-    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d", this->viewPosLoc, this->ambientLoc);
+    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d, shadowMap: %d, backfaceDarkness: %d", 
+             this->viewPosLoc, this->ambientLoc, this->shadowMapLoc, this->backfaceDarknessLoc);
 
     if (this->cubeModel.materialCount > 0)
     {
@@ -840,6 +842,10 @@ void Scene::InitializeLighting()
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
     }
+    if (this->backfaceDarknessLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->backfaceDarknessLoc, &this->backfaceDarkness, SHADER_UNIFORM_FLOAT);
+    }
 
     for (auto &door : this->doors)
     {
@@ -848,6 +854,14 @@ void Scene::InitializeLighting()
             door->SetLightingShader(&this->lightingShader);
         }
     }
+    
+    // Create sun directional light (noon-ish angle, warm color)
+    Vector3 sunDirection = Vector3Normalize({0.3f, -1.0f, 0.2f}); // Slight angle from overhead
+    Color sunColor = {255, 245, 220, 255}; // Warm sunlight
+    CreateDirectionalLight(sunDirection, sunColor);
+    
+    // Initialize shadow mapping
+    InitializeShadowMap();
 }
 
 void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
@@ -869,8 +883,58 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
     Light light = CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
 }
 
+void Scene::CreateDirectionalLight(Vector3 direction, Color color)
+{
+    if (this->lightingShader.id == 0)
+    {
+        return;
+    }
+
+    // Directional lights use position as origin and target as direction
+    Vector3 position = {0.0f, 10.0f, 0.0f};
+    Vector3 target = Vector3Add(position, direction);
+    CreateLight(LIGHT_DIRECTIONAL, position, target, color, this->lightingShader);
+}
+
+void Scene::InitializeShadowMap()
+{
+    if (this->lightingShader.id == 0)
+    {
+        return;
+    }
+
+    // Note: For proper shadow mapping, we'd need a depth-only render texture
+    // For now, we'll disable shadow mapping and rely on the directional light
+    // This is a simplified approach that still provides good lighting
+    
+    this->shadowsInitialized = false; // Disable shadows for now
+    TraceLog(LOG_INFO, "Lighting initialized (shadows disabled for simplicity)");
+    
+    /*
+    // Full shadow mapping implementation would require:
+    const int shadowMapSize = 2048;
+    this->shadowMap = LoadRenderTexture(shadowMapSize, shadowMapSize);
+    
+    Vector3 lightPos = {15.0f, 30.0f, 10.0f};
+    Vector3 lightTarget = {15.0f, 0.0f, 10.0f};
+    Matrix lightView = MatrixLookAt(lightPos, lightTarget, {0.0f, 0.0f, 1.0f});
+    
+    float orthoSize = 40.0f;
+    Matrix lightProj = MatrixOrtho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, 100.0f);
+    
+    this->lightViewProj = MatrixMultiply(lightView, lightProj);
+    this->shadowsInitialized = true;
+    */
+}
+
 void Scene::ShutdownLighting()
 {
+    if (this->shadowMap.id != 0)
+    {
+        UnloadRenderTexture(this->shadowMap);
+        this->shadowMap.id = 0;
+    }
+    
     if (this->lightingShader.id != 0)
     {
         UnloadShader(this->lightingShader);
@@ -878,6 +942,7 @@ void Scene::ShutdownLighting()
     }
     this->ambientLoc = -1;
     this->viewPosLoc = -1;
+    this->shadowsInitialized = false;
 }
 
 // Draws a 3D rectangle (cube) for the given object
@@ -947,6 +1012,13 @@ void Scene::DrawSphereObject(const Object &o) const
         // Use the shared sphere model with the lighting shader
         DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
     }
+}
+
+void Scene::RenderShadowMap()
+{
+    // Shadow mapping disabled for now
+    // Would require depth-only rendering setup
+    return;
 }
 
 // Draws the entire scene, including the floor, objects, entities, and attacks
@@ -1047,6 +1119,24 @@ void Scene::DrawScene(Camera camera) const
     // Draw a red sun in the sky
     DrawSphere({300.0f, 300.0f, 0.0f}, 100.0f, {255, 0, 0, 255});
     
+    // End shader mode temporarily for particles
+    if (this->lightingShader.id != 0)
+    {
+        EndShaderMode();
+    }
+    
+    // Draw death shards with lighting shader (3D meshes, before particles)
+    if (this->lightingShader.id != 0)
+    {
+        BeginShaderMode(this->lightingShader);
+        this->particles.drawDeathShards(this->lightingShader);
+        EndShaderMode();
+    }
+    else
+    {
+        this->particles.drawDeathShards(Shader{0});
+    }
+    
     // Draw particles (after all other 3D elements)
     this->particles.draw(camera);
 }
@@ -1078,7 +1168,7 @@ void Scene::DrawDamageIndicators(const Camera &camera) const
     this->damageIndicators.Draw(camera);
 }
 
-void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
+void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount, Color color)
 {
     if (damageAmount <= 0.0f)
         return;
@@ -1091,7 +1181,7 @@ void Scene::EmitDamageIndicator(const Enemy &enemy, float damageAmount)
     spawn.y += halfSize.y + RandomRange(-halfSize.y * 0.2f, halfSize.y * 0.6f);
     spawn.z += RandomRange(-halfSize.z, halfSize.z);
 
-    this->damageIndicators.Spawn(spawn, damageAmount);
+    this->damageIndicators.Spawn(spawn, damageAmount, color);
 }
 
 // Updates all entities and attacks in the scene
@@ -1099,8 +1189,13 @@ void Scene::Update(UpdateContext &uc)
 {
     const float deltaSeconds = GetFrameTime();
     
-    // Update particle system
+    // Update particle system (handles hit stop internally)
     this->particles.update(deltaSeconds);
+    
+    // Skip game simulation if hit stop is active
+    if (this->particles.isHitStopActive()) {
+        return;
+    }
 
     // Check if player entered a new room and spawn enemies on first entry
     Room *previousRoom = this->currentPlayerRoom;
@@ -1232,11 +1327,11 @@ Scene::Scene()
 
     std::vector<Vector3> roomCenters;
     roomCenters.reserve(5);
-    roomCenters.push_back({0.0f, 0.0f, 0.0f});                                                 // Spawn room
-    roomCenters.push_back({0.0f, 0.0f, sharedLengthSpacing});                                  // Hub room
-    roomCenters.push_back({-sharedWidthSpacing, 0.0f, roomCenters[1].z});                      // West branch
-    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[1].z});                       // East branch
-    roomCenters.push_back({sharedWidthSpacing, 0.0f, roomCenters[3].z + sharedLengthSpacing}); // Final room
+    // Create 5 rooms in a straight line along Z-axis
+    for (int i = 0; i < 5; ++i)
+    {
+        roomCenters.push_back({0.0f, 0.0f, i * sharedLengthSpacing});
+    }
 
     Vector3 minBounds{FLT_MAX, 0.0f, FLT_MAX};
     Vector3 maxBounds{-FLT_MAX, 0.0f, -FLT_MAX};
@@ -1280,14 +1375,23 @@ Scene::Scene()
     };
 
     std::array<RoomDoorConfig, 5> doorConfigs{};
-    doorConfigs[0].north = true; // Room 1 -> Room 2
-    doorConfigs[1].south = true; // Room 2 -> Room 1
-    doorConfigs[1].west = true;  // Room 2 -> Room 3
-    doorConfigs[1].east = true;  // Room 2 -> Room 4
-    doorConfigs[2].east = true;  // Room 3 -> Room 2
-    doorConfigs[3].west = true;  // Room 4 -> Room 2
-    doorConfigs[3].north = true; // Room 4 -> Room 5
-    doorConfigs[4].south = true; // Room 5 -> Room 4
+    // Room 1 (Start)
+    doorConfigs[0].north = true;
+
+    // Room 2
+    doorConfigs[1].south = true;
+    doorConfigs[1].north = true;
+
+    // Room 3
+    doorConfigs[2].south = true;
+    doorConfigs[2].north = true;
+
+    // Room 4
+    doorConfigs[3].south = true;
+    doorConfigs[3].north = true;
+
+    // Room 5 (End)
+    doorConfigs[4].south = true;
 
     auto buildRoom = [&](const Vector3 &center, const RoomDoorConfig &doorConfig)
     {
@@ -1432,6 +1536,15 @@ void Scene::SetViewPosition(const Vector3 &viewPosition)
     }
 }
 
+void Scene::SetBackfaceDarkness(float darkness)
+{
+    this->backfaceDarkness = std::clamp(darkness, 0.0f, 1.0f);
+    if (this->lightingShader.id != 0 && this->backfaceDarknessLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->backfaceDarknessLoc, &this->backfaceDarkness, SHADER_UNIFORM_FLOAT);
+    }
+}
+
 std::vector<RewardBriefcase *> Scene::GetRewardBriefcases()
 {
     std::vector<RewardBriefcase *> result;
@@ -1510,6 +1623,27 @@ void Scene::UpdateRoomDoors(const Vector3 &playerPos)
     this->currentPlayerRoom = newRoom;
 }
 
+void Scene::ResetDoorsForRespawn()
+{
+    // Open doors where both connected rooms are completed (like Soul Knight respawn behavior)
+    for (auto &door : this->doors)
+    {
+        if (door)
+        {
+            Room *roomA = door->GetRoomA();
+            Room *roomB = door->GetRoomB();
+            
+            if (roomA && roomB && roomA->IsCompleted() && roomB->IsCompleted())
+            {
+                if (!door->IsOpen())
+                {
+                    door->Open();
+                }
+            }
+        }
+    }
+}
+
 void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camera) const
 {
     const int screenW = GetScreenWidth();
@@ -1533,9 +1667,10 @@ void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camer
         int tw = MeasureText(text, fontSize);
         DrawText(text, (screenW - tw) / 2, y, fontSize, YELLOW);
         y -= 26;
+        return; // Priority to briefcase, don't show door prompt
     }
 
-    // Door prompt (if near a closed door in a completed room)
+    // Door prompt (if near a closed door in a completed room, and no briefcase)
     if (this->currentPlayerRoom && this->currentPlayerRoom->IsCompleted())
     {
         bool doorNearby = false;
@@ -1552,6 +1687,7 @@ void Scene::DrawInteractionPrompts(const Vector3 &playerPos, const Camera &camer
             const char *text = "Press C to Open Door";
             int tw = MeasureText(text, fontSize);
             DrawText(text, (screenW - tw) / 2, y, fontSize, GREEN);
+            y -= 26;
         }
     }
 }

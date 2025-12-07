@@ -81,14 +81,19 @@ enum class TileType
 struct SlotTileEntry
 {
     TileType tile = TileType::EMPTY;
-    int handIndex = -1;
-    bool isValid() const { return tile != TileType::EMPTY && handIndex >= 0; }
+    int tileId = -1; // Replaces handIndex
+    bool isValid() const { return tile != TileType::EMPTY && tileId != -1; }
 };
 
 class Tile
 {
 public:
+    int id; // Unique ID
     TileStats stat;
     TileType type;
-    Tile(TileStats _stat, TileType _type) : stat(_stat), type(_type) {}
+    Tile(TileStats _stat, TileType _type) : stat(_stat), type(_type) 
+    {
+        static int nextId = 0;
+        id = nextId++;
+    }
 };

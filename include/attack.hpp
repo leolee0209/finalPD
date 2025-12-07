@@ -27,6 +27,7 @@ public:
     Entity *const spawnedBy;
     virtual void update(UpdateContext &uc) = 0;
     virtual std::vector<Entity *> getEntities() = 0;
+    virtual void cancel() {}
 };
 
 /**
@@ -664,6 +665,7 @@ public:
     std::vector<Object *> obj();
     bool trigger(UpdateContext &uc);
     float getCooldownPercent() const;
+    void cancel() override;
 
     // Tweak helpers (callable from main loop)
     void handleTweakHotkeys();

@@ -67,6 +67,11 @@ public:
     void update(UpdateContext& uc);
 
     /**
+     * @brief Update slot validity, skill names, and cooldowns (call always).
+     */
+    void updateSlotStatus(UpdateContext &uc);
+
+    /**
      * @brief Retrieve or create a `BambooBasicAttack` bound to `spawnedBy`.
      */
     BambooBasicAttack *getBasicTileAttack(Entity *spawnedBy);
@@ -100,4 +105,5 @@ public:
     bool isAttackLockedByOther(const AttackController *controller) const;
     bool tryLockAttack(AttackController *controller);
     void releaseAttackLock(const AttackController *controller);
+    void cancelAllAttacks(Entity *entity);
 };

@@ -340,10 +340,67 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
                 this->state = ChargeState::Windup;
                 this->stateTimer = this->windupDuration;
                 this->poseAngularVelocityDegPerSec = 0.0f;
+                
+                // Prediction Logic: "The Homing Bull"
+                Vector3 targetPos = uc.player->pos();
                 if (Vector3LengthSqr(toPlayer) > 0.001f)
                 {
+                    Vector3 D = toPlayer; // Vector from Enemy to Player
+                    Vector3 Vp = uc.player->vel(); // Player Velocity
+                    float Sp = Vector3Length(Vp); // Player Speed
+                    float Sc = this->chargeSpeed; // Charge Speed
+
+                    // We want to find time t such that:
+                    // |D + Vp*t| = Sc*t
+                    // This means the distance player travels plus initial distance equals distance enemy travels.
+                    // Square both sides: |D|^2 + 2(D.Vp)t + |Vp|^2 t^2 = Sc^2 t^2
+                    // (Sp^2 - Sc^2)t^2 + 2(D.Vp)t + |D|^2 = 0
+
+                    float A = (Sp * Sp) - (Sc * Sc);
+                    float B = 2.0f * Vector3DotProduct(D, Vp);
+                    float C = Vector3DotProduct(D, D);
+
+                    float t = 0.0f;
+                    bool solved = false;
+
+                    // Handle linear case if speeds are equal
+                    if (fabs(A) < 0.0001f) {
+                        if (fabs(B) > 0.0001f) {
+                            t = -C / B;
+                            if (t > 0) solved = true;
+                        }
+                    } else {
+                        float disc = B * B - 4 * A * C;
+                        if (disc >= 0) {
+                            float sqrtDisc = sqrtf(disc);
+                            float t1 = (-B - sqrtDisc) / (2 * A);
+                            float t2 = (-B + sqrtDisc) / (2 * A);
+                            // Smallest positive time
+                            if (t1 > 0 && t2 > 0) t = fminf(t1, t2);
+                            else if (t1 > 0) t = t1;
+                            else if (t2 > 0) t = t2;
+                            
+                            if (t > 0) solved = true;
+                        }
+                    }
+
+                    if (solved) {
+                        // Prediction Multiplier: > 1.0 for overshoot, < 1.0 for undershoot
+                        // This forces the player to change direction, not just speed.
+                        float predictionMultiplier = 1.1f; 
+                        Vector3 displacement = Vector3Scale(Vp, t * predictionMultiplier);
+                        targetPos = Vector3Add(uc.player->pos(), displacement);
+                    }
+                }
+                
+                Vector3 toTarget = Vector3Subtract(targetPos, this->position);
+                toTarget.y = 0.0f;
+                if (Vector3LengthSqr(toTarget) > 0.001f) {
+                    this->chargeDirection = Vector3Normalize(toTarget);
+                } else {
                     this->chargeDirection = Vector3Normalize(toPlayer);
                 }
+                
                 desiredDirection = Vector3Zero();
                 targetSpeed = 0.0f;
                 targetPoseDeg = -90.0f;
@@ -369,6 +426,16 @@ void ChargingEnemy::UpdateBody(UpdateContext &uc)
             targetSpeed = this->chargeSpeed;
             targetPoseDeg = -90.0f;
             usesStateTimer = true;
+            
+            // Visuals: Dust trail
+            if (GetRandomValue(0, 5) == 0) // Emit frequently
+            {
+                 uc.scene->particles.spawnDirectional(
+                     Vector3Add(this->position, {0, 0.5f, 0}), 
+                     Vector3Scale(this->chargeDirection, -1.0f), 
+                     1, {200, 200, 200, 100}, 2.0f, 0.5f
+                 );
+            }
             break;
         case ChargeState::Recover:
             desiredDirection = Vector3Zero();
@@ -572,12 +639,13 @@ bool ChargingEnemy::updatePoseTowards(float targetAngleDeg, float deltaSeconds)
 
 bool Enemy::damage(DamageResult &dResult)
 {
+    float effectiveDamage = dResult.damage * (1.0f - this->damageResistance);
     int healthBefore = this->health;
-    this->health -= (int)dResult.damage;
-    TraceLog(LOG_ERROR, "[Enemy] damage applied: before=%d damage=%.1f after=%d obj=%p", healthBefore, dResult.damage, this->health, (void*)this);
+    this->health -= (int)effectiveDamage;
+    TraceLog(LOG_ERROR, "[Enemy] damage applied: before=%d raw=%.1f effective=%.1f after=%d obj=%p", healthBefore, dResult.damage, effectiveDamage, this->health, (void*)this);
     if (this->health <= 0)
     {
-        TraceLog(LOG_ERROR, "[Enemy] DEATH: obj=%p was at %d hp, took %.1f dmg", (void*)this, healthBefore, dResult.damage);
+        TraceLog(LOG_ERROR, "[Enemy] DEATH: obj=%p was at %d hp, took %.1f dmg", (void*)this, healthBefore, effectiveDamage);
     }
     return this->health > 0;
 }
@@ -589,14 +657,17 @@ EntityCategory Enemy::category() const
 
 void Enemy::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift)
 {
-    this->velocity.x += pushVelocity.x;
-    this->velocity.z += pushVelocity.z;
+    float resistance = Clamp(this->knockbackResistance, 0.0f, 1.0f);
+    Vector3 effectivePush = Vector3Scale(pushVelocity, 1.0f - resistance);
+    
+    this->velocity.x += effectivePush.x;
+    this->velocity.z += effectivePush.z;
     if (lift > 0.0f)
     {
-        this->velocity.y = fmaxf(this->velocity.y, lift);
+        this->velocity.y = fmaxf(this->velocity.y, lift * (1.0f - resistance));
         this->grounded = false;
     }
-    this->knockbackTimer = fmaxf(this->knockbackTimer, durationSeconds);
+    this->knockbackTimer = fmaxf(this->knockbackTimer, durationSeconds * (1.0f - resistance));
 }
 
 void Enemy::applyStun(float durationSeconds)
@@ -618,7 +689,25 @@ void Enemy::tickStatusTimers(float deltaSeconds)
     }
     if (this->stunTimer > 0.0f)
     {
-        this->stunTimer = fmaxf(0.0f, this->stunTimer - deltaSeconds);
+        this->stunTimer -= deltaSeconds;
+        // Shake effect
+        this->stunShakePhase += deltaSeconds * 30.0f;
+    }
+    else
+    {
+        this->stunTimer = 0.0f;
+        this->stunShakePhase = 0.0f;
+    }
+    
+    // Reset temporary buffs (applied by SupportEnemy)
+    if (this->buffTimer > 0.0f)
+    {
+        this->buffTimer -= deltaSeconds;
+    }
+    else
+    {
+        this->damageResistance = 0.0f;
+        this->knockbackResistance = 0.0f;
     }
 }
 
@@ -655,6 +744,7 @@ void Enemy::Draw() const
 // Update the enemy's dialog box position/text/visibility
 void Enemy::UpdateDialog(UpdateContext &uc, float verticalOffset)
 {
+    // healthDialog is now created in constructor, but check just in case
     if (!this->healthDialog)
     {
         this->healthDialog = new DialogBox();
@@ -961,18 +1051,97 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
     
     // If the enemy is animating, its position is controlled by the animation, not physics.
     // So we can return early.
-    if (summonState != SummonState::Idle)
+    if (summonState != SummonState::Idle && !this->isTeleporting)
     {
         this->UpdateDialog(uc);
-        // We don't call UpdateCommonBehavior because the animation is kinematic.
         return;
     }
     
-    // --- From here on, we are NOT animating, so normal physics/AI applies ---
+    // --- Panic Teleport Logic ---
+    if (this->teleportCooldownTimer > 0.0f)
+    {
+        this->teleportCooldownTimer -= delta;
+    }
 
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
     float dist = Vector3Length(toPlayer);
+
+    if (this->isTeleporting)
+    {
+        this->teleportChargeTimer -= delta;
+        
+        // Shake effect (imploding)
+        if (GetRandomValue(0, 5) == 0)
+        {
+             uc.scene->particles.spawnExplosion(this->position, 1, PURPLE, 0.5f, 1.0f, 0.5f);
+        }
+
+        if (this->teleportChargeTimer <= 0.0f)
+        {
+            // Execute Teleport
+            // Find far spot within room bounds
+            Vector3 bestPos = this->position;
+            float bestDist = dist;
+            
+            Room *room = uc.scene->GetRoomContainingPosition(this->position);
+            BoundingBox bounds = room ? room->GetBounds() : BoundingBox{{-100,-10,-100}, {100,10,100}};
+            
+            for (int i = 0; i < 10; i++)
+            {
+                float angle = GetRandomValue(0, 360) * DEG2RAD;
+                float r = GetRandomValue(15, 40);
+                Vector3 candidate = Vector3Add(uc.player->pos(), {cosf(angle)*r, 0, sinf(angle)*r});
+                
+                // Clamp to room bounds
+                const float margin = 2.0f;
+                if (room) {
+                    candidate.x = std::clamp(candidate.x, bounds.min.x + margin, bounds.max.x - margin);
+                    candidate.z = std::clamp(candidate.z, bounds.min.z + margin, bounds.max.z - margin);
+                }
+                
+                float d = Vector3Distance(candidate, uc.player->pos());
+                if (d > bestDist)
+                {
+                    bestDist = d;
+                    bestPos = candidate;
+                }
+            }
+            
+            // Visuals: Puff at old pos
+            uc.scene->particles.spawnExplosion(this->position, 20, PURPLE, 1.0f, 5.0f, 2.0f);
+            
+            this->position = bestPos;
+            this->obj().pos = bestPos;
+            this->obj().UpdateOBB();
+            
+            // Visuals: Puff at new pos
+            uc.scene->particles.spawnExplosion(this->position, 20, PURPLE, 1.0f, 5.0f, 2.0f);
+            
+            this->isTeleporting = false;
+            this->teleportCooldownTimer = 6.0f;
+            this->summonState = SummonState::Idle; // Reset summon state
+        }
+        
+        this->UpdateDialog(uc);
+        return; // Skip normal movement
+    }
+    else
+    {
+        // Check trigger
+        if (dist < 5.0f && this->teleportCooldownTimer <= 0.0f)
+        {
+            this->isTeleporting = true;
+            this->teleportChargeTimer = 2.0f; // 2 seconds shaking
+            // Visual start
+             uc.scene->particles.spawnExplosion(this->position, 10, PURPLE, 0.5f, 2.0f, 1.0f);
+        }
+    }
+    
+    // --- End Teleport Logic ---
+    
+    // --- From here on, we are NOT animating, so normal physics/AI applies ---
+
     Vector3 desiredDir = Vector3Zero();
 
     Enemy::MovementSettings settings;
@@ -1017,6 +1186,49 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
 
     if (!isStunned && !this->isMovementDisabled())
     {
+        // Update Pattern Timer
+        this->patternTimer -= delta;
+        if (this->patternTimer <= 0.0f) {
+            this->patternTimer = 5.0f; // 5 seconds cooldown
+            
+            // Choose pattern
+            int roll = GetRandomValue(0, 99);
+            // Retreat distance is 15.0f for decision
+            if (distance < 15.0f) {
+                // 70% Shotgun, 30% Rapid
+                if (roll < 70) {
+                    this->setBulletPattern(3, 15.0f); // Shotgun
+                    this->isBarrage = false;
+                } else {
+                    this->setBulletPattern(1, 0.0f);
+                    this->isBarrage = true;
+                    this->barrageShotsLeft = 5;
+                    this->barrageTimer = 0.0f;
+                }
+            } else {
+                // 70% Rapid, 30% Shotgun
+                if (roll < 70) {
+                    this->setBulletPattern(1, 0.0f);
+                    this->isBarrage = true;
+                    this->barrageShotsLeft = 5;
+                    this->barrageTimer = 0.0f;
+                } else {
+                    this->setBulletPattern(3, 15.0f); // Shotgun
+                    this->isBarrage = false;
+                }
+            }
+        }
+        
+        // Kiting Logic
+        if (distance < 15.0f) {
+            this->retreatDistance = 15.0f; // Ensure retreat kicks in
+            // Force retreat phase if too close
+            // But we might be in Shooting phase. Spec says "The Shooter retreats while keeping firing behavior."
+            // The current FSM separates FindPosition (Moving) and Shooting (Stationary).
+            // We need to allow moving while shooting or switch often.
+            // For now, let's keep the FSM but adjust preferred range.
+        }
+
         hasLineOfSight = this->findShotDirection(uc, aimDir);
         bool withinRange = this->isWithinPreferredRange(distance);
 
@@ -1059,9 +1271,10 @@ void ShooterEnemy::UpdateBody(UpdateContext &uc)
         Vector3 muzzle = this->position;
         muzzle.y += this->muzzleHeight;
 
-        if (this->phase == Phase::Shooting)
+        // Allow shooting if in shooting phase OR if we have line of sight while moving (e.g. retreating)
+        if (this->phase == Phase::Shooting || (hasLineOfSight && this->phase == Phase::FindPosition))
         {
-            this->HandleShooting(delta, muzzle, aimDir, hasLineOfSight);
+            this->HandleShooting(uc, delta, muzzle, aimDir, hasLineOfSight);
         }
         else
         {
@@ -1151,16 +1364,48 @@ bool ShooterEnemy::isWithinPreferredRange(float distance) const
     return distance <= this->maxFiringDistance && distance >= this->retreatDistance;
 }
 
-void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosition, const Vector3 &aimDirection, bool hasLineOfSight)
+void ShooterEnemy::HandleShooting(UpdateContext &uc, float deltaSeconds, const Vector3 &muzzlePosition, const Vector3 &aimDirection, bool hasLineOfSight)
 {
-    this->fireCooldown = fmaxf(this->fireCooldown - deltaSeconds, 0.0f);
-
-    if (!hasLineOfSight)
+    // Barrage Logic (Rapid Fire)
+    if (this->isBarrage)
     {
+        if (this->barrageShotsLeft > 0)
+        {
+             // If waiting for cooldown before starting barrage
+             if (this->fireCooldown > 0.0f) {
+                 this->fireCooldown = fmaxf(this->fireCooldown - deltaSeconds, 0.0f);
+                 return;
+             }
+             
+             this->barrageTimer -= deltaSeconds;
+             if (this->barrageTimer <= 0.0f) {
+                 this->spawnBullet(muzzlePosition, aimDirection);
+                 uc.scene->particles.spawnExplosion(muzzlePosition, 5, YELLOW, 0.5f, 2.0f, 0.5f);
+                 
+                 this->barrageShotsLeft--;
+                 this->barrageTimer = 0.15f; // Rapid fire
+                 
+                 if (this->barrageShotsLeft <= 0) {
+                     this->fireCooldown = this->fireInterval;
+                 }
+             }
+        }
+        else
+        {
+            // Cooldown between barrages
+            this->fireCooldown = fmaxf(this->fireCooldown - deltaSeconds, 0.0f);
+             if (this->fireCooldown <= 0.0f && hasLineOfSight) {
+                 this->barrageShotsLeft = 5;
+                 this->barrageTimer = 0.0f;
+             }
+        }
         return;
     }
 
-    if (this->fireCooldown > 0.0f)
+    // Standard / Shotgun Logic
+    this->fireCooldown = fmaxf(this->fireCooldown - deltaSeconds, 0.0f);
+
+    if (!hasLineOfSight || this->fireCooldown > 0.0f)
     {
         return;
     }
@@ -1170,48 +1415,32 @@ void ShooterEnemy::HandleShooting(float deltaSeconds, const Vector3 &muzzlePosit
         return;
     }
 
-    // Spawn bullets according to pattern
+    // Spawn bullets
     if (this->bulletPattern.bulletCount <= 1 || this->bulletPattern.arcDegrees <= 0.0f)
     {
-        // Single bullet - shoot straight
         this->spawnBullet(muzzlePosition, aimDirection);
     }
     else
     {
-        // Multiple bullets in a fan pattern
         Vector3 aimNormalized = Vector3Normalize(aimDirection);
         float halfArc = this->bulletPattern.arcDegrees * 0.5f * DEG2RAD;
-        
-        // Calculate right vector perpendicular to aim direction (in horizontal plane)
         Vector3 up = {0.0f, 1.0f, 0.0f};
-        Vector3 right = Vector3Normalize(Vector3CrossProduct(aimNormalized, up));
-        if (Vector3LengthSqr(right) < 0.0001f)
-        {
-            // If aiming straight up/down, use a default right vector
-            right = {1.0f, 0.0f, 0.0f};
-        }
         
-        // Spawn bullets spread across the arc
         for (int i = 0; i < this->bulletPattern.bulletCount; ++i)
         {
-            float angle;
-            if (this->bulletPattern.bulletCount == 1)
-            {
-                angle = 0.0f;
+            float angle = 0.0f;
+            if (this->bulletPattern.bulletCount > 1) {
+                float step = (this->bulletPattern.arcDegrees * DEG2RAD) / (this->bulletPattern.bulletCount - 1);
+                angle = -halfArc + (step * i);
             }
-            else
-            {
-                // Distribute bullets evenly across the arc
-                float t = (float)i / (float)(this->bulletPattern.bulletCount - 1);
-                angle = Lerp(-halfArc, halfArc, t);
-            }
-            
-            // Rotate aim direction around the up axis by the angle
-            Vector3 bulletDir = Vector3RotateByAxisAngle(aimNormalized, up, angle);
-            this->spawnBullet(muzzlePosition, bulletDir);
+            Vector3 fireDir = Vector3RotateByAxisAngle(aimNormalized, up, angle);
+            this->spawnBullet(muzzlePosition, fireDir);
         }
     }
     
+    // Muzzle Flash
+    uc.scene->particles.spawnExplosion(muzzlePosition, 8, YELLOW, 0.6f, 3.0f, 0.8f);
+
     this->fireCooldown = this->fireInterval;
 }
 
@@ -1452,6 +1681,17 @@ ShooterEnemy::~ShooterEnemy()
             UnloadTexture(this->sunTexture);
         }
         this->sunTexture.id = 0;
+    }
+}
+
+void ShooterEnemy::Draw() const
+{
+    Enemy::Draw();
+    if (Vector3LengthSqr(this->laserTarget) > 0.01f)
+    {
+        Vector3 muzzle = this->position;
+        muzzle.y += this->muzzleHeight;
+        DrawLine3D(muzzle, this->laserTarget, RED);
     }
 }
 
@@ -1890,45 +2130,143 @@ void SupportEnemy::UpdateBody(UpdateContext &uc)
     // If stunned, the enemy should do nothing but be subject to physics.
     if (isStunned || this->isMovementDisabled())
     {
-        // If stunned during an action, switch back to normal mode.
-        if (this->mode != SupportMode::Normal)
-        {
-            this->mode = SupportMode::Normal;
-            this->actionTimer = 0.0f;
-            this->targetAlly = nullptr;
-        }
-
-        Enemy::MovementSettings settings;
-        settings.maxSpeed = 0.0f;
-        settings.maxAccel = 0.0f;
-        this->UpdateCommonBehavior(uc, Vector3Zero(), delta, settings);
+        this->UpdateCommonBehavior(uc, Vector3Zero(), delta, Enemy::MovementSettings{});
         this->updateElectrocute(delta);
         this->UpdateDialog(uc);
         return;
     }
     
-    // Decrement cooldown timer
-    if (this->actionCooldownTimer > 0.0f)
+    // --- New Mechanics: The Tether & Healing Burst ---
+
+    // 1. Continuous Tether Logic
+    // Find nearest non-support enemy
+    float nearestDist = 9999.0f;
+    Enemy* bestTetherTarget = nullptr;
+    std::vector<Entity*> enemies = uc.scene->getEntities(ENTITY_ENEMY);
+    
+    for (Entity* e : enemies)
     {
-        this->actionCooldownTimer -= delta;
+        if (e == this) continue;
+        SupportEnemy* support = dynamic_cast<SupportEnemy*>(e);
+        if (support) continue; // Don't tether other supports
+        
+        Enemy* enemy = dynamic_cast<Enemy*>(e);
+        if (enemy && enemy->getHealth() > 0)
+        {
+             float d = Vector3Distance(this->position, enemy->pos());
+             if (d < nearestDist)
+             {
+                 nearestDist = d;
+                 bestTetherTarget = enemy;
+             }
+        }
     }
+    
+    this->targetAlly = bestTetherTarget;
+    
+    if (this->targetAlly)
+    {
+        // Apply Buff (duration slightly > frame time)
+        this->targetAlly->ApplyBuff(delta * 2.0f, 0.5f, 0.7f); // 50% dmg res, 70% kb res
+        
+        // Visuals: Yellow particles surrounding the linked enemy
+        if (GetRandomValue(0, 3) == 0) // Throttle particles (25% chance per frame)
+        {
+            Vector3 pos = this->targetAlly->pos();
+            // Random offset around the enemy
+            float angle = GetRandomValue(0, 360) * DEG2RAD;
+            float radius = 1.2f;
+            float height = GetRandomValue(0, 20) * 0.1f; // 0.0 to 2.0
+            Vector3 offset = { cosf(angle) * radius, height, sinf(angle) * radius };
+            
+            uc.scene->particles.spawnExplosion(Vector3Add(pos, offset), 1, YELLOW, 0.3f, 0.5f, 0.2f);
+        }
+    }
+
+    // 2. Healing Burst Logic
+    this->healPulseTimer -= delta;
+    if (this->healPulseTimer <= 0.0f)
+    {
+        this->healPulseTimer = 10.0f; // 10s cooldown
+        
+        // Find lowest HP ally in range (20 units)
+        Enemy* healTarget = nullptr;
+        float lowestHPPercent = 1.0f;
+        
+        for (Entity* e : enemies)
+        {
+            if (e == this) continue;
+            // Exclude supports? "excludes self/other supports" - per prompt
+            if (dynamic_cast<SupportEnemy*>(e)) continue;
+
+            Enemy* enemy = dynamic_cast<Enemy*>(e);
+            if (enemy && enemy->getHealth() > 0)
+            {
+                float d = Vector3Distance(this->position, enemy->pos());
+                if (d <= 20.0f)
+                {
+                    float hpPct = enemy->getHealthPercent();
+                    if (hpPct < lowestHPPercent)
+                    {
+                        lowestHPPercent = hpPct;
+                        healTarget = enemy;
+                    }
+                }
+            }
+        }
+        
+        if (healTarget)
+        {
+            // Instantly restore 50% HP
+            int healAmount = (int)(healTarget->getMaxHealth() * 0.5f);
+            healTarget->Heal(healAmount);
+            
+            // Visuals: Green ring
+            uc.scene->particles.spawnRing(this->position, 1.0f, 20, GREEN, 5.0f, false);
+            uc.scene->particles.spawnRing(this->position, 2.0f, 20, GREEN, 6.0f, false);
+            
+            // Visual on target
+            uc.scene->particles.spawnExplosion(healTarget->pos(), 15, GREEN, 0.5f, 2.0f, 1.0f);
+        }
+    }
+
+    // Movement: Keep distance from player, stay near tether target?
+    // Prompt doesn't specify movement changes, but says "Hide behind other enemies" was old behavior.
+    // "The Tether" implies staying close enough to tether.
+    // Let's keep simple behavior: Avoid player, follow tether target if far.
     
     Vector3 toPlayer = Vector3Subtract(uc.player->pos(), this->position);
     toPlayer.y = 0.0f;
+    float distToPlayer = Vector3Length(toPlayer);
     
-    // Dispatch to appropriate mode handler
-    switch (this->mode)
+    Vector3 desiredDir = Vector3Zero();
+    
+    if (distToPlayer < this->retreatDistance)
     {
-        case SupportMode::Normal:
-            UpdateNormalMode(uc, toPlayer);
-            break;
-        case SupportMode::Heal:
-            UpdateHealMode(uc);
-            break;
-        case SupportMode::Buff:
-            UpdateBuffMode(uc);
-            break;
+        desiredDir = Vector3Normalize(Vector3Negate(toPlayer));
     }
+    else if (this->targetAlly)
+    {
+        Vector3 toAlly = Vector3Subtract(this->targetAlly->pos(), this->position);
+        toAlly.y = 0.0f;
+        float distAlly = Vector3Length(toAlly);
+        if (distAlly > 10.0f) // Keep within reasonable range
+        {
+            desiredDir = Vector3Normalize(toAlly);
+        }
+    }
+
+    Enemy::MovementSettings settings;
+    settings.lockToGround = true;
+    settings.maxSpeed = 4.0f;
+    settings.maxAccel = MAX_ACCEL;
+    settings.decelGround = FRICTION;
+    settings.decelAir = AIR_DRAG;
+    settings.facingHint = toPlayer;
+
+    this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
+    this->updateElectrocute(delta);
+    this->UpdateDialog(uc);
 }
 
 void SupportEnemy::DrawGlowEffect(const Vector3 &pos, Color color, float intensity) const
@@ -1946,6 +2284,18 @@ void SupportEnemy::Draw() const
 {
     // Draw base enemy
     Enemy::Draw();
+    
+    // Draw Tether
+    if (this->targetAlly)
+    {
+        Vector3 start = this->position; start.y += 1.5f;
+        Vector3 end = this->targetAlly->pos(); end.y += 1.5f;
+        
+        // Core beam
+        DrawCylinderEx(start, end, 0.1f, 0.1f, 6, YELLOW);
+        // Glow
+        DrawCylinderEx(start, end, 0.3f, 0.3f, 6, ColorAlpha(YELLOW, 0.4f));
+    }
 }
 
 // ---------------------------- VanguardEnemy ----------------------------

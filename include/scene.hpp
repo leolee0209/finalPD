@@ -20,12 +20,13 @@ struct DamageIndicator
     float age = 0.0f;
     float lifetime = 0.85f;
     std::string text;
+    Color color = RED; // Added color
 };
 
 class DamageIndicatorSystem
 {
 public:
-    void Spawn(const Vector3 &worldPosition, float amount);
+    void Spawn(const Vector3 &worldPosition, float amount, Color color = RED);
     void Update(float deltaSeconds);
     void Draw(const Camera &camera) const;
     void Clear();
@@ -54,9 +55,18 @@ private:
     Shader lightingShader{};       // Shared lighting shader
     int ambientLoc = -1;
     int viewPosLoc = -1;
+    int backfaceDarknessLoc = -1;
     Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
-    Color skyColor = {12, 17, 32, 255};
+    float backfaceDarkness = 0.3f; // How dark backfaces are (0.0=fully dark, 1.0=same as front)
+    Color skyColor = {135, 165, 195, 255}; // Daytime sky color
+    
+    // Shadow mapping
+    RenderTexture2D shadowMap{};
+    Matrix lightViewProj{};
+    int shadowMapLoc = -1;
+    int lightSpaceMatrixLoc = -1;
+    bool shadowsInitialized = false;
 
     struct CachedModel
     {
@@ -87,6 +97,9 @@ private:
     void InitializeLighting();
     void ShutdownLighting();
     void CreatePointLight(Vector3 position, Color color, float intensity = 1.0f);
+    void CreateDirectionalLight(Vector3 direction, Color color);
+    void InitializeShadowMap();
+    void RenderShadowMap();
     float GetFloorTop() const;
     CollidableModel *AddDecoration(const char *modelPath,
                                    Vector3 desiredPosition,
@@ -161,8 +174,10 @@ public:
      */
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
     void SetViewPosition(const Vector3 &viewPosition);
+    void SetBackfaceDarkness(float darkness); // darkness: 0.0=fully dark, 1.0=same as front
+    float GetBackfaceDarkness() const { return this->backfaceDarkness; }
     Color getSkyColor() const { return this->skyColor; }
-    void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
+    void EmitDamageIndicator(const Enemy &enemy, float damageAmount, Color color = RED);
     
     // Room and door management
     void UpdateRoomDoors(const Vector3 &playerPos);
@@ -172,4 +187,5 @@ public:
     // Return the room that contains the given world position, or nullptr
     // if the position is not inside any room.
     Room *GetRoomContainingPosition(const Vector3 &pos) const;
+    void ResetDoorsForRespawn();
 };
