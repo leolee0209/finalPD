@@ -190,6 +190,19 @@ void Scene::ShutdownBulletWorld()
     {
         return;
     }
+    
+    // Remove static colliders
+    for (auto* colObj : this->staticColliders) {
+        this->bulletWorld->removeCollisionObject(colObj);
+        delete colObj;
+    }
+    this->staticColliders.clear();
+    
+    for (auto* shape : this->staticShapes) {
+        delete shape;
+    }
+    this->staticShapes.clear();
+
     this->RemoveDecorationColliders();
     this->bulletWorld.reset();
     this->bulletBroadphase.reset();
@@ -339,6 +352,19 @@ bool Scene::CheckDecorationSweep(const Vector3 &start, const Vector3 &end, float
     }
 
     return true;
+}
+
+bool Scene::CheckLineOfSight(const Vector3 &start, const Vector3 &end) const
+{
+    if (!this->bulletWorld) return false;
+    
+    btVector3 from(start.x, start.y, start.z);
+    btVector3 to(end.x, end.y, end.z);
+    
+    btCollisionWorld::ClosestRayResultCallback callback(from, to);
+    this->bulletWorld->rayTest(from, to, callback);
+    
+    return !callback.hasHit();
 }
 
 void Scene::ApplyFullTexture(Object &obj, Texture2D &texture)
@@ -1163,6 +1189,18 @@ void Scene::DrawTexturedSphere(Texture2D &texture, const Rectangle &source, cons
     {
         if (obj) {
             this->objects.push_back(obj);
+            
+            if (this->bulletWorld) {
+                btCollisionShape* shape = CreateShapeFromObject(*obj);
+                if (shape) {
+                    this->staticShapes.push_back(shape);
+                    btCollisionObject* colObj = new btCollisionObject();
+                    colObj->setCollisionShape(shape);
+                    colObj->setWorldTransform(BuildBtTransform(*obj));
+                    this->bulletWorld->addCollisionObject(colObj);
+                    this->staticColliders.push_back(colObj);
+                }
+            }
         }
     }
     

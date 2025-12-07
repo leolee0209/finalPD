@@ -50,10 +50,13 @@ static bool IsOccupied(const std::vector<std::string> &map, int mx, int mz, int 
     return (cell == '#' || cell == '=' || cell == 'H');
 }
 
-static void TryAddExtraTile(Scene *scene, Vector3 stackPos, const std::vector<std::string> &map, int mx, int mz, int gx, int gz, int gridX, int gridZ, float tileWidth, float tileDepth)
+static void TryAddExtraTile(Scene *scene, Vector3 stackPos, const std::vector<std::string> &map, int mx, int mz, int gx, int gz, int gridX, int gridZ, float tileWidth, float tileDepth, int stackHeight)
 {
-    if (rand() % 100 >= 5)
-        return; // 5% chance
+    int chance = 5;
+    if (stackHeight <= 1) chance = 1; // Less likely for short walls
+
+    if (rand() % 100 >= chance)
+        return; // 5% chance (or 1%)
 
     struct Dir
     {
@@ -87,36 +90,38 @@ static void TryAddExtraTile(Scene *scene, Vector3 stackPos, const std::vector<st
     if (leaning)
     {
         // Leaning against the wall
-        // Face the wall (opposite to direction)
-        // If direction is (1,0) [Right], wall is Left (-1,0).
-        // Angle 0 is Right. We want to face Left? Or face Right and tilt back?
-        // "back toward the wall".
-        // If I face Right (0 deg), my back is Left (towards wall).
-        // So face = chosen.angle.
-
+        // Face direction away from the tile it leans against.
+        // chosen.angle points away from wall.
+        
         // Rotate around Y to face direction
         Quaternion qY = QuaternionFromAxisAngle({0, 1, 0}, (chosen.angle) * DEG2RAD);
         // Tilt up/back around X.
-        // "forward face slightly tilt up".
-        // Rotate around X by -30?
         Quaternion qX = QuaternionFromAxisAngle({1, 0, 0}, -30.0f * DEG2RAD); // More tilt
 
-        rot = QuaternionMultiply(qX, qY);
+        // Apply tilt (local X) then facing (global Y) -> qY * qX
+        rot = QuaternionMultiply(qY, qX);
         pos.y = 0.5f; // Adjust height
     }
     else
     {
         // Lying
-        // Face up.
-        // Model default is Z-up?
-        // Code uses -90 X to stand up. So default is lying flat.
-        // "back toward the ground".
-        // If default is face up, back is down.
         rot = QuaternionFromAxisAngle({0, 1, 0}, RandomFloat(0, 360) * DEG2RAD); // Random rotation on floor
         pos.y = 0.5f;
     }
 
     scene->AddWallInstance(TileType::BAMBOO_1, pos, rot, {1.0f, 1.0f, 1.0f});
+    
+    // Add collision object
+    Object* obj = new Object();
+    obj->pos = pos;
+    obj->rotation = rot;
+    // Use TILE_MODEL_SIZE for box dimensions (local space)
+    // Assuming TILE_MODEL_SIZE is {width, thickness, height} or similar.
+    // Since we use AddWallInstance with scale 1.0, we use base model size.
+    obj->setAsBox(TILE_MODEL_SIZE); 
+    obj->visible = false;
+    obj->UpdateOBB();
+    scene->AddStaticObject(obj);
 }
 
 void WorldGenerator::Generate(Scene *scene)
@@ -268,7 +273,7 @@ void WorldGenerator::GenerateDiscardMaze(Scene *scene, Vector3 startOffset)
 
                             if (gy == 0)
                             {
-                                TryAddExtraTile(scene, pos, map, x, z, gx, gz, gridX, gridZ, tW, tD);
+                                TryAddExtraTile(scene, pos, map, x, z, gx, gz, gridX, gridZ, tW, tD, stackHeight);
                             }
                         }
                     }
@@ -285,13 +290,14 @@ void WorldGenerator::GenerateDiscardMaze(Scene *scene, Vector3 startOffset)
                 float tH = TILE_MODEL_SIZE.z * wallTileScale; // Height when standing (-90 rot)
                 float tD = TILE_MODEL_SIZE.y * wallTileScale; // Depth when standing
 
-                // Note: AddWallTile uses Identity rotation.
-                // If we want them to match the visual style of '#', we should probably use AddWallInstance with -90 rotation?
-                // But existing code used AddWallTile with Identity.
-                // If Identity = Lying Flat (Z-up), then tH is 1.6 (z).
-                // If we want them standing, we should use -90 X.
-                // Let's switch to AddWallInstance for consistency and performance, and use -90 X.
-                // This ensures they are standing up.
+                // Add collision object for the low wall block
+                // We can approximate the whole cell as a box, or per stack.
+                // Since height varies, let's do per stack or just one big box if we want simple.
+                // But height varies randomly.
+                // Let's add collision per stack or per tile?
+                // Per tile is too many objects.
+                // Let's add one collision object for the whole cell with max height? No, that blocks shooting over.
+                // Let's add collision objects for each stack.
 
                 Quaternion rot = QuaternionFromAxisAngle({1.0f, 0.0f, 0.0f}, -90.0f * DEG2RAD);
 
@@ -307,20 +313,33 @@ void WorldGenerator::GenerateDiscardMaze(Scene *scene, Vector3 startOffset)
                         else if (r < 50)
                             height += 1; // 30% chance +1 (Total 2)
 
+                        // Add collision for this stack
+                        Object* collider = new Object();
+                        float stackH = height * tH;
+                        collider->size = {tW, stackH, tD};
+                        
+                        Vector3 pos;
+                        pos.x = cellOrigin.x + (gx * tileWidth) + tileWidth / 2.0f;
+                        pos.y = stackH / 2.0f;
+                        float zGap = (mapCellSize - (gridZ * tileDepth)) / 2.0f;
+                        pos.z = cellOrigin.z + zGap + (gz * tileDepth) + tileDepth / 2.0f;
+                        
+                        collider->pos = pos;
+                        collider->setAsBox(collider->size);
+                        collider->visible = false;
+                        scene->AddStaticObject(collider);
+
                         for (int h = 0; h < height; h++)
                         {
-                            Vector3 pos;
-                            pos.x = cellOrigin.x + (gx * tileWidth) + tileWidth / 2.0f;
-                            pos.y = (h * tH) + tH / 2.0f;
-                            float zGap = (mapCellSize - (gridZ * tileDepth)) / 2.0f;
-                            pos.z = cellOrigin.z + zGap + (gz * tileDepth) + tileDepth / 2.0f;
+                            Vector3 tilePos = pos;
+                            tilePos.y = (h * tH) + tH / 2.0f;
 
                             // Use AddWallInstance instead of AddWallTile for consistency
-                            scene->AddWallInstance(TileType::BAMBOO_1, pos, rot, {wallTileScale, wallTileScale, wallTileScale});
+                            scene->AddWallInstance(TileType::BAMBOO_1, tilePos, rot, {wallTileScale, wallTileScale, wallTileScale});
 
                             if (h == 0)
                             {
-                                TryAddExtraTile(scene, pos, map, x, z, gx, gz, gridX, gridZ, tW, tD);
+                                TryAddExtraTile(scene, tilePos, map, x, z, gx, gz, gridX, gridZ, tW, tD, height);
                             }
                         }
                     }
@@ -336,7 +355,7 @@ void WorldGenerator::GenerateDiscardMaze(Scene *scene, Vector3 startOffset)
             else if (cell == 'M')
             {
                 // Minion Spawner
-                MinionEnemy *enemy = new MinionEnemy();
+                SummonerEnemy *enemy = new SummonerEnemy();
                 Vector3 enemyPos = cellCenter;
                 enemyPos.y = 1.0f; // On ground
                 enemy->setPosition(enemyPos);

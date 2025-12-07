@@ -35,8 +35,32 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
         case AttackState::Approaching:
             if (dist > this->attackRange)
             {
-                // Chase player
-                desiredDir = Vector3Normalize(toPlayer);
+                // Check LOS
+                Vector3 start = this->position; start.y += 1.0f;
+                Vector3 end = uc.player->pos(); end.y += 1.0f;
+                bool hasLOS = uc.scene->CheckLineOfSight(start, end);
+
+                if (hasLOS)
+                {
+                    this->hasSeenPlayer = true;
+                    desiredDir = Vector3Normalize(toPlayer);
+                }
+                else if (this->hasSeenPlayer)
+                {
+                    if (dist < 25.0f)
+                    {
+                        desiredDir = Vector3Normalize(toPlayer);
+                    }
+                    else
+                    {
+                        this->hasSeenPlayer = false;
+                        desiredDir = Vector3Zero();
+                    }
+                }
+                else
+                {
+                    desiredDir = Vector3Zero();
+                }
             }
             else if (this->isGrounded())
             {
@@ -99,6 +123,11 @@ void MinionEnemy::UpdateBody(UpdateContext &uc)
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->updateElectrocute(delta);
     this->UpdateDialog(uc);
+}
+
+void MinionEnemy::Draw(const TileModelManager* manager) const
+{
+    Enemy::Draw(manager);
 }
 
 void Enemy::UpdateCommonBehavior(UpdateContext &uc, const Vector3 &desiredDirection, float deltaSeconds, const MovementSettings &settings)
@@ -654,11 +683,11 @@ void Enemy::Draw(const TileModelManager* manager) const
     if (manager)
     {
         // Calculate scale to fit the model into the physics box
-        // Model is TILE_MODEL_SIZE, we want it to be this->size
+        // Model is TILE_MODEL_SIZE, we want it to be this->o.size (physics size)
         Vector3 calculatedScale = {
-            this->size.x / TILE_MODEL_SIZE.x,
-            this->size.y / TILE_MODEL_SIZE.y,
-            this->size.z / TILE_MODEL_SIZE.z
+            this->o.size.x / TILE_MODEL_SIZE.x,
+            this->o.size.y / TILE_MODEL_SIZE.y,
+            this->o.size.z / TILE_MODEL_SIZE.z
         };
         
         // Get rotation from object
@@ -721,6 +750,7 @@ void SummonerEnemy::SpawnMinionGroup(UpdateContext &uc)
         Vector3 spawnPos = Vector3Add(this->position, offset);
         // Clamp spawn position into room bounds if available (keep a small margin)
         MinionEnemy *m = new MinionEnemy(); // Create a new MinionEnemy instance
+        m->setTileType(this->getTileType()); // Copy tile type from summoner
         m->obj().size = minionSize;
         m->obj().pos = spawnPos;
         m->setPosition(spawnPos);
@@ -998,6 +1028,48 @@ void SummonerEnemy::UpdateBody(UpdateContext &uc)
     this->UpdateCommonBehavior(uc, desiredDir, delta, settings);
     this->updateElectrocute(delta);
     this->UpdateDialog(uc);
+}
+
+Model ShooterEnemy::sharedBriefcaseModel = {0};
+bool ShooterEnemy::briefcaseModelLoaded = false;
+
+void ShooterEnemy::LoadSharedResources()
+{
+    if (!briefcaseModelLoaded)
+    {
+        sharedBriefcaseModel = LoadModel("briefcase.glb");
+        briefcaseModelLoaded = true;
+    }
+}
+
+void ShooterEnemy::Draw(const TileModelManager* manager) const
+{
+    Enemy::Draw(manager);
+    if (briefcaseModelLoaded)
+    {
+        Vector3 pos = this->position;
+        pos.y += 1.0f;
+        Vector3 forward = this->getFacingDirection();
+        Vector3 right = {forward.z, 0, -forward.x};
+        pos = Vector3Add(pos, Vector3Scale(right, 0.8f));
+
+        float angleRad = atan2f(forward.x, forward.z);
+        float angleDeg = angleRad * RAD2DEG;
+
+        Matrix matScale = MatrixScale(1.5f, 1.5f, 1.5f); // Adjust scale
+        Matrix matRotateY = MatrixRotateY(angleDeg * DEG2RAD);
+        Matrix matTranslate = MatrixTranslate(pos.x, pos.y, pos.z);
+
+        Matrix transform = MatrixMultiply(matScale, matRotateY);
+        transform = MatrixMultiply(transform, matTranslate);
+
+        Model& model = sharedBriefcaseModel;
+        for (int i = 0; i < model.meshCount; i++)
+        {
+            int matIndex = (i < model.materialCount) ? i : 0;
+            DrawMesh(model.meshes[i], model.materials[matIndex], transform);
+        }
+    }
 }
 
 void ShooterEnemy::UpdateBody(UpdateContext &uc)
@@ -2776,7 +2848,34 @@ void VanguardEnemy::UpdateBody(UpdateContext &uc)
         {
             Vector3 desired = Vector3Zero();
             if (dist > 1.5f)
-                desired = Vector3Normalize(toPlayer);
+            {
+                // Check LOS
+                Vector3 start = this->position; start.y += 1.5f; // Taller enemy
+                Vector3 end = uc.player->pos(); end.y += 1.0f;
+                bool hasLOS = uc.scene->CheckLineOfSight(start, end);
+
+                if (hasLOS)
+                {
+                    this->hasSeenPlayer = true;
+                    desired = Vector3Normalize(toPlayer);
+                }
+                else if (this->hasSeenPlayer)
+                {
+                    if (dist < 25.0f)
+                    {
+                        desired = Vector3Normalize(toPlayer);
+                    }
+                    else
+                    {
+                        this->hasSeenPlayer = false;
+                        desired = Vector3Zero();
+                    }
+                }
+                else
+                {
+                    desired = Vector3Zero();
+                }
+            }
 
             Enemy::MovementSettings ms;
             ms.lockToGround = true;

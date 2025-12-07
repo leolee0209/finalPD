@@ -78,6 +78,10 @@ private:
     std::unique_ptr<btCollisionDispatcher> bulletDispatcher;
     std::unique_ptr<btBroadphaseInterface> bulletBroadphase;
     std::unique_ptr<btCollisionWorld> bulletWorld;
+    
+    // Bullet resources for static objects
+    std::vector<btCollisionObject*> staticColliders;
+    std::vector<btCollisionShape*> staticShapes;
 
     std::vector<std::unique_ptr<RewardBriefcase>> rewardBriefcases;
     std::vector<std::unique_ptr<TileObject>> tileObjects;
@@ -166,6 +170,7 @@ public:
     void CollectDecorationCollisions(const Object &obj, std::vector<CollisionResult> &out) const { this->AppendDecorationCollisions(obj, out); }
     bool CheckDecorationCollision(const Object &obj) const;
     bool CheckDecorationSweep(const Vector3 &start, const Vector3 &end, float radius) const;
+    bool CheckLineOfSight(const Vector3 &start, const Vector3 &end) const;
 
     /**
      * @brief Return a list of entity pointers currently in the scene.

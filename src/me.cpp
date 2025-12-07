@@ -168,8 +168,8 @@ void Me::addCameraPitchKick(float magnitude, float durationSeconds)
 
 void Me::applyKnockback(const Vector3 &pushVelocity, float durationSeconds, float lift)
 {
-    this->velocity.x += pushVelocity.x;
-    this->velocity.z += pushVelocity.z;
+    this->velocity.x = pushVelocity.x;
+    this->velocity.z = pushVelocity.z;
     if (lift > 0.0f)
     {
         this->velocity.y = fmaxf(this->velocity.y, lift);
@@ -312,6 +312,11 @@ void Entity::resolveCollision(Entity *e, UpdateContext &uc)
         {
             if (result.with == e)
                 continue;
+            
+            // Ensure normal is normalized to prevent velocity explosion
+            if (Vector3LengthSqr(result.normal) > 0.0001f)
+                result.normal = Vector3Normalize(result.normal);
+
             e->position = Vector3Add(e->position, Vector3Scale(result.normal, result.penetration));
             e->o.pos = e->position;
             e->o.UpdateOBB();
@@ -321,10 +326,12 @@ void Entity::resolveCollision(Entity *e, UpdateContext &uc)
             {
                 e->velocity = Vector3Subtract(e->velocity, Vector3Scale(result.normal, dot));
             }
-            // if (fabs(result.normal.y) > 0.7f && result.normal.y > 0)
-            // {
-            //     e->grounded = true;
-            // }
+            
+            // Check for ground support (normal pointing up)
+            if (result.normal.y > 0.6f)
+            {
+                e->grounded = true;
+            }
         }
     }
 }
@@ -341,7 +348,10 @@ void Entity::ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p)
 
     // 2. Apply friction or air drag to horizontal velocity
     float decel = (e->grounded ? p.decelGround : p.decelAir);
-    Vector3 hvel = {e->velocity.x * decel, 0.0f, e->velocity.z * decel};
+    // Convert per-frame decel (assumed 60fps) to time-based
+    // decel_t = pow(decel, delta * 60.0f)
+    float timeCorrectedDecel = powf(decel, delta * 60.0f);
+    Vector3 hvel = {e->velocity.x * timeCorrectedDecel, 0.0f, e->velocity.z * timeCorrectedDecel};
 
     // 3. Zero small horizontal velocity
     float threshold = (p.zeroThreshold > 0.0f) ? p.zeroThreshold : (p.maxSpeed > 0.0f ? p.maxSpeed * 0.01f : MAX_SPEED * 0.01f);
@@ -367,6 +377,13 @@ void Entity::ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p)
     e->position.y += e->velocity.y * delta;
     e->position.z += e->velocity.z * delta;
 
+    // Reset grounded state for this frame's collision checks
+    // We assume airborne unless collision or floor check proves otherwise
+    // Exception: if we are moving up (jump), we are definitely not grounded.
+    // If we are moving down or stationary, we might be grounded.
+    // Actually, just reset it. If we are supported, collision will set it true.
+    e->grounded = false;
+
     // 6. Update object and OBB
     e->o.pos = e->position;
     e->o.UpdateOBB();
@@ -384,10 +401,8 @@ void Entity::ApplyPhysics(Entity *e, UpdateContext &uc, const PhysicsParams &p)
         e->velocity.y = 0.0f;
         e->grounded = true;
     }
-    else if (e->grounded && e->velocity.y < p.floorY + 0.01f)
-    {
-        e->grounded = false;
-    }
+    // Removed the else if block that was forcing ungrounded state
+    // else if (e->grounded && e->position.y > p.floorY + 0.05f) ...
 
     // 9. Final OBB update after any positional corrections
     e->o.pos = e->position;

@@ -162,6 +162,9 @@ std::vector<CollisionResult> Object::collided(Object &thiso, Scene *scene)
     thiso.UpdateOBB();
     for (auto &o : scene->getStaticObjects())
     {
+        // Ignore floor object (y < 0) to prevent fighting with floorY logic
+        if (o->pos.y < -0.1f) continue;
+
         CollisionResult cr = Object::collided(thiso, *o);
         if (cr.collided)
             r.push_back(cr);
