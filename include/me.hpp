@@ -196,9 +196,6 @@ public:
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f}; // Default forward
         // healthDialog will be created by enemy implementations (cpp) where type is complete
-        
-        // Hide default object rendering since we draw custom model
-        this->o.visible = false;
     }
     
     Enemy(int customHealth)
@@ -213,9 +210,6 @@ public:
         runTimer = 0.0f;
         runLerp = 0.0f;
         facingDirection = {0.0f, 0.0f, 1.0f};
-        
-        // Hide default object rendering since we draw custom model
-        this->o.visible = false;
     }
 
     virtual ~Enemy();
@@ -258,9 +252,6 @@ public:
 
     DialogBox *getHealthDialog() { return this->healthDialog; }
     
-    static void LoadSharedResources();
-    static void UnloadSharedResources();
-
     // Virtual draw method for custom enemy visuals
     virtual void Draw() const;
 };
