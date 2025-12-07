@@ -822,8 +822,10 @@ void Scene::InitializeLighting()
     this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
     this->shadowMapLoc = GetShaderLocation(this->lightingShader, "shadowMap");
     this->lightSpaceMatrixLoc = GetShaderLocation(this->lightingShader, "lightSpaceMatrix");
+    this->backfaceDarknessLoc = GetShaderLocation(this->lightingShader, "backfaceDarkness");
 
-    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d, shadowMap: %d", this->viewPosLoc, this->ambientLoc, this->shadowMapLoc);
+    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d, shadowMap: %d, backfaceDarkness: %d", 
+             this->viewPosLoc, this->ambientLoc, this->shadowMapLoc, this->backfaceDarknessLoc);
 
     if (this->cubeModel.materialCount > 0)
     {
@@ -841,6 +843,10 @@ void Scene::InitializeLighting()
     if (this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
+    if (this->backfaceDarknessLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->backfaceDarknessLoc, &this->backfaceDarkness, SHADER_UNIFORM_FLOAT);
     }
 
     for (auto &door : this->doors)
@@ -1497,6 +1503,15 @@ void Scene::SetViewPosition(const Vector3 &viewPosition)
     if (this->lightingShader.id != 0 && this->viewPosLoc >= 0)
     {
         SetShaderValue(this->lightingShader, this->viewPosLoc, &this->shaderViewPos.x, SHADER_UNIFORM_VEC3);
+    }
+}
+
+void Scene::SetBackfaceDarkness(float darkness)
+{
+    this->backfaceDarkness = std::clamp(darkness, 0.0f, 1.0f);
+    if (this->lightingShader.id != 0 && this->backfaceDarknessLoc >= 0)
+    {
+        SetShaderValue(this->lightingShader, this->backfaceDarknessLoc, &this->backfaceDarkness, SHADER_UNIFORM_FLOAT);
     }
 }
 

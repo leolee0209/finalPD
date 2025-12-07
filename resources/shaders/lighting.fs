@@ -30,6 +30,7 @@ struct Light {
 uniform Light lights[MAX_LIGHTS];
 uniform vec4 ambient;
 uniform vec3 viewPos;
+uniform float backfaceDarkness; // How bright backfaces are (0.0=fully dark, 1.0=same as front)
 
 void main()
 {
@@ -63,7 +64,17 @@ void main()
                 attenuation = 1.0 / (1.0 + 0.5 * distance + 0.2 * distance * distance);
             }
 
-            float NdotL = max(dot(normal, light), 0.0);
+            // Calculate lighting with smooth transition for backfaces
+            float rawNdotL = dot(normal, light);
+            float NdotL = max(rawNdotL, 0.0);
+            
+            // Add backface lighting based on backfaceDarkness parameter
+            // When rawNdotL is negative (backface), lerp between backfaceDarkness and 0
+            if (rawNdotL < 0.0)
+            {
+                NdotL = abs(rawNdotL) * backfaceDarkness;
+            }
+            
             lightDot += lights[i].color.rgb * NdotL * attenuation;
 
             // Enhanced specular for glossy surfaces

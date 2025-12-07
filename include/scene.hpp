@@ -54,8 +54,10 @@ private:
     Shader lightingShader{};       // Shared lighting shader
     int ambientLoc = -1;
     int viewPosLoc = -1;
+    int backfaceDarknessLoc = -1;
     Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
+    float backfaceDarkness = 0.3f; // How dark backfaces are (0.0=fully dark, 1.0=same as front)
     Color skyColor = {135, 165, 195, 255}; // Daytime sky color
     
     // Shadow mapping
@@ -171,6 +173,8 @@ public:
      */
     std::vector<Entity *> getEntities(EntityCategory cat = ENTITY_ALL);
     void SetViewPosition(const Vector3 &viewPosition);
+    void SetBackfaceDarkness(float darkness); // darkness: 0.0=fully dark, 1.0=same as front
+    float GetBackfaceDarkness() const { return this->backfaceDarkness; }
     Color getSkyColor() const { return this->skyColor; }
     void EmitDamageIndicator(const Enemy &enemy, float damageAmount);
     
