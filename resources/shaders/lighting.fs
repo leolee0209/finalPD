@@ -5,6 +5,7 @@ in vec3 fragPosition;
 in vec2 fragTexCoord;
 in vec4 fragColor;
 in vec3 fragNormal;
+in vec4 fragPosLightSpace;
 
 // Input uniform values
 uniform sampler2D texture0;
@@ -65,14 +66,14 @@ void main()
             float NdotL = max(dot(normal, light), 0.0);
             lightDot += lights[i].color.rgb * NdotL * attenuation;
 
-            // Enhanced specular for glossy surfaces (like polished mahjong table)
+            // Enhanced specular for glossy surfaces
             float specCo = 0.0;
             if (NdotL > 0.0) 
             {
                 // Blinn-Phong model for better specular highlights
                 vec3 halfDir = normalize(light + viewD);
-                specCo = pow(max(0.0, dot(normal, halfDir)), 64.0); // Higher shininess for glossy table
-                specular += specCo * lights[i].color.rgb * attenuation * 0.6; // Stronger specular
+                specCo = pow(max(0.0, dot(normal, halfDir)), 64.0);
+                specular += specCo * lights[i].color.rgb * attenuation * 0.6;
             }
         }
     }

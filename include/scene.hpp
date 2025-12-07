@@ -56,7 +56,14 @@ private:
     int viewPosLoc = -1;
     Vector4 ambientColor = {0.12f, 0.09f, 0.08f, 1.0f};
     Vector3 shaderViewPos = {0.0f, 6.0f, 6.0f};
-    Color skyColor = {12, 17, 32, 255};
+    Color skyColor = {135, 165, 195, 255}; // Daytime sky color
+    
+    // Shadow mapping
+    RenderTexture2D shadowMap{};
+    Matrix lightViewProj{};
+    int shadowMapLoc = -1;
+    int lightSpaceMatrixLoc = -1;
+    bool shadowsInitialized = false;
 
     struct CachedModel
     {
@@ -87,6 +94,9 @@ private:
     void InitializeLighting();
     void ShutdownLighting();
     void CreatePointLight(Vector3 position, Color color, float intensity = 1.0f);
+    void CreateDirectionalLight(Vector3 direction, Color color);
+    void InitializeShadowMap();
+    void RenderShadowMap();
     float GetFloorTop() const;
     CollidableModel *AddDecoration(const char *modelPath,
                                    Vector3 desiredPosition,

@@ -820,8 +820,10 @@ void Scene::InitializeLighting()
     this->lightingShader.locs[SHADER_LOC_MATRIX_NORMAL] = GetShaderLocation(this->lightingShader, "matNormal");
     this->viewPosLoc = GetShaderLocation(this->lightingShader, "viewPos");
     this->ambientLoc = GetShaderLocation(this->lightingShader, "ambient");
+    this->shadowMapLoc = GetShaderLocation(this->lightingShader, "shadowMap");
+    this->lightSpaceMatrixLoc = GetShaderLocation(this->lightingShader, "lightSpaceMatrix");
 
-    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d", this->viewPosLoc, this->ambientLoc);
+    TraceLog(LOG_INFO, "Shader locations - viewPos: %d, ambient: %d, shadowMap: %d", this->viewPosLoc, this->ambientLoc, this->shadowMapLoc);
 
     if (this->cubeModel.materialCount > 0)
     {
@@ -848,6 +850,14 @@ void Scene::InitializeLighting()
             door->SetLightingShader(&this->lightingShader);
         }
     }
+    
+    // Create sun directional light (noon-ish angle, warm color)
+    Vector3 sunDirection = Vector3Normalize({0.3f, -1.0f, 0.2f}); // Slight angle from overhead
+    Color sunColor = {255, 245, 220, 255}; // Warm sunlight
+    CreateDirectionalLight(sunDirection, sunColor);
+    
+    // Initialize shadow mapping
+    InitializeShadowMap();
 }
 
 void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
@@ -869,8 +879,58 @@ void Scene::CreatePointLight(Vector3 position, Color color, float intensity)
     Light light = CreateLight(LIGHT_POINT, position, {0.0f, 0.0f, 0.0f}, scaledColor, this->lightingShader);
 }
 
+void Scene::CreateDirectionalLight(Vector3 direction, Color color)
+{
+    if (this->lightingShader.id == 0)
+    {
+        return;
+    }
+
+    // Directional lights use position as origin and target as direction
+    Vector3 position = {0.0f, 10.0f, 0.0f};
+    Vector3 target = Vector3Add(position, direction);
+    CreateLight(LIGHT_DIRECTIONAL, position, target, color, this->lightingShader);
+}
+
+void Scene::InitializeShadowMap()
+{
+    if (this->lightingShader.id == 0)
+    {
+        return;
+    }
+
+    // Note: For proper shadow mapping, we'd need a depth-only render texture
+    // For now, we'll disable shadow mapping and rely on the directional light
+    // This is a simplified approach that still provides good lighting
+    
+    this->shadowsInitialized = false; // Disable shadows for now
+    TraceLog(LOG_INFO, "Lighting initialized (shadows disabled for simplicity)");
+    
+    /*
+    // Full shadow mapping implementation would require:
+    const int shadowMapSize = 2048;
+    this->shadowMap = LoadRenderTexture(shadowMapSize, shadowMapSize);
+    
+    Vector3 lightPos = {15.0f, 30.0f, 10.0f};
+    Vector3 lightTarget = {15.0f, 0.0f, 10.0f};
+    Matrix lightView = MatrixLookAt(lightPos, lightTarget, {0.0f, 0.0f, 1.0f});
+    
+    float orthoSize = 40.0f;
+    Matrix lightProj = MatrixOrtho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, 100.0f);
+    
+    this->lightViewProj = MatrixMultiply(lightView, lightProj);
+    this->shadowsInitialized = true;
+    */
+}
+
 void Scene::ShutdownLighting()
 {
+    if (this->shadowMap.id != 0)
+    {
+        UnloadRenderTexture(this->shadowMap);
+        this->shadowMap.id = 0;
+    }
+    
     if (this->lightingShader.id != 0)
     {
         UnloadShader(this->lightingShader);
@@ -878,6 +938,7 @@ void Scene::ShutdownLighting()
     }
     this->ambientLoc = -1;
     this->viewPosLoc = -1;
+    this->shadowsInitialized = false;
 }
 
 // Draws a 3D rectangle (cube) for the given object
@@ -947,6 +1008,13 @@ void Scene::DrawSphereObject(const Object &o) const
         // Use the shared sphere model with the lighting shader
         DrawModelEx(this->sphereModel, o.pos, {0.0f, 1.0f, 0.0f}, 0.0f, scale, o.tint);
     }
+}
+
+void Scene::RenderShadowMap()
+{
+    // Shadow mapping disabled for now
+    // Would require depth-only rendering setup
+    return;
 }
 
 // Draws the entire scene, including the floor, objects, entities, and attacks
